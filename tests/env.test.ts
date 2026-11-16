@@ -164,6 +164,51 @@ describe("parseConfig: missing key", () => {
   });
 });
 
+describe("parseConfig: key with white space inside", () => {
+  const half = KEY.slice(0, 20);
+  const rest = KEY.slice(20);
+
+  it.each([
+    ["a space", `${half} ${rest}`],
+    ["a tab", `${half}\t${rest}`],
+    ["a line break", `${half}\n${rest}`],
+    ["a CRLF line break", `${half}\r\n${rest}`],
+    ["a no-break space", `${half} ${rest}`],
+    ["a space, with spaces around too", `  ${half} ${rest}\n`],
+    ["two keys in a row", `${KEY} ${fakeOpenAiKey("B")}`],
+    ["a short value", "minha chave"],
+  ])("rejects a key with %s, without echoing it", (_label, value) => {
+    const message = configErrorMessage({ OPENAI_API_KEY: value });
+
+    expect(message).toBe(
+      'Configuração inválida: OPENAI_API_KEY contém espaço, tabulação ou quebra de linha no meio do valor (o valor não é exibido). Cole a chave inteira em uma única linha, sem espaços, no ".env" ou na variável de ambiente.',
+    );
+    expect(message).not.toContain(half.slice(0, 8));
+    expect(message).not.toContain(rest.slice(-8));
+    expect(message).not.toContain("minha");
+  });
+
+  it("still accepts white space only around the key", () => {
+    expect(parseConfig({ OPENAI_API_KEY: ` \t${KEY}\r\n` }).openaiApiKey).toBe(
+      KEY,
+    );
+  });
+
+  it("reports it first, and never echoes a piece of the key from another variable", () => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: `${half} ${rest}`,
+      RETRY_MAX_ATTEMPTS: half,
+      OPENAI_REASONING_EFFORT: rest,
+    });
+    const lines = message.split("\n");
+
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("OPENAI_API_KEY contém espaço");
+    expect(message).not.toContain(half);
+    expect(message).not.toContain(rest);
+  });
+});
+
 describe("parseConfig: invalid values", () => {
   it.each(["abc", "1e3", "-1", "2.5", "0x10", "99999999999999999999999"])(
     "rejects RETRY_MAX_ATTEMPTS=%s citing the variable",

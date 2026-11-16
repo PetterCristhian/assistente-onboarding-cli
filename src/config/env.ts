@@ -85,7 +85,9 @@ function integerVariable(rule: IntegerRule) {
 }
 
 const envSchema = z.object({
-  OPENAI_API_KEY: z.preprocess(normalize, z.string().min(1)),
+  // After trimming, white space can only be in the middle: a key pasted with
+  // a line break, or two values in the same line.
+  OPENAI_API_KEY: z.preprocess(normalize, z.string().regex(/^\S+$/u)),
   OPENAI_MODEL: z.preprocess(
     normalize,
     z.string().default(DEFAULT_OPENAI_MODEL),
@@ -119,6 +121,8 @@ const MISSING_API_KEY_MESSAGE = [
   "A chave não é aceita por argumento de linha de comando e nunca deve ser versionada.",
 ].join("\n");
 
+const API_KEY_WHITE_SPACE_MESSAGE = `Configuração inválida: ${API_KEY_VARIABLE} contém espaço, tabulação ou quebra de linha no meio do valor (o valor não é exibido). Cole a chave inteira em uma única linha, sem espaços, no ".env" ou na variável de ambiente.`;
+
 const ENV_FILE_ENCODING_MESSAGE = [
   `Configuração incompleta: o arquivo ".env" existe, mas não está em UTF-8 sem BOM, por isso ${API_KEY_VARIABLE} não foi lida.`,
   "Como corrigir:",
@@ -133,7 +137,10 @@ function keyVariants(source: EnvSource): string[] {
   const raw = source[API_KEY_VARIABLE] ?? "";
   const trimmed = raw.trim();
   const unquoted = /^(["'])(.*)\1$/s.exec(trimmed)?.[2] ?? trimmed;
-  return [...new Set([raw, trimmed, unquoted, unquoted.trim()])];
+  // A key with white space inside is rejected, but its pieces are still part
+  // of a credential.
+  const pieces = trimmed.split(/\s+/u);
+  return [...new Set([raw, trimmed, unquoted, unquoted.trim(), ...pieces])];
 }
 
 function isIntegerVariable(name: string): name is keyof typeof INTEGER_RULES {
@@ -160,7 +167,10 @@ function howToFix(fallback: string | number): string {
 
 function describeProblem(name: string, source: EnvSource): string {
   if (name === API_KEY_VARIABLE) {
-    return MISSING_API_KEY_MESSAGE;
+    // Present but refused by the schema: the only rule is the white space.
+    return normalize(source[name]) === undefined
+      ? MISSING_API_KEY_MESSAGE
+      : API_KEY_WHITE_SPACE_MESSAGE;
   }
   if (isIntegerVariable(name)) {
     const rule = INTEGER_RULES[name];
