@@ -9,6 +9,7 @@
   },
   "scripts": {
     "chat": "tsx src/cli/main.ts",
+    "contexto": "tsx scripts/show-context.ts",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "format": "prettier --write .",

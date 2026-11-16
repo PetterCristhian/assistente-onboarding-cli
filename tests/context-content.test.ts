@@ -2,6 +2,12 @@
 // whatever its layer. The expressions are the ones of the policies document
 // test (tests/policies-document.test.ts).
 import { describe, expect, it } from "vitest";
+import { buildContext } from "../src/context/builder.js";
+import {
+  DEFAULT_CONTEXT_DIR,
+  listProfiles,
+  loadContextLayers,
+} from "../src/context/loaders.js";
 import { redact } from "../src/security/redact.js";
 import {
   emailDomain,
@@ -11,7 +17,8 @@ import {
   readContextFiles,
 } from "./helpers/context-files.js";
 
-// docs/BACKLOG.md, issue 4: about 6 thousand estimated tokens.
+// docs/BACKLOG.md, issue 4: about 6 thousand estimated tokens. It holds for
+// the files and for the text that the builder assembles from them.
 const CHARACTER_BUDGET = 24_000;
 
 // Layers that hold no company data (docs/adr/0003-contexto-em-quatro-camadas.md).
@@ -137,6 +144,58 @@ describe("context files", () => {
         expect(label).not.toBe("");
         expect(content).not.toContain(label);
       }
+    }
+  });
+});
+
+// What the model receives: the four layers of one profile, with the markers,
+// the precedence clause and the current date that the builder adds.
+describe("assembled context", () => {
+  const PROFILES = listProfiles(DEFAULT_CONTEXT_DIR);
+  // Seven days in a row, so that every name of a day of the week is covered.
+  const WEEK = Array.from(
+    { length: 7 },
+    (_, day) => new Date(2026, 10, 16 + day, 12),
+  );
+
+  function assemble(profile: string, now: Date): string {
+    return buildContext(loadContextLayers({ profile }, { now: () => now }))
+      .text;
+  }
+
+  it("finds the profiles it is supposed to check", () => {
+    expect(PROFILES.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(PROFILES)(
+    "stays within the character budget for %s, on every day of the week",
+    (profile) => {
+      for (const day of WEEK) {
+        expect(assemble(profile, day).length).toBeLessThan(CHARACTER_BUDGET);
+      }
+    },
+  );
+
+  it.each(PROFILES)(
+    "is left untouched by the redaction of secrets for %s",
+    (profile) => {
+      for (const day of WEEK) {
+        const text = assemble(profile, day);
+
+        expect(redact(text)).toBe(text);
+      }
+    },
+  );
+
+  it.each(PROFILES)("holds every layer file of %s whole", (profile) => {
+    const text = assemble(profile, WEEK[0] ?? new Date(0));
+    const layerFiles = FILES.filter(
+      (path) => path.endsWith(".md") && path !== "fallback.md",
+    );
+
+    expect(layerFiles.length).toBeGreaterThanOrEqual(3);
+    for (const path of layerFiles) {
+      expect(text).toContain(readContextFile(path).trim());
     }
   });
 });
