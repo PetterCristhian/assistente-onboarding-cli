@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createSecretPattern, redact } from "./redact.js";
+import { findSecretSpans, redact } from "./redact.js";
 
 export interface SecretFinding {
   /** Path relative to the root, redacted: it may hold the pattern itself. */
@@ -21,9 +21,7 @@ export interface SecretFinding {
 const UTF16_BYTE_ORDER_MARK = /^(?:\xff\xfe|\xfe\xff)/;
 
 function findColumns(lineText: string): number[] {
-  return [...lineText.matchAll(createSecretPattern())].map(
-    (match) => match.index + 1,
-  );
+  return findSecretSpans(lineText).map((span) => span.start + 1);
 }
 
 /**
@@ -103,6 +101,43 @@ export class NoFilesScannedError extends Error {
   constructor(readonly listedFiles: number) {
     super(`no file was scanned (${listedFiles} listed)`);
   }
+}
+
+function readProperty(error: unknown, name: string): unknown {
+  return typeof error === "object" && error !== null && name in error
+    ? (error as Record<string, unknown>)[name]
+    : undefined;
+}
+
+/**
+ * Says, in Portuguese and without the text of the error (it could quote the
+ * content of a file), why the scan could not run. Only a failure of the Git
+ * child process is blamed on Git.
+ */
+export function describeScanFailure(error: unknown): string {
+  if (error instanceof NoFilesScannedError) {
+    return `nenhum arquivo foi varrido (o Git listou ${error.listedFiles} arquivos). A varredura não pode ser dada como limpa. Verifique se o comando roda dentro do repositório e se GIT_DIR ou GIT_WORK_TREE não apontam para outro lugar.`;
+  }
+
+  const code = readProperty(error, "code");
+  const status = readProperty(error, "status");
+  // What execFileSync puts in its errors: the arguments of the child process
+  // when it could not start, its pid when it ended with a failure.
+  if (
+    readProperty(error, "spawnargs") !== undefined ||
+    readProperty(error, "pid") !== undefined
+  ) {
+    const detail =
+      typeof code === "string"
+        ? code
+        : typeof status === "number"
+          ? `código de saída ${status}`
+          : "erro desconhecido";
+    return `não foi possível listar os arquivos com o Git (${detail}).`;
+  }
+
+  const name = error instanceof Error ? error.name : "erro desconhecido";
+  return `a varredura falhou ao examinar os arquivos (${typeof code === "string" ? code : name}). Nenhuma conclusão pode ser tirada sobre o repositório.`;
 }
 
 /** Throws NoFilesScannedError when not a single file could be read. */

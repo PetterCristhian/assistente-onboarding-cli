@@ -3,7 +3,7 @@ import {
   MIN_EXACT_SECRET_LENGTH,
   REDACTED,
   createRedactor,
-  createSecretPattern,
+  findSecretSpans,
   redact,
 } from "../src/security/redact.js";
 import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
@@ -95,13 +95,56 @@ describe("redact", () => {
     expect(redactor("chave-curta-123")).toBe(REDACTED);
   });
 
-  it("creates a new global pattern on every call", () => {
-    const first = createSecretPattern();
-    const second = createSecretPattern();
+  it("reports where each key-shaped sequence starts and ends", () => {
+    const key = fakeOpenAiKey();
+    const masked = fakeMaskedOpenAiKey({ asterisks: 3 });
+    const text = `a ${key} b ${masked}.`;
 
-    expect(first).not.toBe(second);
-    expect(first.global).toBe(true);
-    expect(first.source).toBe(second.source);
+    const spans = findSecretSpans(text);
+
+    expect(spans).toEqual([
+      { start: 2, end: 2 + key.length },
+      { start: key.length + 5, end: key.length + 5 + masked.length },
+    ]);
+    // No state is kept between calls.
+    expect(findSecretSpans(text)).toEqual(spans);
+    expect(findSecretSpans("texto comum, task-1")).toEqual([]);
+  });
+
+  it("takes a key glued to another as a single sequence", () => {
+    const glued = `${fakeOpenAiKey()}${fakeOpenAiKey("B")}`;
+
+    expect(findSecretSpans(`x ${glued}`)).toEqual([
+      { start: 2, end: 2 + glued.length },
+    ]);
+  });
+});
+
+// A greedy regular expression overflows the stack of the engine on a run of
+// millions of key characters: the scan died and the writer would throw.
+describe("redact: very long key-shaped sequences", () => {
+  const LENGTH = 8 * 1024 * 1024;
+
+  it("redacts a key-shaped sequence of 8 MB", () => {
+    const text = `antes ${PREFIX}${"a".repeat(LENGTH)} depois`;
+
+    expect(redact(text)).toBe(`antes ${REDACTED} depois`);
+  });
+
+  it("redacts a masked sequence of 8 MB", () => {
+    const text = `${PREFIX}${"*".repeat(LENGTH)}wXyZ.`;
+
+    expect(redact(text)).toBe(`${REDACTED}.`);
+  });
+
+  it("stays fast when the prefix repeats millions of times", () => {
+    const short = `${PREFIX}a `.repeat(1024 * 1024);
+    const glued = PREFIX.repeat(2 * 1024 * 1024);
+    const startedAt = performance.now();
+
+    expect(redact(short)).toBe(short);
+    expect(redact(`${glued} fim`)).toBe(`${REDACTED} fim`);
+    expect(performance.now() - startedAt).toBeLessThan(5000);
   });
 });
 

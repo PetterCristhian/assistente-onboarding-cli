@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   NoFilesScannedError,
+  describeScanFailure,
   findSecretsInText,
   listRepositoryFiles,
   scanRepository,
@@ -60,6 +61,14 @@ describe("findSecretsInText", () => {
     const findings = findSecretsInText(`erro 401\n  chave: ${masked}.\n`);
 
     expect(findings).toEqual([{ line: 2, column: 10 }]);
+  });
+
+  it("reports a key-shaped line of 8 MB instead of failing", () => {
+    const line = `x ${KEY}${"a".repeat(8 * 1024 * 1024)}`;
+
+    expect(findSecretsInText(`primeira\n${line}\nterceira\n`)).toEqual([
+      { line: 2, column: 3 },
+    ]);
   });
 
   it("finds nothing in a clean text", () => {
@@ -298,6 +307,66 @@ describe("scanRepository", () => {
         },
       }),
     ).toThrow("git failed");
+  });
+});
+
+describe("describeScanFailure", () => {
+  it("blames Git only for a failure of the Git child process", () => {
+    let gitError: unknown;
+    try {
+      listRepositoryFiles(join(createTemporaryFolder(), "nao-existe"));
+    } catch (error) {
+      gitError = error;
+    }
+
+    expect(describeScanFailure(gitError)).toMatch(
+      /^não foi possível listar os arquivos com o Git \(.+\)\.$/,
+    );
+  });
+
+  it("blames Git when it ends with a failure outside a repository", () => {
+    let gitError: unknown;
+    try {
+      listRepositoryFiles(createTemporaryFolder());
+    } catch (error) {
+      gitError = error;
+    }
+
+    expect(describeScanFailure(gitError)).toMatch(
+      /^não foi possível listar os arquivos com o Git \(código de saída \d+\)\.$/,
+    );
+  });
+
+  it.each([
+    ["a stack overflow of the engine", new RangeError(`estouro em ${KEY}`)],
+    [
+      "a file that cannot be read",
+      Object.assign(new Error(`EACCES: ${KEY}`), { code: "EACCES" }),
+    ],
+    ["something that is not an error", `texto ${KEY}`],
+  ])(
+    "does not blame Git for %s, and never quotes the error",
+    (_label, error) => {
+      const message = describeScanFailure(error);
+
+      expect(message).toContain("a varredura falhou ao examinar os arquivos (");
+      expect(message).not.toContain("Git");
+      expect(message).not.toContain(KEY.slice(0, 12));
+    },
+  );
+
+  it("names the kind of failure", () => {
+    expect(describeScanFailure(new RangeError("x"))).toContain("(RangeError)");
+    expect(
+      describeScanFailure(Object.assign(new Error("x"), { code: "EACCES" })),
+    ).toContain("(EACCES)");
+    expect(describeScanFailure(undefined)).toContain("(erro desconhecido)");
+  });
+
+  it("explains a scan that read no file", () => {
+    expect(describeScanFailure(new NoFilesScannedError(3))).toContain(
+      "nenhum arquivo foi varrido (o Git listou 3 arquivos)",
+    );
   });
 });
 

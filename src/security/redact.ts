@@ -12,12 +12,57 @@ export const REDACTED = "[REDACTED]";
 //      exact masked format was not confirmed against the real API.
 // The asterisk is accepted in form 1 so that a long visible start does not
 // leave the asterisks and the last characters behind.
-const SECRET_PATTERN_SOURCE =
-  "sk-(?:[A-Za-z0-9_*-]{20,}|[A-Za-z0-9_-]*\\*{3,}[A-Za-z0-9_*-]*)";
+const KEY_PREFIX = "sk-";
+const KEY_CHARACTERS = "A-Za-z0-9_-";
+const MIN_KEY_LENGTH = 20;
+const MIN_MASK_ASTERISKS = 3;
 
-/** Returns a new instance on every call, so no `lastIndex` state is shared. */
-export function createSecretPattern(): RegExp {
-  return new RegExp(SECRET_PATTERN_SOURCE, "g");
+// Only the start of a sequence is matched by a regular expression, with
+// bounded quantifiers. The rest is walked by findSecretSpans: an unbounded
+// greedy quantifier overflows the stack of the engine on a run of millions of
+// key characters ("Maximum call stack size exceeded").
+const SECRET_START_SOURCE = `${KEY_PREFIX}(?:[*${KEY_CHARACTERS}]{${MIN_KEY_LENGTH}}|[${KEY_CHARACTERS}]{0,${MIN_KEY_LENGTH - 1}}\\*{${MIN_MASK_ASTERISKS}})`;
+const AFTER_SECRET_SOURCE = `[^*${KEY_CHARACTERS}]`;
+
+export interface SecretSpan {
+  /** Index of the first character of the sequence. */
+  start: number;
+  /** Index right after its last character. */
+  end: number;
+}
+
+/**
+ * Finds every sequence shaped like a key, in linear time whatever the length
+ * of a sequence. The patterns are created on every call: no `lastIndex` state
+ * is shared.
+ */
+export function findSecretSpans(text: string): SecretSpan[] {
+  const secretStart = new RegExp(SECRET_START_SOURCE, "g");
+  const afterSecret = new RegExp(AFTER_SECRET_SOURCE, "g");
+  const spans: SecretSpan[] = [];
+
+  for (
+    let match = secretStart.exec(text);
+    match !== null;
+    match = secretStart.exec(text)
+  ) {
+    // The sequence goes on up to the first character that cannot be part of it.
+    afterSecret.lastIndex = secretStart.lastIndex;
+    const end = afterSecret.exec(text)?.index ?? text.length;
+    spans.push({ start: match.index, end });
+    secretStart.lastIndex = end;
+  }
+  return spans;
+}
+
+function replaceKeyShapedSequences(text: string): string {
+  let result = "";
+  let copiedUpTo = 0;
+  for (const { start, end } of findSecretSpans(text)) {
+    result += text.slice(copiedUpTo, start) + REDACTED;
+    copiedUpTo = end;
+  }
+  return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
 }
 
 export type Redactor = (text: string) => string;
@@ -46,7 +91,7 @@ export function redact(text: string, secrets: readonly string[] = []): string {
   for (const secret of exactSecrets) {
     result = result.split(secret).join(REDACTED);
   }
-  return result.replace(createSecretPattern(), REDACTED);
+  return replaceKeyShapedSequences(result);
 }
 
 export function createRedactor(secrets: readonly string[]): Redactor {
