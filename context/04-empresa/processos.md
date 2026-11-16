@@ -35,7 +35,7 @@ O salário é pago no último dia útil de cada mês, por depósito na conta inf
 O holerite fica disponível no Portal de Pessoas 2 dias úteis antes do pagamento.
 A folha considera o ponto fechado no dia 25; horas e ajustes posteriores entram na folha seguinte.
 A troca da conta de pagamento é feita no Portal de Pessoas até o dia 15 para valer no mesmo mês.
-No mês da troca, o adiantamento salarial do dia 15 ainda cai na conta anterior, e o pagamento do último dia útil cai na conta nova.
+Na troca feita até o dia 15, o adiantamento salarial desse mês ainda cai na conta anterior, e o pagamento do último dia útil cai na conta nova.
 
 ## Primeira semana
 

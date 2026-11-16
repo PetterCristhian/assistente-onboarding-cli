@@ -16,14 +16,13 @@ O vale-transporte cobre o deslocamento entre a residência e a sede nos dias pre
 O pedido é feito no Portal de Pessoas, com o endereço e as linhas utilizadas.
 O desconto em folha é de 6% do salário-base, limitado ao valor do benefício recebido.
 Pedidos feitos até o dia 20 valem para o mês seguinte.
-Para quem acaba de entrar, o primeiro crédito é proporcional aos dias presenciais restantes do mês de início e é feito em até 3 dias úteis após o pedido.
+Para quem acaba de entrar, o primeiro crédito é proporcional aos dias presenciais restantes do mês de início e é feito em até 3 dias úteis após o pedido; esse pedido vale também para o mês seguinte, mesmo se feito após o dia 20.
 
 ## Auxílio para trabalho remoto
 
 O auxílio para trabalho remoto é de R$ 120,00 por mês, pago na folha, para despesas de internet e energia.
 O valor é fixo e não exige comprovante.
-Para quem começa no primeiro dia útil do mês, o auxílio é pago já na folha desse mês.
-Para quem começa em outro dia, o auxílio começa na folha do mês seguinte, sem valor proporcional no mês de início.
+O auxílio começa na folha do mês seguinte ao de início, sem valor proporcional no mês de início.
 
 ## Plano de saúde
 
@@ -45,4 +44,4 @@ Não há carência para consultas e limpeza; para os demais procedimentos, a car
 
 ## Adiantamento salarial
 
-A empresa paga a todos os funcionários, no dia 15 de cada mês, um adiantamento de 40% do salário-base, descontado do pagamento do último dia útil do mesmo mês.
+A empresa paga a todos os funcionários, no dia 15 de cada mês, ou no dia útil anterior, um adiantamento de 40% do salário-base, descontado do pagamento do último dia útil do mesmo mês.

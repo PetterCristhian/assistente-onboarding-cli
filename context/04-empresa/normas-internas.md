@@ -19,7 +19,6 @@ Os dias presenciais de cada equipe são definidos pelo gestor direto e ficam na 
 A primeira semana de trabalho é inteiramente presencial, na sede.
 A empresa fornece notebook, monitor e fone com microfone, entregues no primeiro dia.
 O equipamento é de uso profissional e é devolvido ao Suporte de TI no desligamento.
-No trabalho remoto, a conexão aos sistemas internos é feita pela VPN corporativa.
 
 ## Férias
 
