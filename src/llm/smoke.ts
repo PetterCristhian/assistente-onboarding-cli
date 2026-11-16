@@ -3,6 +3,10 @@
 // docs/adr/0002-modelo-e-api-openai.md states. It spends credit: it is run by
 // hand, by the owner of the key, and never by the gate nor by the CI.
 //
+// The report is meant to be pasted into a pull request of a public
+// repository: it holds measures and identifiers of the answer, never what
+// the model wrote, and no identifier of the account.
+//
 // Pure with respect to the outside: the client, the clock and the redactor
 // are parameters, nothing is printed and nothing is written to disk.
 import { z } from "zod";
@@ -54,8 +58,12 @@ export interface SmokeStreamingSuccess {
 export interface SmokeStructuredSuccess {
   readonly ok: true;
   readonly model: string;
-  /** The validated object, as one line of JSON. */
-  readonly objectJson: string;
+  /** The names of the fields of the validated object. */
+  readonly fields: readonly string[];
+  /** The value of the enum field: one of the values of the schema. */
+  readonly confidence: string;
+  /** The size of the free text field, never the text itself. */
+  readonly answerLength: number;
   readonly totalMs: number;
   readonly usage?: LlmUsage;
 }
@@ -82,11 +90,32 @@ function oneLine(text: string, redact: Redactor): string {
   return redact(text).replace(UNSAFE_TO_PRINT, UNSAFE_TO_PRINT_MARKER);
 }
 
+// The provider names the organization and the project of the account in
+// some messages (rate limit, quota). They are not secrets, but they do not
+// belong in a public pull request.
+const ACCOUNT_IDENTIFIERS: readonly (readonly [RegExp, string])[] = [
+  [/\borg-[A-Za-z0-9]{8,}\b/g, "org-[oculto]"],
+  [/\bproj_[A-Za-z0-9]{8,}\b/g, "proj_[oculto]"],
+];
+
+function maskAccount(text: string): string {
+  return ACCOUNT_IDENTIFIERS.reduce(
+    (masked, [pattern, replacement]) => masked.replace(pattern, replacement),
+    text,
+  );
+}
+
 function failure(error: unknown, redact: Redactor): SmokeFailure {
   const summary = summarizeError(error, redact);
+  const clean = (text: string) => maskAccount(oneLine(text, redact));
   return {
     ok: false,
-    error: { ...summary, message: oneLine(summary.message, redact) },
+    error: {
+      ...summary,
+      message: clean(summary.message),
+      ...(summary.code === undefined ? {} : { code: clean(summary.code) }),
+      ...(summary.type === undefined ? {} : { type: clean(summary.type) }),
+    },
   };
 }
 
@@ -141,7 +170,9 @@ async function smokeStructured(
     return {
       ok: true,
       model: oneLine(result.model, redact),
-      objectJson: oneLine(JSON.stringify(value), redact),
+      fields: Object.keys(value),
+      confidence: value.confianca,
+      answerLength: value.resposta.length,
       totalMs: finishedAt - startedAt,
       ...optionalUsage(result.usage),
     };
@@ -224,7 +255,7 @@ export function formatSmokeReport(report: SmokeReport): string {
           `  Modelo devolvido: ${structured.model}`,
           `  Tempo total: ${Math.round(structured.totalMs)} ms`,
           ...usageLine(structured.usage),
-          `  Objeto: ${structured.objectJson}`,
+          `  Objeto: campos ${structured.fields.join(", ")}; confianca = "${structured.confidence}"; resposta com ${structured.answerLength} caracteres`,
         ]
       : [failureLine(structured)]),
     "",

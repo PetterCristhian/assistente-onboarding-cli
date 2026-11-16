@@ -89,7 +89,7 @@ describe("runLlmSmoke", () => {
         "  Modelo devolvido: returned-model",
         "  Tempo total: 100 ms",
         "  Tokens: 25 de entrada, 9 de saída, 34 no total",
-        '  Objeto: {"resposta":"quatro","confianca":"alta"}',
+        '  Objeto: campos resposta, confianca; confianca = "alta"; resposta com 6 caracteres',
         "",
         "Checagens",
         "  [ok] streaming: a chamada terminou sem erro",

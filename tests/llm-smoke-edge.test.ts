@@ -221,3 +221,64 @@ describe("runLlmSmoke: what the provider writes", () => {
     expectSafe(text, report);
   });
 });
+
+// The report is pasted into a pull request of a PUBLIC repository.
+describe("runLlmSmoke: a report that can be pasted in public", () => {
+  it("shows the fields, the enum value and the size of the free text, never the text", async () => {
+    const answer = "quatro, e mais um texto livre que o modelo escreveu";
+    const { report, text } = await run([
+      { text: "ab", chunks: ["a", "b"], model: "returned-model" },
+      {
+        value: { resposta: answer, confianca: "media" },
+        model: "returned-model",
+      },
+    ]);
+
+    expect(report.passed).toBe(true);
+    expect(text).toContain(
+      `  Objeto: campos resposta, confianca; confianca = "media"; resposta com ${answer.length} caracteres`,
+    );
+    for (const view of [text, JSON.stringify(report)]) {
+      expect(view).not.toContain("texto livre");
+      expect(view).not.toContain("quatro");
+    }
+  });
+
+  it("masks organization and project identifiers in the failure of either call", async () => {
+    const organization = ["org", "AbC123xyz789"].join("-");
+    const project = ["proj", "AbC123xyz789"].join("_");
+    const quota = Object.assign(
+      new Error(
+        `429 Rate limit reached for organization ${organization} in project ${project} on requests per min.`,
+      ),
+      {
+        status: 429,
+        code: "rate_limit_exceeded",
+        type: `requests-${organization}`,
+      },
+    );
+    const { report, text } = await run([{ error: quota }, { error: quota }]);
+
+    expect(report.passed).toBe(false);
+    expect(text.match(/ {2}Falha: /g)).toHaveLength(2);
+    for (const view of [text, JSON.stringify(report)]) {
+      expect(view).not.toContain("AbC123xyz789");
+      expect(view).toContain(
+        "organization org-[oculto] in project proj_[oculto]",
+      );
+    }
+    // What identifies the failure is still there.
+    expect(text).toContain('"status":429');
+    expect(text).toContain('"code":"rate_limit_exceeded"');
+    expectSafe(text, report);
+  });
+
+  it("leaves words that only look like an identifier alone", async () => {
+    const { text } = await run([
+      { error: new Error("The cyborg-unit and the org-chart of proj_x.") },
+      VALUE_STEP,
+    ]);
+
+    expect(text).toContain("The cyborg-unit and the org-chart of proj_x.");
+  });
+});
