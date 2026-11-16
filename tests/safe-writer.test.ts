@@ -104,7 +104,8 @@ describe("createSafeWriter", () => {
     ];
 
     for (const attempt of attempts) {
-      await expect(Promise.resolve().then(attempt)).rejects.toThrow(
+      // Called directly: a synchronous throw would fail the test here.
+      await expect(attempt()).rejects.toThrow(
         "O escritor só grava em outputs/ e logs/.",
       );
     }
@@ -115,18 +116,114 @@ describe("createSafeWriter", () => {
   it("refuses an absolute path even when it points inside outputs", async () => {
     const inside = resolve(rootDir, "outputs", "a.txt");
 
-    await expect(
-      Promise.resolve().then(() => writer.writeText(inside, "x")),
-    ).rejects.toThrow(`Caminho de escrita não permitido: "${inside}".`);
+    await expect(writer.writeText(inside, "x")).rejects.toThrow(
+      `Caminho de escrita não permitido: "${inside}".`,
+    );
     expect(await readdir(rootDir)).toEqual([]);
   });
 
-  it("refuses a value that cannot be turned into JSON", async () => {
-    await expect(
-      Promise.resolve().then(() =>
-        writer.appendJsonLine("logs/s.jsonl", undefined),
-      ),
-    ).rejects.toThrow("não pode ser convertido em JSON");
+  it.each([
+    ["undefined", () => undefined],
+    ["a function", () => () => 1],
+    ["a symbol", () => Symbol("x")],
+    ["a BigInt", () => 10n],
+    ["a nested BigInt", () => ({ total: { valor: 10n } })],
+    [
+      "a circular reference",
+      () => {
+        const value: Record<string, unknown> = { nome: "a" };
+        value.self = value;
+        return value;
+      },
+    ],
+    [
+      "a toJSON that throws",
+      () => ({
+        toJSON: () => {
+          throw new Error(`falhou com ${KEY}`);
+        },
+      }),
+    ],
+  ])(
+    "rejects, in Portuguese, a value that cannot be turned into JSON: %s",
+    async (_label, build) => {
+      const attempts = [
+        () => writer.writeJson("outputs/s.json", build()),
+        () => writer.appendJsonLine("logs/s.jsonl", build()),
+      ];
+
+      for (const attempt of attempts) {
+        // Called directly: a synchronous throw would fail the test here.
+        const error: unknown = await attempt().then(
+          () => undefined,
+          (reason: unknown) => reason,
+        );
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error instanceof Error ? error.message : "").toBe(
+          "O valor informado não pode ser convertido em JSON.",
+        );
+      }
+      expect(await readdir(rootDir)).toEqual([]);
+    },
+  );
+
+  it("refuses a path that holds the key in use, without showing it", async () => {
+    const attempts = [
+      () => writer.writeText(`outputs/${KEY}.txt`, "x"),
+      () => writer.appendText(`logs/${KEY}/a.txt`, "x"),
+      () => writer.writeJson(`outputs/resumo-${KEY}.json`, { x: 1 }),
+      () => writer.appendJsonLine(`logs/s-${KEY}.jsonl`, { x: 1 }),
+    ];
+
+    for (const attempt of attempts) {
+      const error: unknown = await attempt().then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+      const message = error instanceof Error ? error.message : "";
+
+      expect(message).toContain("Caminho de escrita não permitido");
+      expect(message).toContain("o caminho contém uma possível credencial");
+      expect(message).not.toContain(KEY);
+      expect(message).not.toContain(KEY.slice(0, 12));
+    }
+    expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  it("refuses a path with a key-shaped sequence that is not the key in use", async () => {
+    const other = fakeOpenAiKey("B");
+
+    await expect(writer.writeText(`outputs/${other}.txt`, "x")).rejects.toThrow(
+      "o caminho contém uma possível credencial",
+    );
+    expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  it("redacts the path in the message of a path that is not allowed", async () => {
+    const plainWriter = createSafeWriter({
+      redact: createRedactor(["chave-fora-do-padrao-123"]),
+      rootDir,
+    });
+    const attempts = [
+      () => writer.writeText(`src/${KEY}.txt`, "x"),
+      () => writer.writeText(`../${KEY}.txt`, "x"),
+      () => writer.writeJson(resolve(rootDir, "outputs", `${KEY}.json`), 1),
+      () => plainWriter.appendText("src/chave-fora-do-padrao-123.txt", "x"),
+    ];
+
+    for (const attempt of attempts) {
+      const error: unknown = await attempt().then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+      const message = error instanceof Error ? error.message : "";
+
+      expect(message).toContain("Caminho de escrita não permitido");
+      expect(message).not.toContain(KEY);
+      expect(message).not.toContain(KEY.slice(0, 12));
+      expect(message).not.toContain("chave-fora-do-padrao");
+    }
     expect(await readdir(rootDir)).toEqual([]);
   });
 

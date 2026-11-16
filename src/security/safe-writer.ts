@@ -24,10 +24,21 @@ export interface SafeWriterOptions {
 
 const ALLOWED_TOP_LEVEL_DIRECTORIES = ["outputs", "logs"];
 
+const NOT_SERIALIZABLE_MESSAGE =
+  "O valor informado não pode ser convertido em JSON.";
+
 function serialize(value: unknown, indentation?: number): string {
-  const json: unknown = JSON.stringify(value, null, indentation);
+  let json: unknown;
+  try {
+    json = JSON.stringify(value, null, indentation);
+  } catch {
+    // BigInt, circular reference, a toJSON that throws. The original error is
+    // dropped on purpose: its text is in English and may quote the value.
+    throw new Error(NOT_SERIALIZABLE_MESSAGE);
+  }
+  // undefined, a function or a symbol: JSON.stringify returns undefined.
   if (typeof json !== "string") {
-    throw new Error("O valor informado não pode ser convertido em JSON.");
+    throw new Error(NOT_SERIALIZABLE_MESSAGE);
   }
   return `${json}\n`;
 }
@@ -38,6 +49,14 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
   );
 
   function resolveTarget(relativePath: string): string {
+    // A file name is as public as the content: outputs/ is versioned.
+    const shownPath = options.redact(relativePath);
+    if (shownPath !== relativePath) {
+      throw new Error(
+        "Caminho de escrita não permitido: o caminho contém uma possível credencial (o valor não é exibido). Nada foi gravado.",
+      );
+    }
+
     const absolutePath = resolve(rootDir, relativePath);
     const segments = relative(rootDir, absolutePath).split(sep);
     const topLevel = segments[0] ?? "";
@@ -48,7 +67,7 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
       segments.length < 2
     ) {
       throw new Error(
-        `Caminho de escrita não permitido: "${relativePath}". O escritor só grava em outputs/ e logs/.`,
+        `Caminho de escrita não permitido: "${shownPath}". O escritor só grava em outputs/ e logs/.`,
       );
     }
     return absolutePath;
@@ -76,10 +95,11 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
       write(relativePath, content, "overwrite"),
     appendText: (relativePath, content) =>
       write(relativePath, content, "append"),
-    // Redaction runs on the final text, after JSON.stringify.
-    writeJson: (relativePath, value) =>
+    // Redaction runs on the final text, after JSON.stringify. Both are async
+    // so that a value that cannot be serialized rejects instead of throwing.
+    writeJson: async (relativePath, value) =>
       write(relativePath, serialize(value, 2), "overwrite"),
-    appendJsonLine: (relativePath, value) =>
+    appendJsonLine: async (relativePath, value) =>
       write(relativePath, serialize(value), "append"),
   };
 }
