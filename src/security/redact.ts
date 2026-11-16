@@ -14,15 +14,23 @@ export const REDACTED = "[REDACTED]";
 // italic) around the key, not a mask. Three asterisks right after a key are
 // taken with it: they cannot be told from a mask with nothing after it.
 //
-// The prefix must not come right after an ASCII letter or digit: there it is
-// the end of a word (task-, disk-, helpdesk-), and the answers of the model
-// are written through redact(). The price is a key glued to a letter or
-// digit, which only the exact secret catches. "_" and "-" do not count as
-// part of a word: no word ends in "sk" right after them, and a key does come
-// after them (NAME_<key>, copy-<key>).
+// Where a sequence may start. The prefix is also the end of ordinary words
+// (task-, disk-, helpdesk-), and the answers of the model are written through
+// redact(), so a candidate is dropped only when BOTH hold:
+//   - it comes right after an ASCII letter or digit that is not the end of an
+//     escape sequence (see ESCAPE_END); and
+//   - it has no digit, and no upper-case letter other than the first of a
+//     word (right after "-" or "_"): it reads as words with hyphens
+//     (task-force-management-department, Petropavlovsk-Kamchatski-..., a
+//     name found in the executable of Node, disk-***).
+// Premise (ADR 0007): a real key has 40 or more random characters, so one
+// with no digit and no upper-case letter inside a word is statistically
+// negligible.
+// Everything else is taken, whatever comes before it: a false positive is a
+// nuisance, a false negative publishes the key. "_" and "-" never count as
+// part of a word.
 const KEY_PREFIX = "sk-";
 const KEY_CHARACTERS = "A-Za-z0-9_-";
-const NOT_AFTER = "A-Za-z0-9";
 const MIN_KEY_LENGTH = 20;
 const MIN_MASK_ASTERISKS = 3;
 
@@ -30,10 +38,77 @@ const MIN_MASK_ASTERISKS = 3;
 // bounded quantifiers. The rest is walked by findSecretSpans: an unbounded
 // greedy quantifier overflows the stack of the engine on a run of millions of
 // key characters ("Maximum call stack size exceeded").
-const SECRET_START_SOURCE = `(?<![${NOT_AFTER}])${KEY_PREFIX}(?:[${KEY_CHARACTERS}]{${MIN_KEY_LENGTH}}|[${KEY_CHARACTERS}]{0,${MIN_KEY_LENGTH - 1}}[*]{${MIN_MASK_ASTERISKS}})`;
+const SECRET_START_SOURCE = `${KEY_PREFIX}(?:[${KEY_CHARACTERS}]{${MIN_KEY_LENGTH}}|[${KEY_CHARACTERS}]{0,${MIN_KEY_LENGTH - 1}}[*]{${MIN_MASK_ASTERISKS}})`;
 // What ends a sequence: a character that cannot be part of it, or a run of
 // asterisks shorter than a mask.
 const SECRET_END_SOURCE = `[^*${KEY_CHARACTERS}]|(?<![*])[*]{1,${MIN_MASK_ASTERISKS - 1}}(?![*])`;
+
+// The end of an escape sequence is a letter or digit that belongs to no word,
+// so a key may start right after it. The writer redacts the text produced by
+// JSON.stringify, where a key at the start of a line comes right after the
+// "n" of a line break. Covered: the one-letter escapes of JSON and of string
+// literals, \uXXXX, \xXX, %XX (URL), =XX (quoted-printable) and the end of an
+// ANSI colour sequence ("[31m", whatever the form of the ESC before it). Only
+// the few characters right before the prefix are looked at.
+// Not global: test() keeps no state between calls.
+const ESCAPE_END =
+  /(?:\\[abefnrtv0]|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}|[%=][0-9A-Fa-f]{2}|\[[0-9;]{0,12}m)$/;
+// The longest of them: "[", twelve parameter characters and "m".
+const MAX_ESCAPE_LENGTH = 14;
+
+function isAsciiDigit(code: number): boolean {
+  return code >= 48 && code <= 57;
+}
+
+function isAsciiUpperCase(code: number): boolean {
+  return code >= 65 && code <= 90;
+}
+
+function isAsciiLowerCase(code: number): boolean {
+  return code >= 97 && code <= 122;
+}
+
+/** True when the prefix at "index" is not the end of an ordinary word. */
+function startsAtBoundary(text: string, index: number): boolean {
+  if (index === 0) {
+    return true;
+  }
+  const before = text.charCodeAt(index - 1);
+  if (
+    !isAsciiDigit(before) &&
+    !isAsciiUpperCase(before) &&
+    !isAsciiLowerCase(before)
+  ) {
+    return true;
+  }
+  return ESCAPE_END.test(
+    text.slice(Math.max(0, index - MAX_ESCAPE_LENGTH), index),
+  );
+}
+
+const HYPHEN = 45;
+const UNDERSCORE = 95;
+
+/**
+ * Index of the first character in [from, to) that words with hyphens do not
+ * have, or -1: a digit, or an upper-case letter that is not the first of a
+ * word. "from" is never the start of the text: it is at or after a prefix.
+ */
+function findKeyOnlyCharacter(text: string, from: number, to: number): number {
+  for (let index = from; index < to; index += 1) {
+    const code = text.charCodeAt(index);
+    if (isAsciiDigit(code)) {
+      return index;
+    }
+    if (isAsciiUpperCase(code)) {
+      const before = text.charCodeAt(index - 1);
+      if (before !== HYPHEN && before !== UNDERSCORE) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
 
 export interface SecretSpan {
   /** Index of the first character of the sequence. */
@@ -52,16 +127,48 @@ export function findSecretSpans(text: string): SecretSpan[] {
   const secretEnd = new RegExp(SECRET_END_SOURCE, "g");
   const spans: SecretSpan[] = [];
 
+  // A dropped candidate may hold others ("ask-ask-ask-..."), and all of them
+  // share the same end. What was learned about the stretch up to that end is
+  // kept, so that no character is walked once per candidate.
+  let knownEnd = -1;
+  let strongSearchedUpTo = -1;
+  let strongAt = -1;
+
   for (
     let match = secretStart.exec(text);
     match !== null;
     match = secretStart.exec(text)
   ) {
+    const start = match.index;
     // The sequence goes on up to the first thing that cannot be part of it.
-    secretEnd.lastIndex = secretStart.lastIndex;
-    const end = secretEnd.exec(text)?.index ?? text.length;
-    spans.push({ start: match.index, end });
-    secretStart.lastIndex = end;
+    // Nothing inside the matched start can end it, so an end already found
+    // at or after this point is still the first one.
+    if (knownEnd < secretStart.lastIndex) {
+      secretEnd.lastIndex = secretStart.lastIndex;
+      knownEnd = secretEnd.exec(text)?.index ?? text.length;
+    }
+    const end = knownEnd;
+
+    let isSecret = startsAtBoundary(text, start);
+    if (!isSecret) {
+      // Same end: same stretch, already searched from an earlier start for
+      // a character that only a key has. The answer holds unless the one
+      // found is now behind this start.
+      if (strongSearchedUpTo !== end || (strongAt !== -1 && strongAt < start)) {
+        strongAt = findKeyOnlyCharacter(text, start, end);
+        strongSearchedUpTo = end;
+      }
+      isSecret = strongAt !== -1;
+    }
+
+    if (isSecret) {
+      spans.push({ start, end });
+      secretStart.lastIndex = end;
+    } else {
+      // Words with hyphens. A sequence may still start inside them, after a
+      // "-" or a "_" (palavra-<key>).
+      secretStart.lastIndex = start + KEY_PREFIX.length;
+    }
   }
   return spans;
 }

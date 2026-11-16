@@ -12,6 +12,11 @@ import {
   scanRepository,
 } from "../src/security/secret-scan.js";
 import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
+import {
+  AFTER_AN_ESCAPE,
+  GLUED_TO_A_WORD,
+  ORDINARY_TEXT,
+} from "./helpers/key-placements.js";
 
 const KEY = fakeOpenAiKey();
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -646,8 +651,10 @@ describe("findSecretsInText: boundary before the prefix", () => {
     expect(findSecretsInText(encode(`**${KEY}**\n`))).toEqual([
       { line: 1, column: 3 },
     ]);
-    // Decision: glued to a letter or digit, it reads as the end of a word.
-    expect(findSecretsInText(encode(`texto${KEY}\n`))).toEqual([]);
+    // Inverted after QA (B6): a key glued to a letter or digit is a finding.
+    expect(findSecretsInText(encode(`texto${KEY}\n`))).toEqual([
+      { line: 1, column: 6 },
+    ]);
   });
 });
 
@@ -717,5 +724,42 @@ describe("findSecretsInText: retest of the wide readings (QA)", () => {
     }
 
     expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+});
+
+// QA of ENG-44 (B6): a file written from JSON has the key right after the "n"
+// of a line break, and the scan said nothing about it.
+describe("findSecretsInText: a key right after a letter or digit that ends no word", () => {
+  const encodings: ReadonlyArray<readonly [string, (text: string) => string]> =
+    [
+      ["plain", (text) => text],
+      ["UTF-16LE", (text) => utf16AsLatin1(text)],
+      ["UTF-16BE", (text) => utf16AsLatin1(text, { bigEndian: true })],
+      ["UTF-32LE", (text) => utf32AsLatin1(text)],
+    ];
+
+  describe.each(encodings)("in %s content", (_encoding, encode) => {
+    it.each([...AFTER_AN_ESCAPE, ...GLUED_TO_A_WORD])(
+      "reports a key after %s",
+      (_label, build) => {
+        expect(findSecretsInText(encode(`${build(KEY)}\n`))).toHaveLength(1);
+      },
+    );
+
+    it.each(AFTER_AN_ESCAPE.slice(0, 5))(
+      "reports a masked key after %s",
+      (_label, build) => {
+        const text = `${build(fakeMaskedOpenAiKey())}\n`;
+
+        expect(findSecretsInText(encode(text))).toHaveLength(1);
+      },
+    );
+
+    it.each(ORDINARY_TEXT)("reports nothing in ordinary text: %s", (text) => {
+      const inJson = JSON.stringify({ resposta: `linha\n${text}\tfim` });
+
+      expect(findSecretsInText(encode(`${text}\n`))).toEqual([]);
+      expect(findSecretsInText(encode(`${inJson}\n`))).toEqual([]);
+    });
   });
 });

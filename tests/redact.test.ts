@@ -6,7 +6,16 @@ import {
   findSecretSpans,
   redact,
 } from "../src/security/redact.js";
-import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
+import {
+  fakeLowerCaseKeyShape,
+  fakeMaskedOpenAiKey,
+  fakeOpenAiKey,
+} from "./helpers/fake-key.js";
+import {
+  AFTER_AN_ESCAPE,
+  GLUED_TO_A_WORD,
+  ORDINARY_TEXT,
+} from "./helpers/key-placements.js";
 
 const PREFIX = ["sk", ""].join("-");
 
@@ -357,7 +366,9 @@ describe("redact: where a key can be (QA)", () => {
 });
 
 // The prefix is also the end of ordinary words (task-, disk-, helpdesk-), and
-// asterisks are also Markdown: neither may be taken for a key.
+// asterisks are also Markdown: neither may be taken for a key. Only what
+// reads as words with hyphens is left alone: glued to a letter or digit AND
+// with no digit and no upper-case letter inside a word.
 describe("redact: boundary before the prefix and Markdown around a key", () => {
   const key = fakeOpenAiKey("m");
 
@@ -369,8 +380,13 @@ describe("redact: boundary before the prefix and Markdown around a key", () => {
     "task-force-management-department",
     "helpdesk-abertura-de-chamados-ti",
     "o item 9task-force-management-department",
-    `x9${PREFIX}${"a".repeat(24)}`,
-    `abc${PREFIX}***wXyZ`,
+    `x9${fakeLowerCaseKeyShape()}`,
+    `abc${PREFIX}***wxyz`,
+    `abc${PREFIX}${"a".repeat(24)}****`,
+    "***task-force-management-department***",
+    "Task-Force-Management-Department",
+    // Names of time zones found in the executable of Node.
+    "Petropavlovsk-Kamchatski-standaardtyd",
   ])("keeps a word that only ends like the prefix: %s", (text) => {
     expect(redact(text)).toBe(text);
     expect(findSecretSpans(text)).toEqual([]);
@@ -398,17 +414,59 @@ describe("redact: boundary before the prefix and Markdown around a key", () => {
     expect(redact(`${before}${masked} fim`)).toBe(`${before}${REDACTED} fim`);
   });
 
+  // Inverted after QA (B6): a boundary before the prefix let a key through
+  // whenever a letter or digit came right before it.
   it.each([["texto"], ["Texto9"], ["A"], ["0"]])(
-    "takes a key glued to %j as part of a word, unless it is the key in use",
+    "replaces a key glued to %j, registered or not",
     (before) => {
       const text = `${before}${key} fim`;
 
-      // Decision: an ASCII letter or digit before the prefix makes it the
-      // end of a word. The exact key in use is still replaced.
-      expect(redact(text)).toBe(text);
+      expect(redact(text)).toBe(`${before}${REDACTED} fim`);
       expect(redact(text, [key])).toBe(`${before}${REDACTED} fim`);
+      expect(findSecretSpans(text)).toEqual([
+        { start: before.length, end: before.length + key.length },
+      ]);
     },
   );
+
+  it.each([
+    ["an upper-case letter after the mask", `abc${PREFIX}***wXyZ`],
+    // Built at runtime: the scan of the repository would report them.
+    ["a digit before the mask", ["disk", "7***"].join("-")],
+    [
+      "a digit in a long word",
+      ["task", "force-2024-management-plan"].join("-"),
+    ],
+    [
+      "an upper-case letter inside a word",
+      ["task", "forceManagementDepartment"].join("-"),
+    ],
+  ])("redacts too much rather than too little: %s", (_label, text) => {
+    // Accepted price: with a digit or an upper-case letter inside a word,
+    // the sequence no longer reads as plain words with hyphens.
+    expect(redact(text)).toContain(REDACTED);
+  });
+
+  it("only leaves alone, glued to a letter, what has no digit and no upper-case letter inside a word", () => {
+    const lowerCase = fakeLowerCaseKeyShape(40);
+
+    // Premise of ADR 0007: no real key is like this one.
+    expect(redact(`texto${lowerCase}`)).toBe(`texto${lowerCase}`);
+    expect(redact(`texto${lowerCase}`, [lowerCase])).toBe(`texto${REDACTED}`);
+    expect(redact(`texto ${lowerCase}`)).toBe(`texto ${REDACTED}`);
+    expect(redact(`texto${lowerCase}7`)).toBe(`texto${REDACTED}`);
+    expect(redact(`texto${lowerCase}Z`)).toBe(`texto${REDACTED}`);
+    expect(redact(`texto${lowerCase}-Zz`)).toBe(`texto${lowerCase}-Zz`);
+  });
+
+  it("finds a key after a hyphen inside words that are left alone", () => {
+    const lowerCase = fakeLowerCaseKeyShape();
+    const text = `task-force-management-department-${lowerCase} fim`;
+
+    expect(redact(text)).toBe(
+      `task-force-management-department-${REDACTED} fim`,
+    );
+  });
 
   it.each([
     ["bold", "**", "**"],
@@ -437,5 +495,79 @@ describe("redact: boundary before the prefix and Markdown around a key", () => {
     expect(redact(masked)).toBe(REDACTED);
     expect(redact(`(${masked})`)).toBe(`(${REDACTED})`);
     expect(findSecretSpans(masked)).toEqual([{ start: 0, end: masked.length }]);
+  });
+});
+
+// QA of ENG-44 (B6): the writer redacts what JSON.stringify produced, where a
+// key at the start of a line comes right after the "n" of "\n".
+describe("redact: a key right after a letter or digit that ends no word", () => {
+  const key = fakeOpenAiKey("m");
+  const secrets: ReadonlyArray<readonly [string, string]> = [
+    ["a key", key],
+    ["a key-shaped sequence in lower case", fakeLowerCaseKeyShape()],
+    ["a masked key", fakeMaskedOpenAiKey()],
+    [
+      "a masked key in lower case",
+      fakeMaskedOpenAiKey({ start: "abc", asterisks: 3, end: "wxyz" }),
+    ],
+  ];
+
+  describe.each(secrets)("%s", (_label, secret) => {
+    it.each(AFTER_AN_ESCAPE)("is replaced after %s", (_placement, build) => {
+      const text = build(secret);
+
+      expect(redact(text)).toBe(build(REDACTED));
+      expect(redact(text)).not.toContain(secret);
+      expect(findSecretSpans(text)).toHaveLength(1);
+    });
+  });
+
+  it.each(GLUED_TO_A_WORD)("replaces a key glued to %s", (_label, build) => {
+    const masked = fakeMaskedOpenAiKey();
+
+    expect(redact(build(key))).toBe(build(REDACTED));
+    expect(redact(build(masked))).toBe(build(REDACTED));
+  });
+
+  it.each(ORDINARY_TEXT)("keeps ordinary text unchanged: %s", (text) => {
+    const inJson = JSON.stringify({
+      resposta: `linha
+${text}	fim`,
+    });
+
+    expect(redact(text)).toBe(text);
+    expect(findSecretSpans(text)).toEqual([]);
+    expect(redact(inJson)).toBe(inJson);
+  });
+
+  it("keeps the Markdown bold around a key", () => {
+    expect(redact(`**${key}**`)).toBe(`**${REDACTED}**`);
+  });
+
+  it.each([
+    ["a Windows path", "C:\temp\task-force-management-department"],
+    ["a link", "[task-force-management-department](https://x.invalid)"],
+    ["a percentage", "100%task-force-management-department"],
+  ])("keeps a word after %s", (_label, text) => {
+    expect(redact(text)).toBe(text);
+  });
+
+  it("stays fast on millions of words that end like the prefix", () => {
+    const words = "ask-".repeat(2 * 1024 * 1024);
+    const withDigit = `${"ask-".repeat(1024 * 1024)}9 `;
+    const startedAt = performance.now();
+
+    expect(redact(words) === words).toBe(true);
+    expect(redact(`${words}***`) === `${words}***`).toBe(true);
+    expect(redact(withDigit)).toBe(`a${REDACTED} `);
+    expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+
+  it("stays fast when every word has its own digit", () => {
+    const text = `task-${"a".repeat(20)}9-`.repeat(300_000);
+    const startedAt = performance.now();
+
+    expect(redact(`${text} fim`)).toBe(`ta${REDACTED} fim`);
+    expect(performance.now() - startedAt).toBeLessThan(5000);
   });
 });
