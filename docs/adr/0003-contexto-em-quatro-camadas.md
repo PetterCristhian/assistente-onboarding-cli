@@ -27,8 +27,8 @@ Cada seção de `02-politicas.md` tem os campos fixos exigidos por F1: identific
 - `src/context/loaders.ts`: `loadGlobalInstructions`, `loadPolicies`, `loadUserProfile`, `loadCompanyData`. Cada um lê só a sua fonte. O disco e o relógio são recebidos por parâmetro; o relógio não tem valor padrão.
 - Os arquivos de `04-empresa/` entram em ordem alfabética simples pelo nome do arquivo, comparados por código de caractere (sem regras de idioma), para que a ordem seja a mesma em qualquer máquina. Só entram arquivos `.md`; um arquivo cujo nome é só a extensão (`.md`, ou `.json` na pasta dos perfis) é ignorado.
 - O perfil padrão é o primeiro de `03-usuario/` na mesma ordem alfabética.
-- Os campos de texto do perfil (`nome`, `cargo`, `area`, `gestor`) têm uma única linha: um valor com quebra de linha (LF, CR, tabulação vertical, avanço de página, U+0085, U+2028 ou U+2029) é recusado, com a mensagem `campo "<campo>" deve ter uma única linha`. Cada valor ocupa uma linha rotulada da seção do usuário, e uma quebra dentro dele forjaria outro rótulo.
-- Uma pasta de contexto vazia (`""` ou só espaços) é recusada, em vez de ser lida como a pasta atual.
+- Os campos de texto do perfil (`nome`, `cargo`, `area`, `gestor`) têm uma única linha: um valor com quebra de linha (LF, CR, tabulação vertical, avanço de página, U+0085, U+2028 ou U+2029) é recusado, com a mensagem `campo "<campo>" deve ter uma única linha`. Cada valor ocupa uma linha rotulada da seção do usuário, e uma quebra dentro dele forjaria outro rótulo. Um valor vazio, que não é texto ou que tem espaços nas pontas gera `deve ser um texto não vazio, sem espaços no início ou no fim`.
+- Uma pasta de contexto vazia (`""` ou só espaços) é recusada, em vez de ser lida como a pasta atual. O mesmo vale para o caminho do arquivo de instruções globais informado no lugar do padrão.
 - Todo arquivo de texto é normalizado na leitura: sai o BOM inicial, CRLF vira LF e os espaços das pontas são removidos.
 - Um arquivo ou pasta ausente, um arquivo vazio e um perfil inválido geram erro em português com o caminho absoluto esperado; no perfil, a mensagem cita o campo com problema.
 - `src/context/builder.ts`: `buildContext(layers)` é uma função pura (sem disco, sem rede) que devolve as seções e o texto final. As camadas saem delimitadas por marcadores explícitos, sempre na mesma ordem:
@@ -42,11 +42,11 @@ Cada seção de `02-politicas.md` tem os campos fixos exigidos por F1: identific
 
 As seções são separadas por uma linha em branco. Os documentos da camada 4 são separados entre si também por uma linha em branco, sem submarcador por arquivo, porque cada um já começa com o seu título.
 
-- `npm run contexto`, `--show-context` e `/contexto` (dentro do chat) imprimem exatamente essa saída.
+- `npm run contexto`, `--show-context` e `/contexto` (dentro do chat) imprimem exatamente essa saída. `npm run contexto` termina com código 1 quando o contexto não pode ser montado e com código 2 em um erro inesperado, sempre com uma linha de mensagem e sem stack trace.
 
 ### Dados do usuário e data atual
 
-A seção de dados do usuário é escrita em linhas rotuladas, nesta ordem: `Nome`, `Cargo`, `Área`, `Data de início`, `Gestor direto`. A última linha da seção é a data atual, no formato `Data de hoje: AAAA-MM-DD (dia da semana)`, com a data local da máquina. Sem ela o modelo não tem como responder a perguntas que dependem de há quanto tempo a pessoa começou. A data não é uma quinta camada nem um dado da empresa: é um fato sobre o momento do atendimento, e fica junto dos dados de quem pergunta. O builder recebe a data já formatada, e por isso continua puro; quem lê o relógio são os pontos de entrada (`scripts/` e a CLI). O builder recusa uma data com quebra de linha, pelo mesmo motivo dos campos do perfil, e o formatador recusa um ano fora de 1 a 9999, que não cabe em `AAAA`.
+A seção de dados do usuário é escrita em linhas rotuladas, nesta ordem: `Nome`, `Cargo`, `Área`, `Data de início`, `Gestor direto`. A última linha da seção é a data atual, no formato `Data de hoje: AAAA-MM-DD (dia da semana)`, com a data local da máquina. Sem ela o modelo não tem como responder a perguntas que dependem de há quanto tempo a pessoa começou. A data não é uma quinta camada nem um dado da empresa: é um fato sobre o momento do atendimento, e fica junto dos dados de quem pergunta. O builder recebe a data já formatada, e por isso continua puro; quem lê o relógio são os pontos de entrada (`scripts/` e a CLI). O builder recusa uma data com quebra de linha, pelo mesmo motivo dos campos do perfil, e o formatador recusa um ano fora de 1 a 9999, que não cabe em `AAAA`. O builder confere também os cinco valores do perfil, com a mesma mensagem do loader (`campo "<campo>" deve ter uma única linha`), porque um perfil pode chegar a ele sem ter passado pelo loader.
 
 ### Marcadores reservados
 
@@ -54,13 +54,15 @@ O builder recusa, com erro, qualquer conteúdo de camada que contenha um marcado
 
 A forma recusada é, para os quatro nomes de camada e sem diferenciar maiúsculas de minúsculas: `<`, espaços opcionais, uma ou mais `/` opcionais, espaços opcionais, o nome da camada como palavra inteira e qualquer coisa até o próximo `>`. Como expressão: `<\s*\/*\s*nome\b[^>]*>`. Ficam recusados, portanto, `</politicas attr>`, `<politicas/>`, `</politicas/>`, `<politicas x='1'>` e `<//politicas>`; continuam aceitos `<politicas_x>` (outro nome) e o nome escrito sem `<`.
 
+O nome também é recusado com os acentos da palavra em português, que é o deslize mais provável em um arquivo escrito nesse idioma: `instru[cç][oõ]es_globais`, `pol[ií]ticas`, `dados_do_usu[aá]rio` e `dados_da_empresa`. Assim, `</políticas>` e `<instruções_globais>` são recusados como `</politicas>` e `<instrucoes_globais>`. Os marcadores que o builder escreve continuam sendo só os sem acento.
+
 - A busca é feita em dois passos (o início do marcador e, depois, o primeiro `>`), para que um texto grande seja lido uma só vez.
 - Um início de marcador sem `>` depois dele também é recusado: no texto montado, o fechamento da própria seção o completaria.
 - Os documentos da camada 4 são verificados já unidos, de modo que um marcador que começa no fim de um arquivo e termina no início do seguinte é encontrado.
-- A mensagem cita a camada. Na camada 4, cita também o nome do documento, ou os dois documentos em que o marcador começa e termina. O marcador é citado em uma linha, cortado em 60 caracteres.
-- Rede final: depois de montar, o builder confere que o texto contém exatamente os oito marcadores, uma vez cada e na ordem fixa, e mais nada com a forma recusada.
+- A mensagem cita a camada. Na camada 4, cita também o documento em que está o início do marcador (do `<` até o nome). Só cita a junção de dois documentos quando o próprio início atravessa a fronteira entre eles (por exemplo, `<` no fim de um e `/politicas` no começo do seguinte). O marcador é citado em uma linha, cortado em 60 caracteres; quando o `>` que o fecha está em outro documento, só o início é citado, porque esse `>` pertence a um texto sem relação com o erro (uma citação em Markdown, por exemplo).
+- Rede final: depois de montar, o builder confere que o texto contém exatamente os oito marcadores canônicos (sem acento, em minúsculas), uma vez cada e na ordem fixa, e mais nada com a forma recusada.
 
-Limites conhecidos, não tratados: letras parecidas de outros alfabetos (homoglifos), caracteres de largura zero dentro do nome, o `＜` de largura total e entidades como `&lt;`. Nenhum deles forma um marcador igual ao que o builder escreve.
+Limites conhecidos, não tratados: letras parecidas de outros alfabetos (homoglifos), acentos diferentes dos listados acima ou escritos como caractere combinante separado da letra, caracteres de largura zero dentro do nome, o `＜` de largura total, entidades como `&lt;` e a barra invertida no lugar da barra (`<\politicas>`). Nenhum deles forma um marcador igual ao que o builder escreve.
 
 ### Precedência das políticas (F5)
 

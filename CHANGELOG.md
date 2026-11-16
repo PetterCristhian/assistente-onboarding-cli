@@ -44,6 +44,9 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - Os campos de texto do perfil e a data de hoje passam a ser recusados quando têm quebra de linha, que antes forjava outras linhas rotuladas na seção de dados do usuário; a mensagem cita o arquivo e o campo (ENG-47).
 - O montador de contexto passa a recusar um marcador reservado com atributo, barra a mais ou barra no fim (`</politicas attr>`, `<politicas/>`, `<//politicas>`), aberto e nunca fechado, ou partido entre dois documentos da base da empresa, e confere que o texto montado tem os oito marcadores uma vez cada. A mensagem passa a citar o documento da base da empresa, ou os dois documentos, em que o marcador está (ENG-47).
 - Os carregadores ignoram um arquivo cujo nome é só a extensão (`.json`, `.md`), recusam uma pasta de contexto vazia e recusam uma data atual com ano fora de 1 a 9999 (ENG-47).
+- O montador de contexto passa a recusar também uma quebra de linha nos cinco valores de um perfil que não passou pelo carregador, e um marcador reservado escrito com os acentos do nome da camada (`</políticas>`, `<instruções_globais>`, `<dados_do_usuário>`). Na base da empresa, a mensagem cita só o documento em que está o início do marcador, e a junção de dois documentos apenas quando o próprio início atravessa a fronteira entre eles (ENG-47).
+- Os carregadores recusam um caminho vazio para o arquivo de instruções globais, e a mensagem de um valor de perfil com espaços nas pontas passa a dizer `deve ser um texto não vazio, sem espaços no início ou no fim` (ENG-47).
+- `npm run contexto` relata um erro inesperado em uma linha (`contexto: erro inesperado: <mensagem>`), sem stack trace, e termina com código 2 (ENG-47).
 
 ### Alterado
 
