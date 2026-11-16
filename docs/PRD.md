@@ -124,7 +124,7 @@ A troca de tema já foi combinada com o professor; esta tabela serve só para o 
 - Testes contra modelo simulado/mock: a bateria de F12 roda contra o modelo real.
 - Edição da base de conhecimento ou das políticas por interface: são editadas como arquivos.
 - Painel de métricas, observabilidade, controle de custo por usuário.
-- Empacotamento/publicação como pacote instalável e pipeline de CI.
+- Empacotamento/publicação como pacote instalável.
 
 ## Métricas de sucesso
 
