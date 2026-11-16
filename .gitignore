@@ -1,0 +1,30 @@
+# Credenciais: o repositório é PÚBLICO (ver docs/adr/0007-protecao-da-credencial.md)
+.env
+.env.*
+!.env.example
+
+# Dependências
+node_modules/
+
+# Logs de sessão (outputs/ é versionado de propósito: NÃO ignorar)
+logs/
+npm-debug.log*
+
+# Artefatos de ferramentas
+coverage/
+*.tsbuildinfo
+.eslintcache
+
+# Material do curso (enunciado): não vai para o repositório público
+/modulo-03-*.pdf
+
+# Editor e sistema operacional
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Configuração local do Claude Code
+.claude/settings.local.json

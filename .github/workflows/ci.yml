@@ -1,0 +1,60 @@
+name: CI
+
+# Portão de qualidade em cada PR e em cada push na main.
+# Roda o MESMO comando do portão local: `npm run check`
+# (lint + typecheck + testes unitários + varredura de segredos).
+#
+# Este workflow NÃO usa a chave da OpenAI: nenhum secret é referenciado e
+# nenhuma chamada à API real é feita. Não adicione aqui `npm run eval`
+# (bateria contra o modelo real) nem `OPENAI_API_KEY`.
+# Decisão registrada em docs/adr/0001-stack-e-ferramentas.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint, typecheck e testes unitários
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # O esqueleto do projeto (package.json e package-lock.json) nasce na
+      # issue 1 do backlog. Até lá, o workflow passa sem executar nada.
+      - name: Verificar se o projeto Node já existe
+        id: projeto
+        run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::package.json ou package-lock.json ainda não existem (issue 1 do backlog). Verificações puladas."
+          fi
+
+      - name: Configurar Node.js
+        if: steps.projeto.outputs.existe == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependências
+        if: steps.projeto.outputs.existe == 'true'
+        run: npm ci
+
+      - name: Portão de qualidade (npm run check)
+        if: steps.projeto.outputs.existe == 'true'
+        run: npm run check
