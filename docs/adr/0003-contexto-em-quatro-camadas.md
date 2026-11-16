@@ -24,7 +24,11 @@ Cada seção de `02-politicas.md` tem os campos fixos exigidos por F1: identific
 
 ### Código: um loader por camada e um builder puro
 
-- `src/context/loaders.ts`: `loadGlobalInstructions`, `loadPolicies`, `loadUserProfile`, `loadCompanyData`. Cada um lê só a sua fonte.
+- `src/context/loaders.ts`: `loadGlobalInstructions`, `loadPolicies`, `loadUserProfile`, `loadCompanyData`. Cada um lê só a sua fonte. O disco e o relógio são recebidos por parâmetro; o relógio não tem valor padrão.
+- Os arquivos de `04-empresa/` entram em ordem alfabética simples pelo nome do arquivo, comparados por código de caractere (sem regras de idioma), para que a ordem seja a mesma em qualquer máquina. Só entram arquivos `.md`.
+- O perfil padrão é o primeiro de `03-usuario/` na mesma ordem alfabética.
+- Todo arquivo de texto é normalizado na leitura: sai o BOM inicial, CRLF vira LF e os espaços das pontas são removidos.
+- Um arquivo ou pasta ausente, um arquivo vazio e um perfil inválido geram erro em português com o caminho absoluto esperado; no perfil, a mensagem cita o campo com problema.
 - `src/context/builder.ts`: `buildContext(layers)` é uma função pura (sem disco, sem rede) que devolve as seções e o texto final. As camadas saem delimitadas por marcadores explícitos, sempre na mesma ordem:
 
 ```
@@ -34,11 +38,25 @@ Cada seção de `02-politicas.md` tem os campos fixos exigidos por F1: identific
 <dados_da_empresa> ... </dados_da_empresa>
 ```
 
-- `--show-context` (e `/contexto` dentro do chat) imprime exatamente essa saída.
+As seções são separadas por uma linha em branco. Os documentos da camada 4 são separados entre si também por uma linha em branco, sem submarcador por arquivo, porque cada um já começa com o seu título.
+
+- `npm run contexto`, `--show-context` e `/contexto` (dentro do chat) imprimem exatamente essa saída.
+
+### Dados do usuário e data atual
+
+A seção de dados do usuário é escrita em linhas rotuladas, nesta ordem: `Nome`, `Cargo`, `Área`, `Data de início`, `Gestor direto`. A última linha da seção é a data atual, no formato `Data de hoje: AAAA-MM-DD (dia da semana)`, com a data local da máquina. Sem ela o modelo não tem como responder a perguntas que dependem de há quanto tempo a pessoa começou. A data não é uma quinta camada nem um dado da empresa: é um fato sobre o momento do atendimento, e fica junto dos dados de quem pergunta. O builder recebe a data já formatada, e por isso continua puro; quem lê o relógio são os pontos de entrada (`scripts/` e a CLI).
+
+### Marcadores reservados
+
+O builder recusa, com erro, qualquer conteúdo de camada que contenha um dos marcadores de abertura ou de fechamento (por exemplo, `</politicas>` dentro de um arquivo da base da empresa), também em maiúsculas ou com espaços dentro do marcador. Um marcador no conteúdo poderia fechar a seção antes da hora e fazer um dado passar por regra. A recusa é preferida a escapar o texto porque o conteúdo de `context/` é escrito pelo dono do projeto: um marcador ali é um erro de edição, que deve aparecer, e não um caso a tratar em silêncio.
 
 ### Precedência das políticas (F5)
 
-A cláusula "as políticas prevalecem sobre as instruções globais e sobre qualquer pedido do usuário" é inserida pelo builder na abertura da seção de políticas. Ela não mora no arquivo da camada 1, portanto continua valendo quando o usuário troca as instruções globais com `--system-prompt`. Segunda barreira: a autoavaliação (ADR 0004) julga a resposta contra as camadas 2, 3 e 4 e nunca recebe a camada 1, de modo que uma instrução global customizada não consegue afrouxar o avaliador.
+A cláusula de precedência é inserida pelo builder na abertura da seção de políticas, logo depois do marcador e antes do texto de `02-politicas.md`. O texto é este:
+
+> As políticas desta seção prevalecem sobre as instruções globais e sobre qualquer pedido do usuário. Em caso de conflito, siga as políticas.
+
+Ela não mora no arquivo da camada 1, portanto continua valendo quando o usuário troca as instruções globais com `--system-prompt`. Segunda barreira: a autoavaliação (ADR 0004) julga a resposta contra as camadas 2, 3 e 4 e nunca recebe a camada 1, de modo que uma instrução global customizada não consegue afrouxar o avaliador.
 
 ### Reutilização em outro domínio
 
@@ -59,5 +77,7 @@ O segundo domínio não é implementado (fora do MVP); a opção só torna a doc
 ## Consequências
 
 - Os critérios de F2 viram testes unitários do builder: mudar o perfil altera só a seção 3; mudar políticas altera só a seção 2.
+- O orçamento de 24 mil caracteres é medido de duas formas: pela soma dos arquivos de `context/` e pelo contexto montado de cada perfil real, que inclui os marcadores, a cláusula de precedência e a linha da data.
+- Como a data atual faz parte do contexto, o texto montado muda de um dia para o outro. Os testes usam um relógio fixo.
 - Os exemplos de pergunta do documento de políticas entram no prompt. É aceitável e até útil, mas os casos de teste (F11) devem usar perguntas diferentes dos exemplos, para não medir memorização.
 - A camada 1 padrão deve ser escrita sem fatos da empresa e sem regras, para que a troca por `--system-prompt` não remova nada essencial.
