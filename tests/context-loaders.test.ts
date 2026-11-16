@@ -276,7 +276,7 @@ describe("loadUserProfile", () => {
     const profile = { ...VALID_PROFILE, nome };
 
     expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
-      `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ser um texto não vazio.`,
+      `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ser um texto não vazio, sem espaços no início ou no fim.`,
     );
   });
 
@@ -330,7 +330,7 @@ describe("loadUserProfile", () => {
       const profile = { ...VALID_PROFILE, nome: "\n\n" };
 
       expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
-        `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ser um texto não vazio.`,
+        `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ser um texto não vazio, sem espaços no início ou no fim.`,
       );
     });
 
@@ -356,7 +356,7 @@ describe("loadUserProfile", () => {
     expect(
       contextErrorMessage(() => load(profileJson(profile))).split("\n"),
     ).toEqual([
-      `Perfil inválido em ${FIRST_PROFILE}: campo "cargo" deve ser um texto não vazio.`,
+      `Perfil inválido em ${FIRST_PROFILE}: campo "cargo" deve ser um texto não vazio, sem espaços no início ou no fim.`,
       `Perfil inválido em ${FIRST_PROFILE}: campo "area" é obrigatório.`,
       `Perfil inválido em ${FIRST_PROFILE}: campo "dataInicio" deve ser uma data existente no formato AAAA-MM-DD.`,
       `Perfil inválido em ${FIRST_PROFILE}: campo "apelido" não é reconhecido.`,
@@ -697,6 +697,30 @@ describe("resolveContextSources", () => {
       expect(path.startsWith(join(otherRoot, "0"))).toBe(true);
     }
   });
+
+  it.each(["", " ", "  \t "])(
+    'refuses the empty file of global instructions "%s"',
+    (file) => {
+      const reader = fakeReader(madeUpFiles());
+      const options = { contextDir: ROOT, globalInstructionsFile: file };
+
+      expect(
+        contextErrorMessage(() => resolveContextSources(options, reader)),
+      ).toBe(
+        "O arquivo de instruções globais informado está vazio: informe o caminho de um arquivo.",
+      );
+      expect(
+        contextErrorMessage(() =>
+          loadContextLayers(options, {
+            reader,
+            now: () => new Date(2020, 1, 3, 12, 0),
+          }),
+        ),
+      ).toContain("arquivo de instruções globais");
+      expect(reader.lists).toEqual([]);
+      expect(reader.reads).toEqual([]);
+    },
+  );
 
   it.each(["", " ", "  \t "])(
     'refuses the empty context folder "%s"',

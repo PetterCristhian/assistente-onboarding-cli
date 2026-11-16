@@ -198,6 +198,14 @@ export function resolveContextSources(
     );
   }
 
+  // An empty path would be resolved to the current folder.
+  const { globalInstructionsFile } = options;
+  if (globalInstructionsFile?.trim() === "") {
+    throw new ContextError(
+      "O arquivo de instruções globais informado está vazio: informe o caminho de um arquivo.",
+    );
+  }
+
   refuseEmptyContextDir(options.contextDir ?? DEFAULT_CONTEXT_DIR);
   const contextDir = resolve(options.contextDir ?? DEFAULT_CONTEXT_DIR);
   const profileDir = join(contextDir, USER_PROFILE_DIR);
@@ -214,9 +222,9 @@ export function resolveContextSources(
 
   return {
     globalInstructionsFile:
-      options.globalInstructionsFile === undefined
+      globalInstructionsFile === undefined
         ? join(contextDir, GLOBAL_INSTRUCTIONS_FILE)
-        : resolve(options.globalInstructionsFile),
+        : resolve(globalInstructionsFile),
     policiesFile: join(contextDir, POLICIES_FILE),
     userProfileFile,
     companyDataDir: join(contextDir, COMPANY_DATA_DIR),
@@ -286,7 +294,10 @@ function describeProfileProblems(
     } else if (isMultilineText(raw[field])) {
       lines.push(`${prefix} ${singleLineFieldProblem(field)}`);
     } else {
-      lines.push(`${prefix} campo "${field}" deve ser um texto não vazio.`);
+      // Also the message of a value padded with blanks, which is not empty.
+      lines.push(
+        `${prefix} campo "${field}" deve ser um texto não vazio, sem espaços no início ou no fim.`,
+      );
     }
   }
   for (const key of unrecognized) {
