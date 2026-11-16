@@ -1,6 +1,6 @@
 # Backlog do MVP
 
-> Status: PROPOSTA (16/11/2026), aguardando aprovação do dono.
+> Status: APROVADO pelo dono em 16/11/2026. Issues no Linear: ENG-43 a ENG-61, projeto https://linear.app/veracompany/project/chatbot-de-onboarding-cli-53ebabade448
 > 19 issues, em ordem de dependência, cada uma estimada em menos de 1 dia.
 > Referências: `docs/PRD.md` (F1–F15), `docs/ARQUITETURA.md`, `docs/adr/`.
 
@@ -59,7 +59,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 1 — Montar o esqueleto do projeto
+## Issue 1 (ENG-43) — Montar o esqueleto do projeto
 
 **Descrição.** Criar o projeto TypeScript vazio, rodando, com lint, verificação de tipos e um teste de exemplo. O portão é o comando `npm run check`, rodado localmente e também pelo CI.
 
@@ -82,7 +82,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 2 — Implementar configuração por ambiente e redação de segredos
+## Issue 2 (ENG-44) — Implementar configuração por ambiente e redação de segredos
 
 **Descrição.** Criar o único leitor de variáveis de ambiente, a função de redação de credenciais, o escritor único de arquivos para `outputs/` e `logs/`, e a varredura de segredos. Ver ADR 0007.
 
@@ -100,7 +100,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 3 — Escrever o documento de políticas P1–P5
+## Issue 3 (ENG-45) — Escrever o documento de políticas P1–P5
 
 **Descrição.** Redigir `context/02-politicas.md`, que é ao mesmo tempo o entregável "documento de políticas" e a camada 2 enviada ao modelo. Conteúdo, sem código. Ver ADR 0003.
 
@@ -116,7 +116,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 4 — Escrever instruções globais, perfis e base de conhecimento da empresa fictícia
+## Issue 4 (ENG-46) — Escrever instruções globais, perfis e base de conhecimento da empresa fictícia
 
 **Descrição.** Criar o conteúdo das camadas 1, 3 e 4 e a mensagem segura fixa. Tudo inventado (decisão D1 do PRD). Conteúdo, sem código.
 
@@ -135,7 +135,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 5 — Implementar carregadores e montador de contexto em camadas
+## Issue 5 (ENG-47) — Implementar carregadores e montador de contexto em camadas
 
 **Descrição.** Implementar `src/context/` (um loader por camada e o builder puro) e o comando que exibe o contexto montado. Ver ADR 0003.
 
@@ -153,7 +153,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 6 — Implementar o cliente OpenAI com streaming
+## Issue 6 (ENG-48) — Implementar o cliente OpenAI com streaming
 
 **Descrição.** Criar a interface `LlmClient` e sua implementação com o SDK `openai` (Responses API), com geração em streaming e chamada com saída estruturada. Inclui teste de fumaça contra a API real para validar as premissas da ADR 0002.
 
@@ -171,7 +171,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 7 — Implementar o chat interativo com histórico e comandos
+## Issue 7 (ENG-49) — Implementar o chat interativo com histórico e comandos
 
 **Descrição.** Implementar o laço do chat no terminal, a sessão com histórico em memória e a exibição em streaming. Ainda sem retry elaborado e sem autoavaliação (issues 9 e 11).
 
@@ -191,7 +191,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 8 — Tornar o system prompt, o perfil e o diretório de contexto configuráveis
+## Issue 8 (ENG-50) — Tornar o system prompt, o perfil e o diretório de contexto configuráveis
 
 **Descrição.** Adicionar as opções de inicialização que trocam camadas sem alterar código: `--system-prompt`, `--perfil`, `--context-dir`, `--show-context`, `--verbose`.
 
@@ -208,7 +208,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 9 — Implementar classificação de erros e retry com backoff
+## Issue 9 (ENG-51) — Implementar classificação de erros e retry com backoff
 
 **Descrição.** Implementar `src/llm/errors.ts` e `src/llm/retry.ts` e ligar `withRetry` a todas as chamadas do `LlmClient`. Cobre F8 e F9a. Ver ADR 0005.
 
@@ -229,7 +229,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 10 — Implementar o rate limit local
+## Issue 10 (ENG-52) — Implementar o rate limit local
 
 **Descrição.** Implementar o limitador de janela deslizante em `src/chat/rate-limiter.ts` e aplicá-lo às perguntas do usuário. Cobre F9b. Ver ADR 0005.
 
@@ -246,7 +246,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 11 — Implementar o self-critique com retratação visível
+## Issue 11 (ENG-53) — Implementar o self-critique com retratação visível
 
 **Descrição.** Implementar `src/chat/critique.ts` e integrar ao pipeline do turno: rascunho em streaming, autoavaliação, revisão única e mensagem segura fixa. Inclui o modo detalhado e o log da sessão. Cobre F10. Ver ADR 0004.
 
@@ -267,7 +267,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 12 — Criar a demonstração de falhas e gravar a evidência de retry e rate limit
+## Issue 12 (ENG-54) — Criar a demonstração de falhas e gravar a evidência de retry e rate limit
 
 **Descrição.** Criar `scripts/demo-falhas.ts`: um servidor HTTP local que simula respostas de erro do provedor, usado pelo cliente real via `baseURL`, e gravar a transcrição como evidência. Resolve o ponto do PRD sobre F9a não ser reproduzível manualmente. Ver ADR 0005.
 
@@ -284,7 +284,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 13 — Definir os 12 casos de teste
+## Issue 13 (ENG-55) — Definir os 12 casos de teste
 
 **Descrição.** Escrever `evals/casos.json` com os 12 casos e o esquema `zod` que o valida. Conteúdo mais um esquema; o runner vem na issue 14. Ver ADR 0006.
 
@@ -301,7 +301,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 14 — Implementar o runner da bateria e a gravação dos outputs
+## Issue 14 (ENG-56) — Implementar o runner da bateria e a gravação dos outputs
 
 **Descrição.** Implementar `evals/runner.ts` e as checagens determinísticas de `evals/verdict.ts`: executar os casos pelo mesmo pipeline do chat e gravar `execucoes.jsonl`. Cobre F12. Ver ADR 0006.
 
@@ -321,7 +321,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 15 — Implementar o juiz e o relatório de consistência
+## Issue 15 (ENG-57) — Implementar o juiz e o relatório de consistência
 
 **Descrição.** Completar o veredito com o juiz por rubrica e gerar `resumo.json`, `RELATORIO.md` e `docs/CASOS-DE-TESTE.md`. Cobre F13. Ver ADR 0006.
 
@@ -339,7 +339,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 16 — Executar a bateria, iterar no contexto e versionar os outputs
+## Issue 16 (ENG-58) — Executar a bateria, iterar no contexto e versionar os outputs
 
 **Descrição.** Rodar a bateria completa com a chave do dono, corrigir o contexto quando houver falhas e versionar cada execução. Trabalho de engenharia de contexto, não de código. Requer `.env` com a chave real na máquina de quem executa.
 
@@ -357,7 +357,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 17 — Escrever a análise de comportamento
+## Issue 17 (ENG-59) — Escrever a análise de comportamento
 
 **Descrição.** Redigir `docs/ANALISE.md` a partir dos outputs e do registro de iterações. Cobre F14.
 
@@ -375,7 +375,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 18 — Escrever o README e o guia de reuso
+## Issue 18 (ENG-60) — Escrever o README e o guia de reuso
 
 **Descrição.** Escrever `README.md` (F15) e `docs/REUSO.md` (documentação de reutilização de F2).
 
@@ -393,7 +393,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ---
 
-## Issue 19 — Fazer a verificação final de entrega e publicar o repositório
+## Issue 19 (ENG-61) — Fazer a verificação final de entrega e publicar o repositório
 
 **Descrição.** Validar a entrega a partir de um clone limpo, conferir que não há credencial em nenhum ponto do histórico e tornar o repositório público. A publicação é ação do dono.
 
