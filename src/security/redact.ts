@@ -23,13 +23,23 @@ export function createSecretPattern(): RegExp {
 export type Redactor = (text: string) => string;
 
 /**
- * Replaces by `[REDACTED]` every exact occurrence of the given secrets and
- * every sequence shaped like a key.
+ * Exact secrets shorter than this (after trimming) are ignored. Eight is far
+ * below any real key (the ones of the API have more than 40 characters) and
+ * long enough not to match ordinary words or pieces of them by accident.
+ * The key-shaped pattern does not depend on this.
+ */
+export const MIN_EXACT_SECRET_LENGTH = 8;
+
+/**
+ * Replaces by `[REDACTED]` every exact occurrence of the given secrets (the
+ * ones with at least MIN_EXACT_SECRET_LENGTH characters) and every sequence
+ * shaped like a key.
  */
 export function redact(text: string, secrets: readonly string[] = []): string {
-  // An empty secret would make split("") tear the text apart.
+  // An empty secret would make split("") tear the text apart, and a very
+  // short one would replace ordinary letters and words all over the text.
   const exactSecrets = secrets
-    .filter((secret) => secret.trim() !== "")
+    .filter((secret) => secret.trim().length >= MIN_EXACT_SECRET_LENGTH)
     .sort((a, b) => b.length - a.length);
 
   let result = text;

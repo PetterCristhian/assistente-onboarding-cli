@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MIN_EXACT_SECRET_LENGTH,
   REDACTED,
   createRedactor,
   createSecretPattern,
@@ -56,7 +57,7 @@ describe("redact", () => {
   });
 
   it("replaces the longest registered secret first", () => {
-    const short = "segredo";
+    const short = "segredo-";
     const long = "segredo-completo";
 
     expect(redact(`x ${long} y`, [short, long])).toBe(`x ${REDACTED} y`);
@@ -101,6 +102,36 @@ describe("redact", () => {
     expect(first).not.toBe(second);
     expect(first.global).toBe(true);
     expect(first.source).toBe(second.source);
+  });
+});
+
+describe("redact: exact secrets that are too short", () => {
+  const text = "a chave x9 abre a caixa; 1234567 e 12345678.";
+
+  it.each([["x"], ["a"], ["x9"], ["1234567"], [" 1234567 "]])(
+    "ignores the exact secret %j instead of tearing the text apart",
+    (secret) => {
+      expect(redact(text, [secret])).toBe(text);
+      expect(createRedactor([secret])(text)).toBe(text);
+    },
+  );
+
+  it("redacts an exact secret with the minimum length", () => {
+    const secret = "12345678";
+
+    expect(secret).toHaveLength(MIN_EXACT_SECRET_LENGTH);
+    expect(redact(text, [secret])).toBe(
+      `a chave x9 abre a caixa; 1234567 e ${REDACTED}.`,
+    );
+  });
+
+  it("keeps the base pattern and the longer secrets working", () => {
+    const key = fakeOpenAiKey();
+    const redactor = createRedactor(["a", "chave-curta-123"]);
+
+    expect(redactor(`a ${key} e a chave-curta-123`)).toBe(
+      `a ${REDACTED} e a ${REDACTED}`,
+    );
   });
 });
 
@@ -193,7 +224,10 @@ describe("redact: hostile inputs", () => {
   });
 
   it("redacts both when a secret is a substring of another", () => {
-    const result = redact("abcdef abc", ["abc", "abcdef"]);
+    const result = redact("abcdefgh-ijkl abcdefgh", [
+      "abcdefgh",
+      "abcdefgh-ijkl",
+    ]);
 
     expect(result).toBe(`${REDACTED} ${REDACTED}`);
   });
