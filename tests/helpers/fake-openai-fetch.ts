@@ -21,6 +21,8 @@ export type FakeFetchStep =
       readonly kind: "sse";
       readonly events: readonly SseEvent[];
       readonly hang?: boolean;
+      /** The body does not react to the abort signal of the request. */
+      readonly ignoreAbort?: boolean;
     }
   /** A JSON answer: a success, or an HTTP error with a status. */
   | {
@@ -127,10 +129,17 @@ export function createFakeOpenAiFetch(
     switch (step.kind) {
       case "sse":
         return Promise.resolve(
-          new Response(sseBody(step.events, step.hang === true, signal), {
-            status: 200,
-            headers: { "content-type": "text/event-stream" },
-          }),
+          new Response(
+            sseBody(
+              step.events,
+              step.hang === true,
+              step.ignoreAbort === true ? undefined : signal,
+            ),
+            {
+              status: 200,
+              headers: { "content-type": "text/event-stream" },
+            },
+          ),
         );
       case "json":
         return Promise.resolve(

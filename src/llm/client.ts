@@ -1,7 +1,7 @@
 // The only path to the provider (CLAUDE.md, architecture rule 2): the
 // LlmClient interface that the rest of the project depends on.
 // See docs/adr/0002-modelo-e-api-openai.md.
-import OpenAI from "openai";
+import OpenAI, { APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import type {
   EasyInputMessage,
@@ -130,6 +130,8 @@ const MESSAGES = {
 // things, besides fixed text, that go into a message.
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,39}$/;
 const MAX_FIELDS_IN_MESSAGE = 5;
+// The longest delay that a timer accepts; a longer one would fire at once.
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function withDetail(message: string, label: string, detail: unknown): string {
   return typeof detail === "string" && IDENTIFIER.test(detail)
@@ -206,6 +208,10 @@ function outsideSchemaMessage(error: z.ZodError): string {
     : `${MESSAGES.outsideSchema}.`;
 }
 
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 function toInput(messages: readonly LlmMessage[]): EasyInputMessage[] {
   if (messages.length === 0) {
     throw new TypeError("LlmRequest.input must not be empty.");
@@ -222,6 +228,7 @@ export function createOpenAiLlmClient(
   config: LlmClientConfig,
   deps: OpenAiClientDeps = {},
 ): LlmClient {
+  const deadlineMs = Math.min(config.requestTimeoutMs, MAX_TIMER_DELAY_MS);
   const sdk = new OpenAI({
     apiKey: config.openaiApiKey,
     adminAPIKey: null,
@@ -231,17 +238,68 @@ export function createOpenAiLlmClient(
     baseURL: deps.baseURL ?? DEFAULT_BASE_URL,
     // The retry is ours (ADR 0005): the SDK never tries again by itself.
     maxRetries: 0,
-    timeout: config.requestTimeoutMs,
+    timeout: deadlineMs,
     logLevel: "off",
     ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
   });
   const defaultModel = config.openaiModel;
   const reasoning = { effort: config.openaiReasoningEffort };
 
-  async function streamText(
+  /**
+   * Runs one call under the total deadline (REQUEST_TIMEOUT_MS), which also
+   * covers the body of a stream: the timeout of the SDK ends when the headers
+   * arrive. When the deadline or the caller interrupts the call, the SDK may
+   * just end the stream in silence, so the outcome is decided here: a timeout
+   * error for the deadline, an abort error for the caller.
+   */
+  async function withDeadline<T>(
+    callerSignal: AbortSignal | undefined,
+    run: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const deadline = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      deadline.abort();
+    }, deadlineMs);
+    const signal =
+      callerSignal === undefined
+        ? deadline.signal
+        : AbortSignal.any([callerSignal, deadline.signal]);
+    // The call ends when it is interrupted, even if what runs under it does
+    // not react to the signal.
+    const interrupted = new Promise<never>((_resolve, reject) => {
+      const onAbort = () => reject(new APIUserAbortError());
+      if (signal.aborted) {
+        onAbort();
+      } else {
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+    try {
+      return await Promise.race([run(signal), interrupted]);
+    } catch (error) {
+      if (timedOut) {
+        throw error instanceof APIConnectionTimeoutError
+          ? error
+          : new APIConnectionTimeoutError();
+      }
+      if (callerSignal?.aborted === true) {
+        throw error instanceof APIUserAbortError
+          ? error
+          : new APIUserAbortError();
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function streamTextUnder(
     request: StreamTextRequest,
+    input: EasyInputMessage[],
+    signal: AbortSignal,
   ): Promise<LlmTextResult> {
-    const input = toInput(request.input);
     const stream = await sdk.responses.create(
       {
         model: request.model ?? defaultModel,
@@ -251,7 +309,7 @@ export function createOpenAiLlmClient(
         reasoning,
         stream: true,
       },
-      { signal: request.signal },
+      { signal },
     );
 
     // The final event carries no text: the text is the pieces, joined.
@@ -259,6 +317,11 @@ export function createOpenAiLlmClient(
     let chunks = 0;
     let completed: Response | undefined;
     for await (const event of stream) {
+      // Nothing is delivered after the call was interrupted. Leaving the
+      // loop also makes the SDK abort the request.
+      if (signal.aborted) {
+        break;
+      }
       switch (event.type) {
         case "response.output_text.delta":
           text += event.delta;
@@ -291,10 +354,23 @@ export function createOpenAiLlmClient(
     };
   }
 
-  async function generateStructured<S extends z.ZodType>(
+  // Not `async`: a refused request is a rejected promise, like the rest.
+  function streamText(request: StreamTextRequest): Promise<LlmTextResult> {
+    try {
+      const input = toInput(request.input);
+      return withDeadline(request.signal, (signal) =>
+        streamTextUnder(request, input, signal),
+      );
+    } catch (error) {
+      return Promise.reject(asError(error));
+    }
+  }
+
+  async function generateStructuredUnder<S extends z.ZodType>(
     request: StructuredRequest<S>,
+    input: EasyInputMessage[],
+    signal: AbortSignal,
   ): Promise<LlmStructuredResult<z.infer<S>>> {
-    const input = toInput(request.input);
     let response: Response & { output_parsed: unknown };
     try {
       response = await sdk.responses.parse(
@@ -306,7 +382,7 @@ export function createOpenAiLlmClient(
           reasoning,
           text: { format: zodTextFormat(request.schema, request.schemaName) },
         },
-        { signal: request.signal },
+        { signal },
       );
     } catch (error) {
       // The SDK parses the output while reading the answer, so the model that
@@ -340,6 +416,19 @@ export function createOpenAiLlmClient(
       model: response.model,
       ...toUsage(response.usage),
     };
+  }
+
+  function generateStructured<S extends z.ZodType>(
+    request: StructuredRequest<S>,
+  ): Promise<LlmStructuredResult<z.infer<S>>> {
+    try {
+      const input = toInput(request.input);
+      return withDeadline(request.signal, (signal) =>
+        generateStructuredUnder(request, input, signal),
+      );
+    } catch (error) {
+      return Promise.reject(asError(error));
+    }
   }
 
   return Object.freeze({ streamText, generateStructured });
