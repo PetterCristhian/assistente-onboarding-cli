@@ -31,9 +31,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - Um `.env` com BOM em que a chave não está na primeira linha passa a gerar a orientação de salvar em UTF-8 sem BOM, citando a variável que não foi lida, em vez de ignorar essa variável em silêncio (ENG-44).
 - A mensagem de configuração inválida não exibe mais a chave quando `OPENAI_API_KEY` tem aspas malformadas (ENG-44).
 - `npm run check:secrets` volta a encontrar uma chave UTF-16 colada a um número ímpar de bytes (o que o `>>` do Windows PowerShell 5 faz com um arquivo UTF-8 sem quebra de linha final) ou logo após um caractere cujo byte baixo é uma quebra de linha, e passa a encontrar uma chave em UTF-32 (ENG-44).
-- `redact()` e o `npm run check:secrets` deixam de tomar por chave o fim de palavras comuns (`task-`, `disk-`, `helpdesk-` seguidos de texto longo ou de asteriscos): o prefixo só conta quando não vem logo depois de uma letra ou dígito ASCII. Em contrapartida, uma chave colada a uma letra ou dígito só é redigida pelo valor exato da chave em uso e não é acusada pela varredura. O negrito ou itálico de Markdown em volta de uma chave é preservado (ENG-44).
+- `redact()` e o `npm run check:secrets` deixam de tomar por chave o fim de palavras comuns (`task-`, `disk-`, `helpdesk-` seguidos de texto longo ou de asteriscos). O negrito ou itálico de Markdown em volta de uma chave é preservado (ENG-44).
 - `OPENAI_API_KEY` com menos de 8 caracteres passa a ser recusada, com uma mensagem que não exibe o valor (ENG-44).
 - `loadConfig` não remove nem acusa mais uma variável com nome iniciado por BOM que já estava no ambiente antes de carregar o `.env`, e não falha com `TypeError` quando o ambiente recebido não pode ser alterado (ENG-44).
+- `redact()` e o `npm run check:secrets` voltam a encontrar uma chave colada a uma letra ou dígito: logo depois de uma sequência de escape (`\n`, `\t`, `\r`, `\uXXXX`, `\xXX`, `%XX`, cor ANSI), de `Bearer` sem espaço ou de um número. Só fica intacta a sequência que vem depois de uma letra ou dígito e não tem dígito nem maiúscula no meio de uma palavra, isto é, palavras com hífen como `task-force-management-department` (ENG-44).
+- `writeJson` e `appendJsonLine` redigem cada string (valores e nomes de propriedade) antes de serializar, além do texto final: uma chave no início de uma linha de uma string, que o JSON grava como `\n` seguido da chave, não fica mais inteira no arquivo (ENG-44).
+- A mensagem de configuração inválida não exibe mais o valor de outra variável quando ele contém o valor de `OPENAI_API_KEY`, mesmo que a chave seja curta demais para ser redigida (ENG-44).
 
 ### Alterado
 
