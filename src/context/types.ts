@@ -27,6 +27,11 @@ export function hasLineBreak(value: string): boolean {
   return LINE_BREAK.test(value);
 }
 
+/** The problem of a profile value with a line break, as the user reads it. */
+export function singleLineFieldProblem(field: string): string {
+  return `campo "${field}" deve ter uma única linha.`;
+}
+
 const filledText = z
   .string()
   .refine(

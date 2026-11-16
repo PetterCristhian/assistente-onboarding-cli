@@ -3,10 +3,12 @@
 import {
   ContextError,
   hasLineBreak,
+  singleLineFieldProblem,
   type BuiltContext,
   type CompanyDocument,
   type ContextLayers,
   type ContextSections,
+  type UserProfile,
 } from "./types.js";
 
 export const LAYER_MARKERS = {
@@ -40,8 +42,26 @@ const LAYER_NAMES: Record<LayerKey, string> = {
   companyData: "dados da empresa",
 };
 
+// In the order of the labeled lines of the user section.
+const PROFILE_FIELDS = [
+  "nome",
+  "cargo",
+  "area",
+  "dataInicio",
+  "gestor",
+] as const satisfies readonly (keyof UserProfile)[];
+
 const DOCUMENT_SEPARATOR = "\n\n";
 const SECTION_SEPARATOR = "\n\n";
+
+// The names as they are refused in the content: the one the builder writes
+// and the same word with its accents, the likely slip in a text in Portuguese.
+const RESERVED_NAME_FORMS: Record<LayerKey, string> = {
+  globalInstructions: "instru[cç][oõ]es_globais",
+  policies: "pol[ií]ticas",
+  userData: "dados_do_usu[aá]rio",
+  companyData: "dados_da_empresa",
+};
 
 // The reserved form is <\s*\/*\s*NAME\b[^>]*>, ignoring case, for the four
 // names: "<", blanks, slashes, blanks, the name of a layer as a whole word
@@ -50,10 +70,11 @@ const SECTION_SEPARATOR = "\n\n";
 // ">" after it, so that a long text never makes the search go back over
 // itself. A start with no ">" is refused too: in the assembled text the end
 // of its own section would close it.
-// Known limit: look-alike letters, zero-width characters, the full-width
-// "<" and entities such as "&lt;" are not seen as a marker.
+// Known limit: look-alike letters of other alphabets, accents written as
+// combining marks, zero-width characters, the full-width "<", entities such
+// as "&lt;" and a backslash for the slash are not seen as a marker.
 const RESERVED_MARKER_START = new RegExp(
-  `<\\s*(?:/+\\s*)?(?:${Object.values(LAYER_MARKERS).join("|")})\\b`,
+  `<\\s*(?:/+\\s*)?(?:${LAYER_ORDER.map((layer) => RESERVED_NAME_FORMS[layer]).join("|")})\\b`,
   "gi",
 );
 
@@ -61,6 +82,8 @@ const QUOTED_MARKER_LIMIT = 60;
 
 interface FoundMarker {
   readonly start: number;
+  /** The position right after the name of the layer. */
+  readonly nameEnd: number;
   /** The position right after the marker. */
   readonly end: number;
   readonly text: string;
@@ -73,10 +96,15 @@ function findReservedMarker(text: string, from = 0): FoundMarker | undefined {
   if (start === null) {
     return undefined;
   }
-  const startEnd = start.index + start[0].length;
-  const close = text.indexOf(">", startEnd);
-  const end = close === -1 ? startEnd : close + 1;
-  return { start: start.index, end, text: text.slice(start.index, end) };
+  const nameEnd = start.index + start[0].length;
+  const close = text.indexOf(">", nameEnd);
+  const end = close === -1 ? nameEnd : close + 1;
+  return {
+    start: start.index,
+    nameEnd,
+    end,
+    text: text.slice(start.index, end),
+  };
 }
 
 /** The marker as it is quoted in a message: one line, never a long one. */
@@ -100,10 +128,29 @@ function refuseReservedMarkers(layer: LayerKey, contents: string[]): void {
   }
 }
 
+/** The index of the document that holds a position of the joined text. */
+function documentIndexAt(
+  documents: readonly CompanyDocument[],
+  position: number,
+): number {
+  let offset = 0;
+  for (const [index, document] of documents.entries()) {
+    const end = offset + document.content.length;
+    if (position >= offset && position < end) {
+      return index;
+    }
+    offset = end + DOCUMENT_SEPARATOR.length;
+  }
+  return -1;
+}
+
 /**
  * The company documents are checked as the text they become, so that a marker
- * that starts in one and ends in another is found. The message names the
- * document, or the two where the marker starts and ends.
+ * that starts in one and ends in another is found. The place is given by the
+ * start of the marker ("<" up to the name), which is what the author wrote
+ * wrong: the document that holds it, or the two documents when the start
+ * itself goes from one to another. A ">" found in another document is the
+ * first one of an unrelated text, so it is neither quoted nor named.
  */
 function refuseReservedMarkersInDocuments(
   documents: readonly CompanyDocument[],
@@ -114,31 +161,26 @@ function refuseReservedMarkersInDocuments(
     return;
   }
 
-  // A marker starts with "<" and ends with ">" or a letter, so both of its
-  // ends are inside a document and never in the separator.
-  const last = found.end - 1;
-  let first: string | undefined;
-  let final: string | undefined;
-  let offset = 0;
-  for (const document of documents) {
-    const end = offset + document.content.length;
-    if (found.start >= offset && found.start < end) {
-      first = document.name;
-    }
-    if (last >= offset && last < end) {
-      final = document.name;
-    }
-    offset = end + DOCUMENT_SEPARATOR.length;
-  }
+  // The start begins with "<" and ends with a letter, and a marker ends with
+  // ">" or a letter: these positions are inside a document, never in the
+  // separator.
+  const first = documentIndexAt(documents, found.start);
+  const last = documentIndexAt(documents, found.nameEnd - 1);
+  const closedInPlace = documentIndexAt(documents, found.end - 1) === last;
+  const quoted = closedInPlace
+    ? found.text
+    : body.slice(found.start, found.nameEnd);
 
+  const firstName = documents[first]?.name;
+  const lastName = documents[last]?.name;
   const place =
-    first === undefined || final === undefined
+    firstName === undefined || lastName === undefined
       ? ""
-      : first === final
-        ? `, no documento "${first}",`
-        : `, na junção dos documentos "${first}" e "${final}",`;
+      : first === last
+        ? `, no documento "${firstName}",`
+        : `, na junção dos documentos "${firstName}" e "${lastName}",`;
   throw new ContextError(
-    `A camada "${LAYER_NAMES.companyData}" contém${place} o marcador reservado "${quoteMarker(found.text)}", que não pode aparecer no conteúdo.`,
+    `A camada "${LAYER_NAMES.companyData}" contém${place} o marcador reservado "${quoteMarker(quoted)}", que não pode aparecer no conteúdo.`,
   );
 }
 
@@ -179,7 +221,8 @@ export function assertLayerMarkers(text: string): void {
 }
 
 export function buildContext(layers: ContextLayers): BuiltContext {
-  const { nome, cargo, area, dataInicio, gestor } = layers.userProfile;
+  const { userProfile } = layers;
+  const { nome, cargo, area, dataInicio, gestor } = userProfile;
   // Checked as one text: a marker may start in a document and end in the next.
   const companyBody = layers.companyData
     .map((document) => document.content)
@@ -197,8 +240,15 @@ export function buildContext(layers: ContextLayers): BuiltContext {
   ]);
   refuseReservedMarkersInDocuments(layers.companyData, companyBody);
 
-  // The loader of the profile refuses a line break in its values; the date
-  // comes from the entry point and is checked here.
+  // Each value takes one labeled line. The loader of the profile refuses a
+  // line break too, but a profile may reach the builder from another caller.
+  for (const field of PROFILE_FIELDS) {
+    if (hasLineBreak(userProfile[field])) {
+      throw new ContextError(
+        `Perfil inválido: ${singleLineFieldProblem(field)}`,
+      );
+    }
+  }
   if (hasLineBreak(layers.currentDate)) {
     throw new ContextError("A data de hoje deve ter uma única linha.");
   }

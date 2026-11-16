@@ -8,6 +8,7 @@ import type { z } from "zod";
 import {
   ContextError,
   hasLineBreak,
+  singleLineFieldProblem,
   userProfileSchema,
   type CompanyDocument,
   type ContextLayers,
@@ -283,7 +284,7 @@ function describeProfileProblems(
         `${prefix} campo "${field}" deve ser uma data existente no formato AAAA-MM-DD.`,
       );
     } else if (isMultilineText(raw[field])) {
-      lines.push(`${prefix} campo "${field}" deve ter uma única linha.`);
+      lines.push(`${prefix} ${singleLineFieldProblem(field)}`);
     } else {
       lines.push(`${prefix} campo "${field}" deve ser um texto não vazio.`);
     }
