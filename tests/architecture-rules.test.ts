@@ -85,6 +85,42 @@ describe("architecture rules", () => {
     expect(holders).toEqual(["src/config/env.ts"]);
   });
 
+  // Architecture rule 2: one path to the provider. The half of the rule about
+  // withRetry comes with the retry itself (ENG-51).
+  it("imports the SDK of the provider only in src/llm/client.ts", () => {
+    const importers = filesMatching(
+      listTypeScriptFiles("src", "evals", "scripts"),
+      /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["'`]openai(?:\/[^"'`]*)?["'`]/,
+    );
+
+    expect(importers).toEqual(["src/llm/client.ts"]);
+  });
+
+  it("creates the SDK client only in src/llm/client.ts, with its own retry turned off", () => {
+    const creators = filesMatching(
+      listTypeScriptFiles("src", "evals", "scripts"),
+      /\bnew\s+OpenAI\b/,
+    );
+    const client = readSource("src/llm/client.ts");
+
+    expect(creators).toEqual(["src/llm/client.ts"]);
+    expect(client.match(/\bnew\s+OpenAI\b/g)).toHaveLength(1);
+    expect(client).toMatch(/\bmaxRetries: 0,/);
+    expect(client.match(/\bmaxRetries\b/g)).toHaveLength(1);
+  });
+
+  // ADR 0002, decision 6: the model does not document these parameters.
+  it("names no sampling parameter in src/llm/", () => {
+    const files = listTypeScriptFiles("src").filter((file) =>
+      file.startsWith("src/llm/"),
+    );
+
+    expect(files).toContain("src/llm/client.ts");
+    expect(filesMatching(files, /\btemperature\b|\btop_p\b|\bseed\b/i)).toEqual(
+      [],
+    );
+  });
+
   it("writes to disk only through src/security/safe-writer.ts", () => {
     const writers = filesMatching(
       listTypeScriptFiles("src", "evals", "scripts"),
