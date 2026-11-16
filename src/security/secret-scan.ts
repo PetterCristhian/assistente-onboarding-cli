@@ -17,33 +17,103 @@ export interface SecretFinding {
   inPath?: true;
 }
 
-// The two byte order marks of UTF-16, as they look in a latin1 string.
-const UTF16_BYTE_ORDER_MARK = /^(?:\xff\xfe|\xfe\xff)/;
+// The byte order marks of UTF-16 and UTF-32, as they look in a latin1 string.
+// The NUL bytes of the UTF-32 little endian mark are not counted anyway.
+const BYTE_ORDER_MARK = /^(?:\xff\xfe|\xfe\xff|\0\0\xfe\xff)/;
 
 function findColumns(lineText: string): number[] {
   return findSecretSpans(lineText).map((span) => span.start + 1);
 }
 
-// The start of a key in UTF-16, in either byte order.
-const UTF16_KEY_START = "s\0k\0-";
+/**
+ * A way of reading the bytes of a line as text of fixed width: a character
+ * takes "width" bytes, of which only the first (little endian) or the last
+ * (big endian) is not a NUL byte.
+ */
+interface WideEncoding {
+  readonly width: 2 | 4;
+  readonly bigEndian: boolean;
+  /** The start of a key, the same in both byte orders. */
+  readonly keyStart: string;
+}
+
+const WIDE_ENCODINGS: readonly WideEncoding[] = ([2, 4] as const).flatMap(
+  (width) => {
+    const separator = "\0".repeat(width - 1);
+    const keyStart = ["s", "k", "-"].join(separator);
+    return [
+      { width, bigEndian: false, keyStart },
+      { width, bigEndian: true, keyStart },
+    ];
+  },
+);
+
+const LAST_BYTE_VALUE = 0xff;
 
 /**
- * Reads the line as UTF-16: keeps the bytes at the even (parity 0) or odd
- * (parity 1) positions whose pair is a NUL byte, and puts a NUL in the place
- * of the others, so that a sequence never goes across bytes that are not
- * UTF-16. The character at index i comes from the byte at parity + 2 * i.
+ * Reads the line in the given encoding, with the first character starting at
+ * the byte "offset". A group of bytes that is not a plain character in that
+ * encoding (one of the others is not a NUL byte) becomes a NUL, so that a
+ * sequence never goes across bytes that are not text: strings of a binary
+ * that are merely separated by NUL bytes are not glued together.
  *
- * Parity 0 is little endian from the start of the file. Parity 1 is big
- * endian, and also little endian after the first line: the NUL byte of the
- * line break stays at the start of the next line.
+ * Every offset is tried by the caller. Text does not always start at a
+ * multiple of the width: the NUL bytes of a line break stay at the start of
+ * the next line, and ">>" of Windows PowerShell 5.1 appends UTF-16 to a UTF-8
+ * file of any length.
  */
-function readAsUtf16(lineText: string, parity: 0 | 1): string {
-  let decoded = "";
-  for (let index = parity; index < lineText.length; index += 2) {
-    const pair = lineText[parity === 0 ? index + 1 : index - 1];
-    decoded += pair === "\0" ? lineText[index] : "\0";
+function readWide(
+  lineText: string,
+  encoding: WideEncoding,
+  offset: number,
+): string {
+  const { width, bigEndian } = encoding;
+  const count = Math.max(0, Math.floor((lineText.length - offset) / width));
+  // Zero filled: a group stays a NUL unless it is found to be a character.
+  const decoded = Buffer.alloc(count);
+
+  for (let unit = 0; unit < count; unit += 1) {
+    const first = offset + unit * width;
+    const characterAt = bigEndian ? first + width - 1 : first;
+    let isCharacter = true;
+    for (let index = first; index < first + width; index += 1) {
+      if (index !== characterAt && lineText.charCodeAt(index) !== 0) {
+        isCharacter = false;
+        break;
+      }
+    }
+    const code = lineText.charCodeAt(characterAt);
+    if (isCharacter && code <= LAST_BYTE_VALUE) {
+      decoded[unit] = code;
+    }
   }
-  return decoded;
+  return decoded.toString("latin1");
+}
+
+interface ByteSpan {
+  /** Offset of the byte that holds the first character of the sequence. */
+  start: number;
+  end: number;
+}
+
+function findWideSpans(lineText: string): ByteSpan[] {
+  const spans: ByteSpan[] = [];
+  for (const encoding of WIDE_ENCODINGS) {
+    if (!lineText.includes(encoding.keyStart)) {
+      continue;
+    }
+    const { width, bigEndian } = encoding;
+    for (let offset = 0; offset < width; offset += 1) {
+      const toByte = (unit: number) =>
+        offset + unit * width + (bigEndian ? width - 1 : 0);
+      for (const span of findSecretSpans(
+        readWide(lineText, encoding, offset),
+      )) {
+        spans.push({ start: toByte(span.start), end: toByte(span.end) });
+      }
+    }
+  }
+  return spans.sort((a, b) => a.start - b.start);
 }
 
 /**
@@ -57,7 +127,7 @@ function toColumns(
   isFirstLine: boolean,
 ): number[] {
   const markLength = isFirstLine
-    ? (UTF16_BYTE_ORDER_MARK.exec(lineText)?.[0].length ?? 0)
+    ? (BYTE_ORDER_MARK.exec(lineText)?.[0].length ?? 0)
     : 0;
   const columns: number[] = [];
   let position = markLength;
@@ -73,29 +143,30 @@ function toColumns(
   return columns;
 }
 
-function findUtf16Columns(lineText: string, isFirstLine: boolean): number[] {
+function findWideColumns(lineText: string, isFirstLine: boolean): number[] {
   const offsets: number[] = [];
-  for (const parity of [0, 1] as const) {
-    for (const span of findSecretSpans(readAsUtf16(lineText, parity))) {
-      offsets.push(parity + 2 * span.start);
+  let reportedUpTo = 0;
+  for (const span of findWideSpans(lineText)) {
+    // The same bytes may be a key in more than one reading (NUL, character,
+    // NUL... is big endian, and little endian one byte later): reported once.
+    if (span.start >= reportedUpTo) {
+      offsets.push(span.start);
+      reportedUpTo = span.end;
     }
   }
-  return toColumns(
-    lineText,
-    offsets.sort((a, b) => a - b),
-    isFirstLine,
-  );
+  return toColumns(lineText, offsets, isFirstLine);
 }
 
 /**
  * Expects the content decoded as latin1 (one character per byte).
  *
  * A line with no key is looked at again as UTF-16 (what `>` writes in Windows
- * PowerShell 5.1): every ASCII character comes with a NUL byte, which hides
- * the key from the pattern. Both byte orders are tried, with or without a
- * byte order mark, without guessing the encoding of the file. Only bytes that
- * alternate with NUL are joined: strings of a binary that are merely
- * separated by NUL bytes are not glued together.
+ * PowerShell 5.1) and as UTF-32: every ASCII character comes with one or
+ * three NUL bytes, which hide the key from the pattern. Both byte orders are
+ * tried at every offset, with or without a byte order mark, without guessing
+ * the encoding of the file. Only bytes that alternate with NUL are joined:
+ * strings of a binary that are merely separated by NUL bytes are not glued
+ * together.
  */
 export function findSecretsInText(
   text: string,
@@ -104,8 +175,8 @@ export function findSecretsInText(
 
   text.split("\n").forEach((lineText, index) => {
     let columns = findColumns(lineText);
-    if (columns.length === 0 && lineText.includes(UTF16_KEY_START)) {
-      columns = findUtf16Columns(lineText, index === 0);
+    if (columns.length === 0) {
+      columns = findWideColumns(lineText, index === 0);
     }
     for (const column of columns) {
       findings.push({ line: index + 1, column });

@@ -30,6 +30,7 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - `npm run check:secrets` não acusa mais um binário cujas cadeias de texto são apenas separadas por bytes NUL; arquivos UTF-16 continuam cobertos (ENG-44).
 - Um `.env` com BOM em que a chave não está na primeira linha passa a gerar a orientação de salvar em UTF-8 sem BOM, citando a variável que não foi lida, em vez de ignorar essa variável em silêncio (ENG-44).
 - A mensagem de configuração inválida não exibe mais a chave quando `OPENAI_API_KEY` tem aspas malformadas (ENG-44).
+- `npm run check:secrets` volta a encontrar uma chave UTF-16 colada a um número ímpar de bytes (o que o `>>` do Windows PowerShell 5 faz com um arquivo UTF-8 sem quebra de linha final) ou logo após um caractere cujo byte baixo é uma quebra de linha, e passa a encontrar uma chave em UTF-32 (ENG-44).
 
 ### Alterado
 

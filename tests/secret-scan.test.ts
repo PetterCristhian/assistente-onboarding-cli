@@ -502,3 +502,118 @@ describe("findSecretsInText: many UTF-16 keys in a single line", () => {
     });
   });
 });
+
+/** The bytes of a UTF-32 file, seen the way the scan reads them (latin1). */
+function utf32AsLatin1(
+  text: string,
+  options: { bigEndian?: boolean; bom?: boolean } = {},
+): string {
+  const codePoints = [...`${options.bom === true ? "\ufeff" : ""}${text}`].map(
+    (character) => character.codePointAt(0) ?? 0,
+  );
+  const bytes = Buffer.alloc(codePoints.length * 4);
+  codePoints.forEach((codePoint, index) => {
+    if (options.bigEndian === true) {
+      bytes.writeUInt32BE(codePoint, index * 4);
+    } else {
+      bytes.writeUInt32LE(codePoint, index * 4);
+    }
+  });
+  return bytes.toString("latin1");
+}
+
+// The UTF-16 reading only took, at an odd offset, a character whose NUL byte
+// came before it: little endian text glued to an odd number of bytes was lost.
+describe("findSecretsInText: UTF-16 at any offset and UTF-32", () => {
+  it.each([
+    ["one byte", "a"],
+    ["two bytes", "ab"],
+    ["three bytes", "abc"],
+    ["four bytes", "abcd"],
+  ])(
+    "finds a UTF-16 key glued to %s of UTF-8 text with no line break",
+    (_label, before) => {
+      // What `>>` of Windows PowerShell 5.1 does to an existing UTF-8 file.
+      const expected = [{ line: 1, column: before.length + 1 }];
+
+      expect(findSecretsInText(before + utf16AsLatin1(`${KEY}\r\n`))).toEqual(
+        expected,
+      );
+      expect(
+        findSecretsInText(
+          before + utf16AsLatin1(`${KEY}\r\n`, { bigEndian: true }),
+        ),
+      ).toEqual(expected);
+    },
+  );
+
+  it("finds a masked UTF-16 key glued to an odd number of bytes", () => {
+    const content = `abc${utf16AsLatin1(`${fakeMaskedOpenAiKey()}\r\n`)}`;
+
+    expect(findSecretsInText(content)).toEqual([{ line: 1, column: 4 }]);
+  });
+
+  it("finds a UTF-16 key right after a character whose low byte is a line break", () => {
+    // U+4E0A is the bytes 0A 4E: the line is cut in the middle of it.
+    const content = utf16AsLatin1(`\u4e0a${KEY}\r\n`);
+
+    expect(findSecretsInText(content)).toEqual([{ line: 2, column: 2 }]);
+  });
+
+  it.each([
+    ["UTF-32LE", {}],
+    ["UTF-32LE with BOM", { bom: true }],
+    ["UTF-32BE", { bigEndian: true }],
+    ["UTF-32BE with BOM", { bigEndian: true, bom: true }],
+  ])("finds a key in %s, with line and column in characters", (_l, options) => {
+    const content = utf32AsLatin1(
+      `x ${KEY}\r\nsegunda\r\nchave: ${KEY}\r\n`,
+      options,
+    );
+
+    expect(findSecretsInText(content)).toEqual([
+      { line: 1, column: 3 },
+      { line: 3, column: 8 },
+    ]);
+  });
+
+  it.each([
+    ["UTF-32LE", {}],
+    ["UTF-32BE", { bigEndian: true }],
+  ])("finds a masked key and a glued key in %s", (_label, options) => {
+    const masked = utf32AsLatin1(`erro: ${fakeMaskedOpenAiKey()}\n`, options);
+    const glued = `abc${utf32AsLatin1(`${KEY}\n`, options)}`;
+
+    expect(findSecretsInText(masked)).toEqual([{ line: 1, column: 7 }]);
+    expect(findSecretsInText(glued)).toEqual([{ line: 1, column: 4 }]);
+  });
+
+  it("reports once a key that reads the same in both byte orders", () => {
+    // NUL, character, NUL, character...: big endian, or little endian at 1.
+    const content = `\0${utf16AsLatin1(`${KEY} ${fakeOpenAiKey("B")}`)}`;
+
+    expect(findSecretsInText(content)).toEqual([
+      { line: 1, column: 1 },
+      { line: 1, column: KEY.length + 2 },
+    ]);
+  });
+
+  it.each([
+    ["clean UTF-32", utf32AsLatin1("OPENAI_API_KEY=\r\n# sem valor real\r\n")],
+    [
+      "UTF-32 that stops being UTF-32",
+      `${utf32AsLatin1(`${["sk", ""].join("-")}abc`)}${"a".repeat(24)}`,
+    ],
+    [
+      "UTF-32 with a string after it",
+      `${utf32AsLatin1(["sk", ""].join("-"))}\0${"a".repeat(24)}\0`,
+    ],
+    [
+      "strings at an odd offset",
+      `\x01${["sk", ""].join("-")}abcdefghij\0klmnopqrstuvwxyz\0`,
+    ],
+    ["a UTF-16 looking run at an odd offset", `\x01s\0k\0-\0${"a".repeat(24)}`],
+  ])("does not join what is not a key: %s", (_label, content) => {
+    expect(findSecretsInText(content)).toEqual([]);
+  });
+});
