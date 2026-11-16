@@ -42,10 +42,6 @@ function slug(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function normalizeName(text: string): string {
-  return slug(text);
-}
-
 describe("user profiles", () => {
   it("are exactly two JSON files, and nothing else is in the folder", () => {
     expect(PROFILE_FILES).toHaveLength(PROFILE_COUNT);
@@ -79,22 +75,20 @@ describe("user profiles", () => {
       const { nome, gestor } = readProfile(path);
 
       expect(gestor.split(/\s+/).length).toBeGreaterThanOrEqual(2);
-      expect(normalizeName(gestor)).not.toBe(normalizeName(nome));
+      expect(slug(gestor)).not.toBe(slug(nome));
     },
   );
 
   it("gives each person a different manager", () => {
     const managers = PROFILE_FILES.map((path) =>
-      normalizeName(readProfile(path).gestor),
+      slug(readProfile(path).gestor),
     );
 
     expect(new Set(managers).size).toBe(PROFILE_COUNT);
   });
 
   it("describes different people", () => {
-    const names = PROFILE_FILES.map((path) =>
-      normalizeName(readProfile(path).nome),
-    );
+    const names = PROFILE_FILES.map((path) => slug(readProfile(path).nome));
 
     expect(new Set(names).size).toBe(PROFILE_COUNT);
   });

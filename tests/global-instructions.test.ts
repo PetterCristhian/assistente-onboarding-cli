@@ -39,6 +39,6 @@ describe("global instructions", () => {
   });
 
   it("names no policy rule", () => {
-    expect(readDocument()).not.toMatch(/P[1-5]/);
+    expect(readDocument()).not.toMatch(/\bP[1-5]\b/);
   });
 });

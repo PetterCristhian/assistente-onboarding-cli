@@ -16,7 +16,8 @@ export interface ContextFile {
 
 const CONTENT_FILE = /\.(?:md|json)$/;
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*/gu;
-const TABLE_SEPARATOR = /^\|[\s:|-]+\|$/;
+// Every cell holds at least one hyphen: a body row of empty cells is a row.
+const TABLE_SEPARATOR = /^\|(?:\s*:?-+:?\s*\|)+$/;
 
 /** Every .md and .json file under context/, as sorted POSIX paths. */
 export function listContextFiles(): string[] {

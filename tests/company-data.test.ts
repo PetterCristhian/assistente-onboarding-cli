@@ -103,15 +103,26 @@ describe("company data", () => {
     expect(new Set(subjects.map(normalize)).size).toBe(subjects.length);
   });
 
-  it.each([
-    ...listContextFolder(COMPANY_FOLDER),
-    ...listContextFolder(PROFILE_FOLDER),
-  ])("holds in %s data only, with no word about the chatbot", (path) => {
-    const content = readContextFile(path);
+  it.each(listContextFolder(COMPANY_FOLDER))(
+    "holds in %s data only, with no word about the chatbot",
+    (path) => {
+      const content = readContextFile(path);
 
-    expect(content).not.toMatch(/assistente|chatbot/i);
-    expect(content).not.toMatch(/P[1-5]/);
-  });
+      expect(content).not.toMatch(/assistente|chatbot/i);
+      expect(content).not.toMatch(/\bP[1-5]\b/);
+    },
+  );
+
+  // A job title such as an administrative assistant is legitimate in a profile.
+  it.each(listContextFolder(PROFILE_FOLDER))(
+    "holds in %s data only, with no word about the chatbot",
+    (path) => {
+      const content = readContextFile(path);
+
+      expect(content).not.toMatch(/chatbot/i);
+      expect(content).not.toMatch(/\bP[1-5]\b/);
+    },
+  );
 });
 
 describe("company data: contacts", () => {

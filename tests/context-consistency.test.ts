@@ -133,6 +133,17 @@ describe("context consistency: folder", () => {
   });
 });
 
+describe("context consistency: table reader", () => {
+  it("keeps a body row whose cells are all empty", () => {
+    const table = ["| a | b |", "| --- | :-: |", "| | |", "| c | d |"];
+
+    expect(tableRows(table.join("\n"))).toEqual([
+      ["", ""],
+      ["c", "d"],
+    ]);
+  });
+});
+
 describe("context consistency: channels", () => {
   it("reads a channel name on every row of the two tables", () => {
     const rows = allChannelRows();
