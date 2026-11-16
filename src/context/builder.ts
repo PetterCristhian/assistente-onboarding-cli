@@ -4,6 +4,7 @@ import {
   ContextError,
   hasLineBreak,
   type BuiltContext,
+  type CompanyDocument,
   type ContextLayers,
   type ContextSections,
 } from "./types.js";
@@ -80,8 +81,10 @@ function findReservedMarker(text: string, from = 0): FoundMarker | undefined {
 
 /** The marker as it is quoted in a message: one line, never a long one. */
 function quoteMarker(marker: string): string {
-  const line = marker.replace(/\s+/g, " ");
-  return line.length > QUOTED_MARKER_LIMIT
+  // Only the start is read: the marker may be as long as the content.
+  const read = 4 * QUOTED_MARKER_LIMIT;
+  const line = marker.slice(0, read).replace(/\s+/g, " ");
+  return marker.length > read || line.length > QUOTED_MARKER_LIMIT
     ? `${line.slice(0, QUOTED_MARKER_LIMIT)}...`
     : line;
 }
@@ -95,6 +98,48 @@ function refuseReservedMarkers(layer: LayerKey, contents: string[]): void {
       );
     }
   }
+}
+
+/**
+ * The company documents are checked as the text they become, so that a marker
+ * that starts in one and ends in another is found. The message names the
+ * document, or the two where the marker starts and ends.
+ */
+function refuseReservedMarkersInDocuments(
+  documents: readonly CompanyDocument[],
+  body: string,
+): void {
+  const found = findReservedMarker(body);
+  if (found === undefined) {
+    return;
+  }
+
+  // A marker starts with "<" and ends with ">" or a letter, so both of its
+  // ends are inside a document and never in the separator.
+  const last = found.end - 1;
+  let first: string | undefined;
+  let final: string | undefined;
+  let offset = 0;
+  for (const document of documents) {
+    const end = offset + document.content.length;
+    if (found.start >= offset && found.start < end) {
+      first = document.name;
+    }
+    if (last >= offset && last < end) {
+      final = document.name;
+    }
+    offset = end + DOCUMENT_SEPARATOR.length;
+  }
+
+  const place =
+    first === undefined || final === undefined
+      ? ""
+      : first === final
+        ? `, no documento "${first}",`
+        : `, na junção dos documentos "${first}" e "${final}",`;
+  throw new ContextError(
+    `A camada "${LAYER_NAMES.companyData}" contém${place} o marcador reservado "${quoteMarker(found.text)}", que não pode aparecer no conteúdo.`,
+  );
 }
 
 function section(layer: LayerKey, body: string): string {
@@ -150,7 +195,7 @@ export function buildContext(layers: ContextLayers): BuiltContext {
     gestor,
     layers.currentDate,
   ]);
-  refuseReservedMarkers("companyData", [companyBody]);
+  refuseReservedMarkersInDocuments(layers.companyData, companyBody);
 
   // The loader of the profile refuses a line break in its values; the date
   // comes from the entry point and is checked here.
