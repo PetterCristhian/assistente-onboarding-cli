@@ -123,14 +123,34 @@ const MISSING_API_KEY_MESSAGE = [
 
 const API_KEY_WHITE_SPACE_MESSAGE = `Configuração inválida: ${API_KEY_VARIABLE} contém espaço, tabulação ou quebra de linha no meio do valor (o valor não é exibido). Cole a chave inteira em uma única linha, sem espaços, no ".env" ou na variável de ambiente.`;
 
-const ENV_FILE_ENCODING_MESSAGE = [
-  `Configuração incompleta: o arquivo ".env" existe, mas não está em UTF-8 sem BOM, por isso ${API_KEY_VARIABLE} não foi lida.`,
-  "Como corrigir:",
-  '  1. Abra o arquivo em um editor de texto e salve o ".env" em UTF-8 sem BOM',
-  '     (no Bloco de Notas, escolha "UTF-8", não "UTF-8 com BOM" nem "UTF-16").',
-  '  2. Não crie o ".env" com ">" no Windows PowerShell 5: ele grava UTF-16 por padrão.',
-  "     Prefira copiar o modelo (Copy-Item .env.example .env) e editar a cópia.",
-].join("\n");
+function envFileEncodingMessage(problem: string): string {
+  return [
+    `Configuração incompleta: ${problem}`,
+    "Como corrigir:",
+    '  1. Abra o arquivo em um editor de texto e salve o ".env" em UTF-8 sem BOM',
+    '     (no Bloco de Notas, escolha "UTF-8", não "UTF-8 com BOM" nem "UTF-16").',
+    '  2. Não crie o ".env" com ">" no Windows PowerShell 5: ele grava UTF-16 por padrão.',
+    "     Prefira copiar o modelo (Copy-Item .env.example .env) e editar a cópia.",
+  ].join("\n");
+}
+
+const ENV_FILE_ENCODING_MESSAGE = envFileEncodingMessage(
+  `o arquivo ".env" existe, mas não está em UTF-8 sem BOM, por isso ${API_KEY_VARIABLE} não foi lida.`,
+);
+
+// With a UTF-8 byte order mark, the loader keeps the mark in the name of the
+// first variable of the file, which is then never found by its real name.
+const BYTE_ORDER_MARK = "﻿";
+const PLAIN_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function envFileByteOrderMarkMessage(mangledName: string): string {
+  const name = mangledName.slice(BYTE_ORDER_MARK.length);
+  // The name is only shown when it cannot carry anything else.
+  const shown = PLAIN_VARIABLE_NAME.test(name) ? ` (${name})` : "";
+  return envFileEncodingMessage(
+    `o arquivo ".env" começa com uma marca de ordem de bytes (BOM), por isso a primeira variável do arquivo${shown} não foi lida.`,
+  );
+}
 
 /** The forms in which the key may show up inside another value. */
 function keyVariants(source: EnvSource): string[] {
@@ -271,6 +291,7 @@ function readErrorCode(error: unknown): string | undefined {
 export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
   const env = deps.env ?? process.env;
   let envFileEncodingIsWrong = false;
+  let mangledName: string | undefined;
 
   // With an injected env and no injected loader, no file is read at all.
   if (deps.env === undefined || deps.loadEnvFile !== undefined) {
@@ -289,6 +310,17 @@ export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
         throw new ConfigError(
           `Não foi possível ler o arquivo ".env" (${code ?? "erro desconhecido"}). Verifique se ele é um arquivo de texto no formato NOME=valor.`,
         );
+      }
+    }
+
+    // Names that the loader created with the mark are of no use, and their
+    // values may be the credential: they do not stay in the environment.
+    if (envFileWasLoaded) {
+      for (const name of Object.keys(env)) {
+        if (name.startsWith(BYTE_ORDER_MARK)) {
+          mangledName ??= name;
+          delete env[name];
+        }
       }
     }
 
@@ -314,6 +346,11 @@ export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
 
   if (envFileEncodingIsWrong) {
     throw new ConfigError(ENV_FILE_ENCODING_MESSAGE);
+  }
+  // The key was read (it is in another line, or came from the shell), but the
+  // first variable of the file was dropped: never go on in silence.
+  if (mangledName !== undefined) {
+    throw new ConfigError(envFileByteOrderMarkMessage(mangledName));
   }
   return parseConfig(env);
 }

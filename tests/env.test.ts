@@ -752,6 +752,92 @@ describe("loadConfig with a real .env file", () => {
     },
   );
 
+  // With a byte order mark, only the first name of the file comes out wrong.
+  // When the key is in another line, everything seemed to work and the first
+  // variable was dropped without a word.
+  describe("with a UTF-8 BOM and the key in another line", () => {
+    const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
+
+    function mangledNames(): string[] {
+      return Object.keys(process.env).filter((name) => name.startsWith("﻿"));
+    }
+
+    it("explains the problem and names the variable that was not read", () => {
+      writeFileSync(
+        envFilePath,
+        Buffer.concat([
+          BOM,
+          Buffer.from(
+            `OPENAI_MODEL=modelo-do-arquivo\r\nOPENAI_API_KEY=${KEY}\r\n`,
+          ),
+        ]),
+      );
+
+      const message = loadErrorMessage();
+
+      expect(message).toContain(
+        'o arquivo ".env" começa com uma marca de ordem de bytes (BOM), por isso a primeira variável do arquivo (OPENAI_MODEL) não foi lida.',
+      );
+      expect(message).toContain('salve o ".env" em UTF-8 sem BOM');
+      expect(message).not.toContain("não está definida");
+      expect(message).not.toContain("modelo-do-arquivo");
+      expect(message).not.toContain(KEY.slice(0, 8));
+      expect(message).not.toMatch(/\p{Cf}/u);
+    });
+
+    it("leaves no variable with the mark in the environment", () => {
+      writeFileSync(
+        envFilePath,
+        Buffer.concat([
+          BOM,
+          Buffer.from(`RETRY_MAX_ATTEMPTS=5\nOPENAI_API_KEY=${KEY}\n`),
+        ]),
+      );
+
+      expect(loadErrorMessage()).toContain("(RETRY_MAX_ATTEMPTS)");
+      expect(mangledNames()).toEqual([]);
+
+      // Also when the key itself is the first variable.
+      writeFileSync(
+        envFilePath,
+        Buffer.concat([BOM, Buffer.from(`OPENAI_API_KEY=${KEY}\n`)]),
+      );
+
+      expect(loadErrorMessage()).toContain('salve o ".env" em UTF-8 sem BOM');
+      expect(mangledNames()).toEqual([]);
+    });
+
+    it("goes on when the mark comes before a comment, which drops no variable", () => {
+      writeFileSync(
+        envFilePath,
+        Buffer.concat([
+          BOM,
+          Buffer.from(`# configuração\nOPENAI_API_KEY=${KEY}\n`),
+        ]),
+      );
+
+      expect(loadWithCleanEnvironment().openaiApiKey).toBe(KEY);
+    });
+
+    it("does not show a name that is not a plain variable name", () => {
+      const env: EnvSource = { OPENAI_API_KEY: KEY };
+
+      const load = () =>
+        loadConfig({
+          env,
+          loadEnvFile: () => {
+            env["﻿NOME \u001b[31m estranho"] = "x";
+          },
+        });
+
+      expect(load).toThrow(
+        "por isso a primeira variável do arquivo não foi lida.",
+      );
+      expect(load).not.toThrow("estranho");
+      expect(Object.keys(env)).toEqual(["OPENAI_API_KEY"]);
+    });
+  });
+
   it("does not complain about the encoding when the shell provides the key", () => {
     writeFileSync(
       envFilePath,
