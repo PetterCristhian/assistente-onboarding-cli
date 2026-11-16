@@ -421,12 +421,14 @@ export function createOpenAiLlmClient(
         : AbortSignal.any([callerSignal, deadline.signal]);
     // The call ends when it is interrupted, even if what runs under it does
     // not react to the signal.
+    let stopListening = (): void => undefined;
     const interrupted = new Promise<never>((_resolve, reject) => {
       const onAbort = () => reject(new APIUserAbortError());
       if (signal.aborted) {
         onAbort();
       } else {
         signal.addEventListener("abort", onAbort, { once: true });
+        stopListening = () => signal.removeEventListener("abort", onAbort);
       }
     });
     try {
@@ -445,6 +447,9 @@ export function createOpenAiLlmClient(
       throw error;
     } finally {
       clearTimeout(timer);
+      // Otherwise the listener, and with it the call, would be held for as
+      // long as the signal of the caller lives.
+      stopListening();
     }
   }
 

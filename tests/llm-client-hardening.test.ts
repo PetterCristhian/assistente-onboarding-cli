@@ -2,6 +2,7 @@
 // with the test that failed before its fix. The real SDK with a fake `fetch`:
 // no request ever leaves the process, and the key is a fake one built at
 // runtime.
+import { getEventListeners } from "node:events";
 import { inspect } from "node:util";
 import { APIError } from "openai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -556,5 +557,44 @@ describe("streamText: a final event with the text and no piece before it", () =>
     await expect(client.streamText(REQUEST)).rejects.toMatchObject({
       kind: "empty",
     });
+  });
+});
+
+describe("the listener of the total deadline", () => {
+  it("is removed from the signal of every call, however the call ends", async () => {
+    // The signal that each call runs under is made of the signal of the
+    // caller and of the deadline: the first one that the call builds.
+    const signals: AbortSignal[] = [];
+    const any = AbortSignal.any.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "any").mockImplementation((sources) => {
+      const signal = any(sources);
+      if ([...sources].includes(controller.signal)) {
+        signals.push(signal);
+      }
+      return signal;
+    });
+    const controller = new AbortController();
+    const { client } = setup([
+      sseAnswer(["a", "b"]),
+      jsonAnswer(VERDICT),
+      { kind: "json", status: 500, body: { error: { message: "Failure." } } },
+      { kind: "sse", events: [textDelta("cut")] },
+      { kind: "json", body: fakeResponseBody({ text: "not json" }) },
+    ]);
+    const request = { ...REQUEST, signal: controller.signal };
+
+    await client.streamText(request);
+    await structured(client, controller.signal);
+    await rejectionOf(client.streamText(request));
+    await rejectionOf(client.streamText(request));
+    await rejectionOf(structured(client, controller.signal));
+    await rejectionOf(client.streamText({ ...request, input: [] }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(signals).toHaveLength(5);
+    for (const signal of signals) {
+      expect(getEventListeners(signal, "abort")).toHaveLength(0);
+    }
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   });
 });
