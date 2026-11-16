@@ -2,6 +2,7 @@
 // clock and no environment (docs/adr/0003-contexto-em-quatro-camadas.md).
 import {
   ContextError,
+  hasLineBreak,
   type BuiltContext,
   type ContextLayers,
   type ContextSections,
@@ -69,6 +70,12 @@ export function buildContext(layers: ContextLayers): BuiltContext {
     layers.currentDate,
   ]);
   refuseReservedMarkers("companyData", documents);
+
+  // The loader of the profile refuses a line break in its values; the date
+  // comes from the entry point and is checked here.
+  if (hasLineBreak(layers.currentDate)) {
+    throw new ContextError("A data de hoje deve ter uma única linha.");
+  }
 
   const userData = [
     `Nome: ${nome}`,

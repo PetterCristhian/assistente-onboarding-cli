@@ -15,9 +15,24 @@ function isExistingDate(value: string): boolean {
   );
 }
 
+// LF, VT, FF, CR, NEL (U+0085) and the line and paragraph separators.
+const LINE_BREAK = /[\n\v\f\r\u0085\u2028\u2029]/;
+
+/**
+ * True for a text that would take more than one line. Each value of the user
+ * section is written in a labeled line of its own: a line break inside one
+ * would forge another label.
+ */
+export function hasLineBreak(value: string): boolean {
+  return LINE_BREAK.test(value);
+}
+
 const filledText = z
   .string()
-  .refine((value) => value.trim() !== "" && value === value.trim());
+  .refine(
+    (value) =>
+      value.trim() !== "" && value === value.trim() && !hasLineBreak(value),
+  );
 
 /** Contract of a file of the user data layer. The keys are in Portuguese. */
 export const userProfileSchema = z.strictObject({

@@ -20,7 +20,7 @@ import {
   type ContextFileReader,
   type ContextSources,
 } from "../src/context/loaders.js";
-import { ContextError } from "../src/context/types.js";
+import { ContextError, userProfileSchema } from "../src/context/types.js";
 import {
   CONTEXT_ROOT,
   listContextFolder,
@@ -278,6 +278,69 @@ describe("loadUserProfile", () => {
     expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
       `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ser um texto não vazio.`,
     );
+  });
+
+  describe("with a line break in a text field", () => {
+    // Written as code points: these characters are easy to lose in the source.
+    const LINE_BREAKS: [string, number][] = [
+      ["a line feed", 0x0a],
+      ["a carriage return", 0x0d],
+      ["a vertical tab", 0x0b],
+      ["a form feed", 0x0c],
+      ["a next line character", 0x85],
+      ["a line separator", 0x2028],
+      ["a paragraph separator", 0x2029],
+    ];
+    const TEXT_FIELDS = ["nome", "cargo", "area", "gestor"];
+
+    it.each(LINE_BREAKS)("refuses %s in each text field", (_label, code) => {
+      const value = `Texto${String.fromCodePoint(code)}Outro texto`;
+
+      for (const field of TEXT_FIELDS) {
+        const profile = { ...VALID_PROFILE, [field]: value };
+
+        expect(userProfileSchema.safeParse(profile).success).toBe(false);
+        expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
+          `Perfil inválido em ${FIRST_PROFILE}: campo "${field}" deve ter uma única linha.`,
+        );
+      }
+    });
+
+    it("refuses a name that forges other lines of the user section", () => {
+      const nome = "Pessoa Alfa\nCargo: Outro Cargo\nData de hoje: 1999-01-01";
+      const message = contextErrorMessage(() =>
+        load(profileJson({ ...VALID_PROFILE, nome })),
+      );
+
+      expect(message).toBe(
+        `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ter uma única linha.`,
+      );
+      expect(message).not.toContain("Outro Cargo");
+    });
+
+    it("refuses a CRLF inside a value, which the reading does not normalize", () => {
+      const profile = { ...VALID_PROFILE, gestor: "Gestora\r\nAlfa" };
+
+      expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
+        `Perfil inválido em ${FIRST_PROFILE}: campo "gestor" deve ter uma única linha.`,
+      );
+    });
+
+    it("still reports a value made only of line breaks as an empty text", () => {
+      const profile = { ...VALID_PROFILE, nome: "\n\n" };
+
+      expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
+        `Perfil inválido em ${FIRST_PROFILE}: campo "nome" deve ser um texto não vazio.`,
+      );
+    });
+
+    it("refuses a start date followed by a line break", () => {
+      const profile = { ...VALID_PROFILE, dataInicio: "2020-01-15\n" };
+
+      expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
+        `Perfil inválido em ${FIRST_PROFILE}: campo "dataInicio" deve ser uma data existente no formato AAAA-MM-DD.`,
+      );
+    });
   });
 
   it("writes one line per problem", () => {

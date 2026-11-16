@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { z } from "zod";
 import {
   ContextError,
+  hasLineBreak,
   userProfileSchema,
   type CompanyDocument,
   type ContextLayers,
@@ -223,6 +224,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** A text with content and a line break; a blank one is reported as empty. */
+function isMultilineText(value: unknown): boolean {
+  return (
+    typeof value === "string" && value.trim() !== "" && hasLineBreak(value)
+  );
+}
+
 /** One line per problem, written here (zod's own text is not used). */
 function describeProfileProblems(
   path: string,
@@ -258,6 +266,8 @@ function describeProfileProblems(
       lines.push(
         `${prefix} campo "${field}" deve ser uma data existente no formato AAAA-MM-DD.`,
       );
+    } else if (isMultilineText(raw[field])) {
+      lines.push(`${prefix} campo "${field}" deve ter uma única linha.`);
     } else {
       lines.push(`${prefix} campo "${field}" deve ser um texto não vazio.`);
     }
