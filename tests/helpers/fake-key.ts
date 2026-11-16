@@ -34,3 +34,32 @@ export function fakeMaskedOpenAiKey(
   const body = `${options.start ?? ""}${"*".repeat(options.asterisks ?? 40)}${options.end ?? "wXyZ"}`;
   return ["sk", ...(options.project === false ? [] : ["proj"]), body].join("-");
 }
+
+const BASE62 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * Fake keys in the formats that real ones have, with pseudo-random bodies.
+ * Seeded, so that a failure can be reproduced: the same seed gives the same
+ * keys. Never a real key, and never a literal in the source.
+ */
+export function createFakeKeyGenerator(seed: number) {
+  let state = seed >>> 0;
+  // Linear congruential generator (Numerical Recipes), upper bits only.
+  const next = (limit: number): number => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return Math.floor((state / 0x1_0000_0000) * limit);
+  };
+  const body = (alphabet: string, length: number): string =>
+    Array.from({ length }, () => alphabet[next(alphabet.length)]).join("");
+  const urlSafe = `${BASE62}-_`;
+
+  return {
+    /** A letter or digit, to glue before a key. */
+    letterOrDigit: (): string => body(BASE62, 1),
+    /** The prefix and 48 letters and digits. */
+    legacy: (): string => ["sk", body(BASE62, 48)].join("-"),
+    /** The prefix, a segment (proj, svcacct, admin) and about 150 characters. */
+    withSegment: (segment: string): string =>
+      ["sk", segment, body(urlSafe, 150)].join("-"),
+  };
+}

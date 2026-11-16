@@ -7,7 +7,12 @@ import { REDACTED, createRedactor } from "../src/security/redact.js";
 import { findSecretsInText } from "../src/security/secret-scan.js";
 import { createSafeWriter } from "../src/security/safe-writer.js";
 import type { SafeWriter } from "../src/security/safe-writer.js";
-import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
+import {
+  createFakeKeyGenerator,
+  fakeLowerCaseKeyShape,
+  fakeMaskedOpenAiKey,
+  fakeOpenAiKey,
+} from "./helpers/fake-key.js";
 import { AFTER_AN_ESCAPE, ORDINARY_TEXT } from "./helpers/key-placements.js";
 
 const KEY = fakeOpenAiKey();
@@ -502,5 +507,132 @@ describe("createSafeWriter: a key that JSON.stringify escapes around", () => {
       expect(JSON.parse(content)).toEqual(value);
       expect(findSecretsInText(content)).toEqual([]);
     }
+  });
+});
+
+// QA of ENG-44, retest of B6 and of the replacer of the JSON writer.
+describe("createSafeWriter: other shapes of value and of text (QA)", () => {
+  const other = fakeOpenAiKey("C");
+  const another = fakeOpenAiKey("D");
+  const lowerCase = fakeLowerCaseKeyShape();
+
+  async function writtenBy(
+    write: (target: SafeWriter) => Promise<string>,
+  ): Promise<string> {
+    const content = await readFile(await write(writer), "utf8");
+    expect(findSecretsInText(content)).toEqual([]);
+    for (const secret of [KEY, other, another, lowerCase]) {
+      expect(content).not.toContain(secret);
+    }
+    return content;
+  }
+
+  it("redacts what toJSON returns, a string or an object with a key in a name", async () => {
+    const content = await writtenBy((target) =>
+      target.writeJson("outputs/run/a.json", {
+        texto: { toJSON: () => `linha\n${other}` },
+        objeto: { toJSON: () => ({ [`n\t${another}`]: `v\r${lowerCase}` }) },
+      }),
+    );
+
+    expect(JSON.parse(content)).toEqual({
+      texto: `linha\n${REDACTED}`,
+      objeto: { [`n\t${REDACTED}`]: `v\r${REDACTED}` },
+    });
+  });
+
+  it("redacts a String object, which the replacer sees as an object", async () => {
+    const content = await writtenBy((target) =>
+      target.appendJsonLine("logs/sessao.jsonl", {
+        a: new String(`linha\n${other}`),
+        b: new String(`linha\n${lowerCase}`),
+        c: new String(KEY),
+      }),
+    );
+
+    expect(JSON.parse(content)).toEqual({
+      a: `linha\n${REDACTED}`,
+      b: `linha\n${REDACTED}`,
+      c: REDACTED,
+    });
+  });
+
+  it("redacts a key in arrays inside arrays and in a getter", async () => {
+    const value = {
+      lista: [[[`a\n${other}`, [{ z: [another] }]]]],
+      get [another]() {
+        return `x\n${lowerCase}`;
+      },
+    };
+    const content = await writtenBy((target) =>
+      target.writeJson("outputs/run/b.json", value),
+    );
+
+    expect(JSON.parse(content)).toEqual({
+      lista: [[[`a\n${REDACTED}`, [{ z: [REDACTED] }]]]],
+      [REDACTED]: `x\n${REDACTED}`,
+    });
+  });
+
+  it("redacts a key in a string that is JSON serialized three times", async () => {
+    const inner = JSON.stringify(
+      JSON.stringify(
+        JSON.stringify({ a: `x\n${other}`, b: `y\t${lowerCase}` }),
+      ),
+    );
+
+    await writtenBy((target) =>
+      target.writeJson("outputs/run/c.json", { p: inner }),
+    );
+    await writtenBy((target) => target.writeText("outputs/run/c.txt", inner));
+    await writtenBy((target) => target.appendText("logs/c.log", inner));
+  });
+
+  it("redacts a key in the message and in the stack of an error", async () => {
+    const error = new Error(`401 Incorrect API key provided: ${other}.`);
+    const content = await writtenBy((target) =>
+      target.writeJson("outputs/run/d.json", {
+        mensagem: String(error),
+        pilha: `falha\n${String(error.stack)}\n    at${another}`,
+      }),
+    );
+
+    expect(content).toContain(REDACTED);
+  });
+
+  it("redacts random keys in real formats glued to a letter or digit", async () => {
+    const generator = createFakeKeyGenerator(44);
+    const keys = Array.from({ length: 200 }, (_unused, index) =>
+      index % 2 === 0 ? generator.legacy() : generator.withSegment("proj"),
+    );
+    const value = keys.map((key) => `${generator.letterOrDigit()}${key}`);
+    const content = await writtenBy((target) =>
+      target.writeJson("outputs/run/e.json", value),
+    );
+
+    for (const key of keys) {
+      expect(content).not.toContain(key.slice(8, 28));
+    }
+    expect(JSON.parse(content)).toHaveLength(keys.length);
+  });
+
+  it("writes nothing when the given redactor throws", async () => {
+    const failing = createSafeWriter({
+      redact: () => {
+        throw new Error("simulated failure of the redactor");
+      },
+      rootDir,
+    });
+
+    await expect(
+      failing.writeJson("outputs/run/f.json", { p: other }),
+    ).rejects.toThrow();
+    await expect(
+      failing.writeText("outputs/run/f.txt", other),
+    ).rejects.toThrow();
+    await expect(
+      failing.appendJsonLine("logs/f.jsonl", { p: other }),
+    ).rejects.toThrow();
+    expect(await readdir(rootDir)).toEqual([]);
   });
 });

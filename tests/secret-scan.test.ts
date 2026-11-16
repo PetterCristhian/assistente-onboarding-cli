@@ -763,3 +763,38 @@ describe("findSecretsInText: a key right after a letter or digit that ends no wo
     });
   });
 });
+
+// QA of ENG-44, retest of B6 in the wide readings: the key is glued to a
+// letter, a digit or an escape sequence, in a file that is not UTF-8.
+describe("findSecretsInText: a glued key in UTF-16 and UTF-32 (QA)", () => {
+  const encodings: Array<[string, (text: string) => string]> = [
+    ["UTF-16LE", (text) => utf16AsLatin1(text)],
+    ["UTF-16BE", (text) => utf16AsLatin1(text, { bigEndian: true })],
+    ["UTF-32LE", (text) => utf32AsLatin1(text)],
+    ["UTF-32BE", (text) => utf32AsLatin1(text, { bigEndian: true })],
+  ];
+  const other = fakeOpenAiKey("w");
+
+  it.each(encodings)("finds it in %s at any byte offset", (_label, encode) => {
+    const texts = [
+      ...GLUED_TO_A_WORD.map(([, build]) => build(other)),
+      ...AFTER_AN_ESCAPE.map(([, build]) => build(other)),
+    ];
+    for (const text of texts) {
+      for (let offset = 0; offset < 5; offset += 1) {
+        const content = "=".repeat(offset) + encode(text);
+
+        expect(findSecretsInText(content)).toHaveLength(1);
+      }
+    }
+  });
+
+  it.each(encodings)(
+    "keeps ordinary text unflagged in %s",
+    (_label, encode) => {
+      for (const text of ORDINARY_TEXT) {
+        expect(findSecretsInText(encode(`linha ${text} fim`))).toEqual([]);
+      }
+    },
+  );
+});

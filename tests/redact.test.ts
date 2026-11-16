@@ -7,6 +7,7 @@ import {
   redact,
 } from "../src/security/redact.js";
 import {
+  createFakeKeyGenerator,
   fakeLowerCaseKeyShape,
   fakeMaskedOpenAiKey,
   fakeOpenAiKey,
@@ -569,5 +570,76 @@ ${text}	fim`,
 
     expect(redact(`${text} fim`)).toBe(`ta${REDACTED} fim`);
     expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+});
+
+// QA of ENG-44, retest of B6: keys in the formats that real ones have, with
+// random bodies, glued to a letter or a digit. None may be left in the text.
+describe("redact: random keys in real formats glued to a letter or digit (QA)", () => {
+  const SAMPLES = 2000;
+
+  it.each([
+    ["the prefix and 48 letters and digits", "legacy"],
+    ["a project key", "proj"],
+    ["a service account key", "svcacct"],
+    ["an admin key", "admin"],
+  ])("replaces every one of them: %s", (_label, format) => {
+    const generator = createFakeKeyGenerator(20261116);
+    let missed = 0;
+
+    for (let sample = 0; sample < SAMPLES; sample += 1) {
+      const key =
+        format === "legacy"
+          ? generator.legacy()
+          : generator.withSegment(format);
+      const before = `${generator.letterOrDigit()}${generator.letterOrDigit()}`;
+      const text = `${before}${key} fim`;
+
+      if (
+        redact(text) !== `${before}${REDACTED} fim` ||
+        findSecretSpans(text).length !== 1
+      ) {
+        missed += 1;
+      }
+    }
+    expect(missed).toBe(0);
+  });
+
+  it.each([
+    ["JSON serialized three times", 3],
+    ["JSON serialized four times", 4],
+  ])("replaces a key at the start of a line in %s", (_label, times) => {
+    for (const secret of [fakeOpenAiKey("q"), fakeLowerCaseKeyShape()]) {
+      let text = `chave:\n${secret}`;
+      for (let round = 0; round < times; round += 1) {
+        text = JSON.stringify(text);
+      }
+
+      expect(redact(text)).not.toContain(secret);
+      expect(findSecretSpans(text)).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    ["a literal ESC written as u001b", String.raw`erro\u001b[0m`],
+    ["a literal ESC written as x1b", String.raw`\x1b[31m`],
+    ["a literal ESC written as 033", String.raw`\033[0m`],
+    ["a 256-colour sequence", "\x1b[38;5;196m"],
+    ["a literal backslash, r, backslash, n", String.raw`linha\r\n`],
+    ["a quoted-printable =3D", "k=3D"],
+    ["a lower-case %0a", "x%0a"],
+  ])("replaces a lower-case key-shaped sequence after %s", (_label, before) => {
+    const secret = fakeLowerCaseKeyShape();
+
+    expect(redact(`${before}${secret}`)).toBe(`${before}${REDACTED}`);
+  });
+
+  it("replaces a key quoted in the message and in the stack of an error", () => {
+    const key = fakeOpenAiKey("s");
+    const error = new Error(`401 Incorrect API key provided: ${key}.`);
+    const text = `falha\n${String(error.stack)}\n    at${key}`;
+
+    expect(redact(text)).not.toContain(key);
+    expect(redact(JSON.stringify({ erro: text }))).not.toContain(key);
   });
 });
