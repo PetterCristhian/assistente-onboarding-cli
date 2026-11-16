@@ -67,10 +67,14 @@ describe("runLlmSmoke: the threshold", () => {
   });
 
   it("fails with no chunk at all, and says so", async () => {
-    const { report, text } = await run([
-      { text: "whole", chunks: [], model: "returned-model" },
-      VALUE_STEP,
-    ]);
+    // The scripted client refuses a text without its chunks, as the real
+    // one never returns it: only a hand-made client can report no chunk.
+    const scripted = createFakeLlmClient([VALUE_STEP]);
+    const { report, text } = await runWith({
+      streamText: () =>
+        Promise.resolve({ text: "whole", chunks: 0, model: "returned-model" }),
+      generateStructured: (request) => scripted.generateStructured(request),
+    });
 
     expect(report.passed).toBe(false);
     expect(text).toContain("Tempo até o primeiro trecho: nenhum trecho");
