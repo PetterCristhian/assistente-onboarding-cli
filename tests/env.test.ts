@@ -233,6 +233,58 @@ describe("parseConfig: invalid values", () => {
     expect(sameAsKey).not.toContain("chave-curta-123");
   });
 
+  it.each([
+    ["spaces", (key: string) => `  ${key}  `],
+    ["a tab and a line break", (key: string) => `\t${key}\n`],
+    ["double quotes", (key: string) => `"${key}"`],
+    ["single quotes", (key: string) => `'${key}'`],
+    ["spaces and quotes", (key: string) => `  "${key}"  `],
+    ["quotes and inner spaces", (key: string) => `" ${key} "`],
+  ])(
+    "never echoes a key outside the usual shape when OPENAI_API_KEY has %s around it",
+    (_label, wrap) => {
+      const plain = "minha-chave-azure-0123456789";
+      const message = configErrorMessage({
+        OPENAI_API_KEY: wrap(plain),
+        RETRY_MAX_ATTEMPTS: plain,
+        OPENAI_REASONING_EFFORT: ` ${plain} `,
+      });
+
+      expect(message).toContain("RETRY_MAX_ATTEMPTS");
+      expect(message).toContain("OPENAI_REASONING_EFFORT");
+      expect(message).toContain('(valor recebido: "[REDACTED]")');
+      expect(message).not.toContain(plain);
+      expect(message).not.toContain("minha-chave");
+    },
+  );
+
+  it("never echoes the quoted form of the key either", () => {
+    const plain = "minha-chave-azure-0123456789";
+    const message = configErrorMessage({
+      OPENAI_API_KEY: `"${plain}"`,
+      RETRY_MAX_ATTEMPTS: `"${plain}"`,
+    });
+
+    expect(message).not.toContain("minha-chave");
+  });
+
+  it("replaces control characters of the received value by a visible marker", () => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: KEY,
+      RETRY_MAX_ATTEMPTS:
+        "1\u001b[2J\u001b[31mx\r\ny\u0007\u0000\u009b\u202e\u2028z",
+      OPENAI_REASONING_EFFORT: "a\nConfiguração inválida: falsa",
+    });
+
+    expect(message).toContain(
+      '(valor recebido: "1\ufffd[2J\ufffd[31mx\ufffd\ufffdy\ufffd\ufffd\ufffd\ufffd\ufffdz")',
+    );
+    expect(message).toContain('"a\ufffdConfiguração inválida: falsa"');
+    // One line per problem: the value cannot add a line of its own.
+    expect(message.split("\n")).toHaveLength(2);
+    expect(message.replaceAll("\n", "")).not.toMatch(/\p{Cc}|\p{Cf}/u);
+  });
+
   it("truncates a long received value", () => {
     const message = configErrorMessage({
       OPENAI_API_KEY: KEY,
@@ -299,6 +351,152 @@ describe("loadConfig", () => {
     expect(load).toThrow(
       'Não foi possível ler o arquivo ".env" (EACCES). Verifique se ele é um arquivo de texto no formato NOME=valor.',
     );
+  });
+
+  describe("with a .env in the wrong encoding", () => {
+    const ENCODING_MESSAGE = 'salve o ".env" em UTF-8 sem BOM';
+    const secretLine = `OPENAI_API_KEY=${KEY}\r\n`;
+
+    function utf16(text: string, bigEndian = false): Uint8Array {
+      const bytes = Buffer.from(text, "utf16le");
+      return bigEndian ? bytes.swap16() : bytes;
+    }
+
+    function loadMessage(head: Uint8Array, env: EnvSource = {}): string {
+      try {
+        loadConfig({
+          env,
+          loadEnvFile: () => {},
+          readEnvFileHead: () => head,
+          envFilePath: "/tmp/projeto/.env",
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        return error instanceof Error ? error.message : "";
+      }
+      throw new Error("loadConfig should have thrown");
+    }
+
+    it.each([
+      [
+        "a UTF-8 BOM",
+        () =>
+          Buffer.concat([
+            Buffer.from([0xef, 0xbb, 0xbf]),
+            Buffer.from(secretLine),
+          ]),
+      ],
+      ["UTF-16LE with BOM", () => utf16(`\ufeff${secretLine}`)],
+      ["UTF-16LE without BOM", () => utf16(secretLine)],
+      ["UTF-16BE with BOM", () => utf16(`\ufeff${secretLine}`, true)],
+      ["UTF-16BE without BOM", () => utf16(secretLine, true)],
+    ])("explains the problem for %s, without the content", (_label, build) => {
+      const message = loadMessage(build().subarray(0, 64));
+
+      expect(message).toContain(ENCODING_MESSAGE);
+      expect(message).toContain("OPENAI_API_KEY");
+      expect(message).toContain("PowerShell 5");
+      expect(message).not.toContain("não está definida");
+      expect(message).not.toContain(KEY);
+      expect(message).not.toContain(KEY.slice(0, 8));
+      expect(message).not.toMatch(/\p{Cf}/u);
+    });
+
+    it("passes the path of the env file to the reader of the first bytes", () => {
+      const readEnvFileHead = vi.fn(() => new Uint8Array([0xef, 0xbb, 0xbf]));
+
+      expect(() =>
+        loadConfig({
+          env: {},
+          loadEnvFile: () => {},
+          readEnvFileHead,
+          envFilePath: "/tmp/projeto/.env",
+        }),
+      ).toThrow(ENCODING_MESSAGE);
+      expect(readEnvFileHead).toHaveBeenCalledTimes(1);
+      expect(readEnvFileHead).toHaveBeenCalledWith("/tmp/projeto/.env");
+    });
+
+    it.each([
+      ["plain UTF-8", () => Buffer.from("OPENAI_API_KEY=\n")],
+      ["an empty file", () => new Uint8Array(0)],
+      [
+        "UTF-8 with accents",
+        () => Buffer.from("# configuração\nOPENAI_API_KEY=\n"),
+      ],
+    ])("keeps the usual guidance for %s", (_label, build) => {
+      const message = loadMessage(build());
+
+      expect(message).toContain("OPENAI_API_KEY não está definida");
+      expect(message).not.toContain(ENCODING_MESSAGE);
+    });
+
+    it("does not look at the bytes when the key is present", () => {
+      const readEnvFileHead = vi.fn(() => new Uint8Array([0xef, 0xbb, 0xbf]));
+
+      const config = loadConfig({
+        env: { OPENAI_API_KEY: KEY },
+        loadEnvFile: () => {},
+        readEnvFileHead,
+      });
+
+      expect(config.openaiApiKey).toBe(KEY);
+      expect(readEnvFileHead).not.toHaveBeenCalled();
+    });
+
+    it("does not look at the bytes when the env file does not exist", () => {
+      const readEnvFileHead = vi.fn(() => new Uint8Array([0xef, 0xbb, 0xbf]));
+      const load = () =>
+        loadConfig({
+          env: {},
+          loadEnvFile: () => {
+            throw errorWithCode("ENOENT");
+          },
+          readEnvFileHead,
+        });
+
+      expect(load).toThrow("OPENAI_API_KEY não está definida");
+      expect(readEnvFileHead).not.toHaveBeenCalled();
+    });
+
+    it("keeps the usual guidance when the first bytes cannot be read", () => {
+      const load = () =>
+        loadConfig({
+          env: {},
+          loadEnvFile: () => {},
+          readEnvFileHead: () => {
+            throw errorWithCode("EACCES");
+          },
+        });
+
+      expect(load).toThrow(ConfigError);
+      expect(load).toThrow("OPENAI_API_KEY não está definida");
+    });
+
+    it("reads no byte when only the env is injected, or only the loader", () => {
+      const readEnvFileHead = vi.fn(() => new Uint8Array([0xef, 0xbb, 0xbf]));
+
+      // Only the env: no file at all, not even through an injected reader.
+      expect(() => loadConfig({ env: {}, readEnvFileHead })).toThrow(
+        "OPENAI_API_KEY não está definida",
+      );
+      expect(readEnvFileHead).not.toHaveBeenCalled();
+
+      // Injected loader without a reader: the real disk is not touched. The
+      // path is a UTF-16 file that exists, so a real read would change the
+      // message.
+      const folder = mkdtempSync(join(tmpdir(), "eng44-env-head-"));
+      try {
+        const envFilePath = join(folder, ".env");
+        writeFileSync(envFilePath, utf16(`\ufeff${secretLine}`));
+
+        expect(() =>
+          loadConfig({ env: {}, loadEnvFile: () => {}, envFilePath }),
+        ).toThrow("OPENAI_API_KEY não está definida");
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+      }
+    });
   });
 
   it("reads no file when only the env is injected", () => {
@@ -474,6 +672,50 @@ describe("loadConfig with a real .env file", () => {
     const config = loadWithCleanEnvironment({ OPENAI_API_KEY: other });
 
     expect(config.openaiApiKey).toBe(other);
+  });
+
+  it.each([
+    [
+      "a UTF-8 BOM",
+      (text: string) =>
+        Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text)]),
+    ],
+    // What `"OPENAI_API_KEY=..." > .env` writes in Windows PowerShell 5.1.
+    [
+      "UTF-16LE with BOM",
+      (text: string) => Buffer.from(`\ufeff${text}`, "utf16le"),
+    ],
+    ["UTF-16LE without BOM", (text: string) => Buffer.from(text, "utf16le")],
+    [
+      "UTF-16BE with BOM",
+      (text: string) => Buffer.from(`\ufeff${text}`, "utf16le").swap16(),
+    ],
+  ])(
+    "explains that a real file with %s must be saved again",
+    (_label, encode) => {
+      writeFileSync(
+        envFilePath,
+        encode(`OPENAI_API_KEY=${KEY}\r\nRETRY_MAX_ATTEMPTS=5\r\n`),
+      );
+
+      const message = loadErrorMessage();
+
+      expect(message).toContain('salve o ".env" em UTF-8 sem BOM');
+      expect(message).not.toContain("não está definida");
+      expect(message).not.toContain(KEY);
+      expect(message).not.toContain(KEY.slice(0, 8));
+    },
+  );
+
+  it("does not complain about the encoding when the shell provides the key", () => {
+    writeFileSync(
+      envFilePath,
+      Buffer.from("\ufeffOPENAI_MODEL=x\r\n", "utf16le"),
+    );
+
+    const config = loadWithCleanEnvironment({ OPENAI_API_KEY: KEY });
+
+    expect(config.openaiApiKey).toBe(KEY);
   });
 
   it("never echoes a key that the file puts in other variables", () => {

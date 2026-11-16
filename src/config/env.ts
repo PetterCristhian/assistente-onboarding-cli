@@ -2,6 +2,7 @@
 // rule 3). Defaults follow docs/ARQUITETURA.md, section 7.
 //
 // AppConfig carries the credential in plain text: never print or serialize it.
+import { closeSync, openSync, readSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { redact } from "../security/redact.js";
@@ -55,6 +56,11 @@ const INTEGER_RULES = {
 const API_KEY_VARIABLE = "OPENAI_API_KEY";
 const REASONING_EFFORT_VARIABLE = "OPENAI_REASONING_EFFORT";
 const MAX_QUOTED_VALUE_LENGTH = 40;
+// Control and format characters (ESC, line breaks, bidi overrides...) of a
+// quoted value: shown as a marker, so the value cannot drive the terminal.
+const UNSAFE_TO_PRINT = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+const UNSAFE_TO_PRINT_MARKER = "\ufffd";
+const ENV_FILE_HEAD_LENGTH = 64;
 
 /** Trims the value and treats an empty one (`NAME=`) as not defined. */
 function normalize(value: unknown): unknown {
@@ -113,6 +119,23 @@ const MISSING_API_KEY_MESSAGE = [
   "A chave não é aceita por argumento de linha de comando e nunca deve ser versionada.",
 ].join("\n");
 
+const ENV_FILE_ENCODING_MESSAGE = [
+  `Configuração incompleta: o arquivo ".env" existe, mas não está em UTF-8 sem BOM, por isso ${API_KEY_VARIABLE} não foi lida.`,
+  "Como corrigir:",
+  '  1. Abra o arquivo em um editor de texto e salve o ".env" em UTF-8 sem BOM',
+  '     (no Bloco de Notas, escolha "UTF-8", não "UTF-8 com BOM" nem "UTF-16").',
+  '  2. Não crie o ".env" com ">" no Windows PowerShell 5: ele grava UTF-16 por padrão.',
+  "     Prefira copiar o modelo (Copy-Item .env.example .env) e editar a cópia.",
+].join("\n");
+
+/** The forms in which the key may show up inside another value. */
+function keyVariants(source: EnvSource): string[] {
+  const raw = source[API_KEY_VARIABLE] ?? "";
+  const trimmed = raw.trim();
+  const unquoted = /^(["'])(.*)\1$/s.exec(trimmed)?.[2] ?? trimmed;
+  return [...new Set([raw, trimmed, unquoted, unquoted.trim()])];
+}
+
 function isIntegerVariable(name: string): name is keyof typeof INTEGER_RULES {
   return Object.hasOwn(INTEGER_RULES, name);
 }
@@ -120,7 +143,10 @@ function isIntegerVariable(name: string): name is keyof typeof INTEGER_RULES {
 /** Quotes a received value for an error message, never leaking a credential. */
 function describeReceived(name: string, source: EnvSource): string {
   const raw = (source[name] ?? "").trim();
-  const safe = redact(raw, [source[API_KEY_VARIABLE] ?? ""]);
+  const safe = redact(raw, keyVariants(source)).replace(
+    UNSAFE_TO_PRINT,
+    UNSAFE_TO_PRINT_MARKER,
+  );
   const shown =
     safe.length > MAX_QUOTED_VALUE_LENGTH
       ? `${safe.slice(0, MAX_QUOTED_VALUE_LENGTH)}...`
@@ -188,6 +214,37 @@ export interface LoadConfigDeps {
   loadEnvFile?: (path: string) => void;
   /** Default: the ".env" at the project root, wherever the cwd is. */
   envFilePath?: string;
+  /**
+   * Returns the first bytes of the ".env", to explain a wrong encoding. Only
+   * called when the key is missing after a ".env" that exists was loaded.
+   * Default: reads the disk, unless `loadEnvFile` was injected (then none).
+   */
+  readEnvFileHead?: (path: string) => Uint8Array;
+}
+
+function readFileHead(path: string): Uint8Array {
+  const descriptor = openSync(path, "r");
+  try {
+    const head = new Uint8Array(ENV_FILE_HEAD_LENGTH);
+    const length = readSync(descriptor, head, 0, head.length, 0);
+    return head.subarray(0, length);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+/**
+ * True for a UTF-8 byte order mark and for UTF-16, with or without one: a
+ * NUL byte never appears in a ".env" saved as UTF-8.
+ */
+function hasUnsupportedEncoding(head: Uint8Array): boolean {
+  const [first, second, third] = head;
+  return (
+    (first === 0xef && second === 0xbb && third === 0xbf) ||
+    (first === 0xff && second === 0xfe) ||
+    (first === 0xfe && second === 0xff) ||
+    head.includes(0)
+  );
 }
 
 function readErrorCode(error: unknown): string | undefined {
@@ -203,6 +260,7 @@ function readErrorCode(error: unknown): string | undefined {
  */
 export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
   const env = deps.env ?? process.env;
+  let envFileEncodingIsWrong = false;
 
   // With an injected env and no injected loader, no file is read at all.
   if (deps.env === undefined || deps.loadEnvFile !== undefined) {
@@ -211,8 +269,10 @@ export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
     const envFilePath =
       deps.envFilePath ?? fileURLToPath(new URL("../../.env", import.meta.url));
 
+    let envFileWasLoaded = false;
     try {
       loadEnvFile(envFilePath);
+      envFileWasLoaded = true;
     } catch (error) {
       const code = readErrorCode(error);
       if (code !== "ENOENT") {
@@ -221,7 +281,29 @@ export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
         );
       }
     }
+
+    // A ".env" with a byte order mark or in UTF-16 loads without an error,
+    // but its names come out wrong: say so instead of "not defined".
+    const readEnvFileHead =
+      deps.readEnvFileHead ??
+      (deps.loadEnvFile === undefined ? readFileHead : undefined);
+    if (
+      envFileWasLoaded &&
+      readEnvFileHead !== undefined &&
+      normalize(env[API_KEY_VARIABLE]) === undefined
+    ) {
+      try {
+        envFileEncodingIsWrong = hasUnsupportedEncoding(
+          readEnvFileHead(envFilePath),
+        );
+      } catch {
+        // Not being able to look is not an error: the usual guidance follows.
+      }
+    }
   }
 
+  if (envFileEncodingIsWrong) {
+    throw new ConfigError(ENV_FILE_ENCODING_MESSAGE);
+  }
   return parseConfig(env);
 }
