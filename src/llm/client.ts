@@ -1,7 +1,15 @@
 // The only path to the provider (CLAUDE.md, architecture rule 2): the
 // LlmClient interface that the rest of the project depends on.
 // See docs/adr/0002-modelo-e-api-openai.md.
-import type { z } from "zod";
+import OpenAI from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
+import type {
+  EasyInputMessage,
+  Response,
+  ResponseUsage,
+} from "openai/resources/responses/responses";
+import { z } from "zod";
+import type { AppConfig } from "../config/env.js";
 
 export interface LlmMessage {
   readonly role: "user" | "assistant";
@@ -89,4 +97,250 @@ export class LlmResponseError extends Error {
       this.model = model;
     }
   }
+}
+
+// --- Implementation over the SDK (Responses API) --------------------------
+
+export type LlmClientConfig = Pick<
+  AppConfig,
+  "openaiApiKey" | "openaiModel" | "openaiReasoningEffort" | "requestTimeoutMs"
+>;
+
+export interface OpenAiClientDeps {
+  /** Default: the global `fetch`. Tests pass a fake one. */
+  fetch?: typeof fetch;
+  /** Default: the public address of the API. The local stub passes its own. */
+  baseURL?: string;
+}
+
+// Written out so that the SDK never falls back to OPENAI_BASE_URL.
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+const MESSAGES = {
+  interrupted: "A resposta do modelo foi interrompida antes de terminar.",
+  failed: "O provedor informou que a geração da resposta falhou",
+  incomplete: "A resposta do modelo ficou incompleta",
+  empty: "O modelo não devolveu nenhum texto.",
+  refusal: "O modelo se recusou a responder.",
+  notJson: "A saída estruturada do modelo não é um JSON válido.",
+  outsideSchema: "A saída estruturada do modelo não segue o formato esperado",
+} as const;
+
+// A short identifier of the provider or a field name of the schema: the only
+// things, besides fixed text, that go into a message.
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,39}$/;
+const MAX_FIELDS_IN_MESSAGE = 5;
+
+function withDetail(message: string, label: string, detail: unknown): string {
+  return typeof detail === "string" && IDENTIFIER.test(detail)
+    ? `${message} (${label}: ${detail}).`
+    : `${message}.`;
+}
+
+function toUsage(usage: ResponseUsage | undefined): { usage?: LlmUsage } {
+  if (usage === undefined) {
+    return {};
+  }
+  return {
+    usage: {
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      totalTokens: usage.total_tokens,
+    },
+  };
+}
+
+function hasRefusal(response: Response): boolean {
+  return response.output.some(
+    (item) =>
+      item.type === "message" &&
+      item.content.some((content) => content.type === "refusal"),
+  );
+}
+
+/** Why a response that ended carries no usable output. */
+function unusableResponse(response: Response): LlmResponseError {
+  if (response.status === "failed") {
+    return new LlmResponseError(
+      "failed",
+      withDetail(MESSAGES.failed, "código", response.error?.code),
+      response.model,
+    );
+  }
+  if (response.status === "incomplete") {
+    return new LlmResponseError(
+      "incomplete",
+      withDetail(
+        MESSAGES.incomplete,
+        "motivo",
+        response.incomplete_details?.reason,
+      ),
+      response.model,
+    );
+  }
+  return hasRefusal(response)
+    ? new LlmResponseError("refusal", MESSAGES.refusal, response.model)
+    : new LlmResponseError("empty", MESSAGES.empty, response.model);
+}
+
+/** Names the refused fields; never their values. */
+function outsideSchemaMessage(error: z.ZodError): string {
+  const fields = [
+    ...new Set(
+      error.issues
+        .map((issue) => issue.path)
+        .filter(
+          (path) =>
+            path.length > 0 &&
+            path.every(
+              (segment) =>
+                typeof segment === "number" ||
+                (typeof segment === "string" && IDENTIFIER.test(segment)),
+            ),
+        )
+        .map((path) => path.join(".")),
+    ),
+  ].slice(0, MAX_FIELDS_IN_MESSAGE);
+  return fields.length > 0
+    ? `${MESSAGES.outsideSchema} (campos: ${fields.join(", ")}).`
+    : `${MESSAGES.outsideSchema}.`;
+}
+
+function toInput(messages: readonly LlmMessage[]): EasyInputMessage[] {
+  if (messages.length === 0) {
+    throw new TypeError("LlmRequest.input must not be empty.");
+  }
+  return messages.map(({ role, content }) => ({ role, content }));
+}
+
+/**
+ * The SDK client lives only in this closure: its `apiKey` is a public
+ * property, so it must never be reachable from the object that is returned.
+ * Every option that the SDK would read from the environment is given here.
+ */
+export function createOpenAiLlmClient(
+  config: LlmClientConfig,
+  deps: OpenAiClientDeps = {},
+): LlmClient {
+  const sdk = new OpenAI({
+    apiKey: config.openaiApiKey,
+    adminAPIKey: null,
+    organization: null,
+    project: null,
+    webhookSecret: null,
+    baseURL: deps.baseURL ?? DEFAULT_BASE_URL,
+    // The retry is ours (ADR 0005): the SDK never tries again by itself.
+    maxRetries: 0,
+    timeout: config.requestTimeoutMs,
+    logLevel: "off",
+    ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+  });
+  const defaultModel = config.openaiModel;
+  const reasoning = { effort: config.openaiReasoningEffort };
+
+  async function streamText(
+    request: StreamTextRequest,
+  ): Promise<LlmTextResult> {
+    const input = toInput(request.input);
+    const stream = await sdk.responses.create(
+      {
+        model: request.model ?? defaultModel,
+        instructions: request.instructions,
+        input,
+        store: false,
+        reasoning,
+        stream: true,
+      },
+      { signal: request.signal },
+    );
+
+    // The final event carries no text: the text is the pieces, joined.
+    let text = "";
+    let chunks = 0;
+    let completed: Response | undefined;
+    for await (const event of stream) {
+      switch (event.type) {
+        case "response.output_text.delta":
+          text += event.delta;
+          chunks += 1;
+          request.onChunk?.(event.delta);
+          break;
+        case "response.completed":
+          completed = event.response;
+          break;
+        case "response.failed":
+        case "response.incomplete":
+          throw unusableResponse(event.response);
+        default:
+          break;
+      }
+    }
+
+    // The SDK ends the iteration in silence when the stream is cut short.
+    if (completed === undefined) {
+      throw new LlmResponseError("interrupted", MESSAGES.interrupted);
+    }
+    if (text === "") {
+      throw unusableResponse(completed);
+    }
+    return {
+      text,
+      model: completed.model,
+      chunks,
+      ...toUsage(completed.usage),
+    };
+  }
+
+  async function generateStructured<S extends z.ZodType>(
+    request: StructuredRequest<S>,
+  ): Promise<LlmStructuredResult<z.infer<S>>> {
+    const input = toInput(request.input);
+    let response: Response & { output_parsed: unknown };
+    try {
+      response = await sdk.responses.parse(
+        {
+          model: request.model ?? defaultModel,
+          instructions: request.instructions,
+          input,
+          store: false,
+          reasoning,
+          text: { format: zodTextFormat(request.schema, request.schemaName) },
+        },
+        { signal: request.signal },
+      );
+    } catch (error) {
+      // The SDK parses the output while reading the answer, so the model that
+      // answered is not known here.
+      if (error instanceof z.ZodError) {
+        throw new LlmResponseError(
+          "invalid_output",
+          outsideSchemaMessage(error),
+        );
+      }
+      if (error instanceof SyntaxError) {
+        throw new LlmResponseError("invalid_output", MESSAGES.notJson);
+      }
+      throw error;
+    }
+
+    // A refusal and an incomplete answer do not throw: nothing was parsed.
+    if (response.output_parsed === null) {
+      throw unusableResponse(response);
+    }
+    const checked = request.schema.safeParse(response.output_parsed);
+    if (!checked.success) {
+      throw new LlmResponseError(
+        "invalid_output",
+        outsideSchemaMessage(checked.error),
+        response.model,
+      );
+    }
+    return {
+      value: checked.data,
+      model: response.model,
+      ...toUsage(response.usage),
+    };
+  }
+
+  return Object.freeze({ streamText, generateStructured });
 }
