@@ -143,17 +143,51 @@ describe("generateStructured reads the output as `responses.parse` does", () => 
     ["is not JSON", "not a JSON"],
     ["is outside the schema", JSON.stringify({ approved: "yes" })],
   ])(
-    "passes over a piece that %s when a later one is valid",
+    "refuses the answer when its first piece %s, even when a later one is valid",
     async (_l, bad) => {
       const { client } = setup([
         jsonStep([message([bad, JSON.stringify(VERDICT)])]),
+        jsonStep([
+          message([bad], "final_answer", "msg_1"),
+          message([JSON.stringify(VERDICT)], "final_answer", "msg_2"),
+        ]),
       ]);
 
-      await expect(structured(client)).resolves.toMatchObject({
-        value: VERDICT,
-      });
+      const insideOne = await rejectionOf(structured(client));
+      const acrossMessages = await rejectionOf(structured(client));
+
+      for (const error of [insideOne, acrossMessages]) {
+        expect(error).toBeInstanceOf(LlmResponseError);
+        expect(error).toMatchObject({
+          kind: "invalid_output",
+          model: FAKE_RETURNED_MODEL,
+        });
+      }
     },
   );
+
+  // The first piece of the final answer decides, as in `responses.parse`: a
+  // disapproval that was cut short is never replaced by what follows it.
+  it("a disapproval cut short and then an approval is invalid_output", async () => {
+    const cut = JSON.stringify(OTHER_VERDICT).slice(0, -8);
+    const { client } = setup([
+      jsonStep([message([cut, JSON.stringify(VERDICT)])]),
+      jsonStep([
+        message(["Let me check."], "commentary", "msg_1"),
+        message([cut], "final_answer", "msg_2"),
+        message([JSON.stringify(VERDICT)], "final_answer", "msg_3"),
+      ]),
+    ]);
+
+    const insideOne = await rejectionOf(structured(client));
+    const acrossMessages = await rejectionOf(structured(client));
+
+    for (const error of [insideOne, acrossMessages]) {
+      expect(error).toBeInstanceOf(LlmResponseError);
+      expect(error).toMatchObject({ kind: "invalid_output" });
+      expect((error as Error).message).toContain("não é um JSON válido");
+    }
+  });
 
   it("does not take a commentary for the answer, even when it is valid", async () => {
     const { client } = setup([

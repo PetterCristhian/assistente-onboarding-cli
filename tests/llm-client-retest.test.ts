@@ -885,14 +885,18 @@ describe("the rule of phase in generateStructured", () => {
     expect(expectKind(error, "empty").model).toBeDefined();
   });
 
-  it("uses the first piece that is valid, across messages and inside one", async () => {
+  it("the first piece of the final answer decides, across messages and inside one", async () => {
+    // A piece that is refused is never passed over for a later valid one.
     const acrossMessages = await outcomeOf([
       message("commentary", otherGood),
       message("final_answer", `{"approved": tru`),
       message("final_answer", good),
       message("final_answer", otherGood),
     ]);
-    expect(acrossMessages.result?.value).toEqual(VERDICT);
+    expect(acrossMessages.result).toBeUndefined();
+    expect(
+      expectKind(acrossMessages.error, "invalid_output").message,
+    ).toContain("JSON");
 
     const insideOne = await outcomeOf([
       message(
@@ -904,7 +908,30 @@ describe("the rule of phase in generateStructured", () => {
         otherGood,
       ),
     ]);
-    expect(insideOne.result?.value).toEqual(VERDICT);
+    expect(insideOne.result).toBeUndefined();
+    expectKind(insideOne.error, "invalid_output");
+
+    const outsideSchemaFirst = await outcomeOf([
+      message(undefined, JSON.stringify({ approved: 1 }), good),
+    ]);
+    expect(outsideSchemaFirst.result).toBeUndefined();
+    expect(
+      expectKind(outsideSchemaFirst.error, "invalid_output").message,
+    ).toContain("approved");
+
+    // A valid commentary is still skipped, and of two valid pieces of the
+    // final answer the first one is returned.
+    const validFirst = await outcomeOf([
+      message("commentary", otherGood),
+      message("final_answer", good),
+      message("final_answer", otherGood),
+    ]);
+    expect(validFirst.result?.value).toEqual(VERDICT);
+
+    const validFirstInsideOne = await outcomeOf([
+      message(undefined, good, otherGood, "not json"),
+    ]);
+    expect(validFirstInsideOne.result?.value).toEqual(VERDICT);
   });
 
   it("never joins the pieces: two halves of a JSON are not an answer", async () => {

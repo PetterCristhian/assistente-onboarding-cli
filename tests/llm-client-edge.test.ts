@@ -82,7 +82,9 @@ afterEach(() => {
 });
 
 describe("streamText: odd streams", () => {
-  it("keeps the order of arrival even when the final event comes first", async () => {
+  // The final event ends the reading: the pieces that come after it are not
+  // read, and the answer is the text that the final event holds.
+  it("ignores the pieces that come after a final event that comes first", async () => {
     const { client } = setup([
       {
         kind: "sse",
@@ -96,8 +98,9 @@ describe("streamText: odd streams", () => {
       onChunk: (chunk) => received.push(chunk),
     });
 
-    expect(received).toEqual(["a", "b"]);
+    expect(received).toEqual(["ab"]);
     expect(result.text).toBe("ab");
+    expect(result.chunks).toBe(1);
     expect(result.model).toBe(FAKE_RETURNED_MODEL);
   });
 

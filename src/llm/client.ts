@@ -247,11 +247,19 @@ function readResponse(raw: unknown): ProviderResponse {
   return parsed.data;
 }
 
-/** A response that ended well: it must say which model answered. */
+/**
+ * A response that ended well. As in the SDK, its output is read only when it
+ * has no status or the status `completed`: any other status is the provider
+ * saying that there is no answer, whatever the output holds. And it must say
+ * which model answered.
+ */
 function readCompletedResponse(
   raw: unknown,
 ): ProviderResponse & { model: string } {
   const response = readResponse(raw);
+  if (typeof response.status === "string" && response.status !== "completed") {
+    throw unusableResponse(response);
+  }
   const model = modelOf(response);
   if (model === undefined) {
     throw malformedAnswer();
@@ -273,6 +281,7 @@ function toUsage(usage: ProviderResponse["usage"]): { usage?: LlmUsage } {
 }
 
 type ProviderMessage = z.infer<typeof messageItemSchema>;
+type ProviderContent = NonNullable<ProviderMessage["content"]>[number];
 
 function messagesOf(response: ProviderResponse): ProviderMessage[] {
   return (response.output ?? []).filter((item) => item.type === MESSAGE_ITEM);
@@ -291,12 +300,15 @@ function isAnswerPhase(phase: string | null | undefined): boolean {
  * The pieces of text of the answer, in order, one for each `output_text`.
  * Empty when the answer has none.
  */
-function answerTexts(response: ProviderResponse): string[] {
+function answerPieces(response: ProviderResponse): ProviderContent[] {
   return messagesOf(response)
     .filter((message) => isAnswerPhase(message.phase))
     .flatMap((message) => message.content ?? [])
-    .filter((content) => content.type === "output_text")
-    .map((content) => content.text ?? "");
+    .filter((content) => content.type === "output_text");
+}
+
+function answerTexts(response: ProviderResponse): string[] {
+  return answerPieces(response).map((content) => content.text ?? "");
 }
 
 function hasRefusal(response: ProviderResponse): boolean {
@@ -542,7 +554,9 @@ export function createOpenAiLlmClient(
     const events: AsyncIterator<unknown> = stream[Symbol.asyncIterator]();
     let ended = false;
     try {
-      for (;;) {
+      // The final event ends the reading: whatever comes after it is not
+      // read, and the connection is not waited for.
+      while (completed === undefined) {
         let next: IteratorResult<unknown>;
         try {
           next = await events.next();
@@ -593,6 +607,7 @@ export function createOpenAiLlmClient(
             break;
           }
           case "response.completed":
+            // Throws when the response says that it did not complete.
             completed = readCompletedResponse(event.data.response);
             break;
           case "response.failed":
@@ -608,8 +623,9 @@ export function createOpenAiLlmClient(
         }
       }
     } finally {
-      // Leaving before the end makes the SDK abort the request. The call is
-      // already decided: a failure to close the stream changes nothing.
+      // Leaving before the end of the body (at the final event, or with an
+      // error) makes the SDK abort the request, which closes the connection.
+      // The call is already decided: a failure to close changes nothing.
       if (!ended) {
         await events.return?.().catch(() => undefined);
       }
@@ -683,59 +699,38 @@ export function createOpenAiLlmClient(
       throw failureWhileReading(error, MESSAGES.unreadable);
     }
 
-    const response = readResponse(body);
-    // As in the SDK, the output is read only of a response with no status
-    // or with `completed`.
-    if (
-      typeof response.status === "string" &&
-      response.status !== "completed"
-    ) {
-      throw unusableResponse(response);
-    }
-    const model = modelOf(response);
-    if (model === undefined) {
-      throw malformedAnswer();
-    }
-    const texts = answerTexts(response);
-    if (texts.length === 0) {
+    const response = readCompletedResponse(body);
+    const model = response.model;
+    // As in the SDK (`responses.parse`), each piece of text is read by
+    // itself, never joined to the others, and the first one of the final
+    // answer decides: the ones after it are not looked at, so that a piece
+    // that is refused is never replaced by a later one that passes.
+    const first = answerPieces(response)[0];
+    if (first === undefined) {
       // A refusal, only commentary, or no output at all.
       throw unusableResponse(response);
     }
+    if (typeof first.text !== "string") {
+      // A piece of text with no text: the provider broke its contract.
+      throw malformedAnswer(model);
+    }
 
-    // From here on, what is judged is the output of the model. As in the
-    // SDK, each piece of text is read by itself, never joined to the others,
-    // and the first one that is valid is the answer.
-    let refused: LlmResponseError | undefined;
-    for (const text of texts) {
-      let output: unknown;
-      try {
-        output = JSON.parse(text);
-      } catch {
-        refused ??= new LlmResponseError(
-          "invalid_output",
-          MESSAGES.notJson,
-          model,
-        );
-        continue;
-      }
-      const checked = request.schema.safeParse(output);
-      if (checked.success) {
-        return {
-          value: checked.data,
-          model,
-          ...toUsage(response.usage),
-        };
-      }
-      refused ??= new LlmResponseError(
+    // From here on, what is judged is the output of the model.
+    let output: unknown;
+    try {
+      output = JSON.parse(first.text);
+    } catch {
+      throw new LlmResponseError("invalid_output", MESSAGES.notJson, model);
+    }
+    const checked = request.schema.safeParse(output);
+    if (!checked.success) {
+      throw new LlmResponseError(
         "invalid_output",
         outsideSchemaMessage(checked.error),
         model,
       );
     }
-    // No piece is valid: the first one that was refused is the one reported.
-    throw (
-      refused ?? new LlmResponseError("invalid_output", MESSAGES.notJson, model)
-    );
+    return { value: checked.data, model, ...toUsage(response.usage) };
   }
 
   function generateStructured<S extends z.ZodType>(
