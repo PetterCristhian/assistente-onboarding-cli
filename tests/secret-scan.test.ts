@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  NoFilesScannedError,
   findSecretsInText,
   listRepositoryFiles,
   scanRepository,
@@ -253,6 +254,39 @@ describe("scanRepository", () => {
     const result = scanRepository({ rootDir });
 
     expect(result).toEqual({ scannedFiles: 1, findings: [] });
+  });
+
+  it("fails when Git lists no file at all", () => {
+    const scan = () => scanRepository({ rootDir: "raiz", listFiles: () => [] });
+
+    expect(scan).toThrow(NoFilesScannedError);
+    expect(scan).toThrow("no file was scanned (0 listed)");
+  });
+
+  it("fails when no listed file could be read", () => {
+    let caught: unknown;
+    try {
+      // What happens when the list comes from another repository.
+      scanRepository({
+        rootDir: "raiz",
+        listFiles: () => ["a.txt", "pasta/b.txt"],
+        readFile: () => undefined,
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(NoFilesScannedError);
+    expect(caught instanceof NoFilesScannedError && caught.listedFiles).toBe(2);
+  });
+
+  it("fails in a real Git folder where every file is ignored", () => {
+    const rootDir = createTemporaryFolder();
+    execFileSync("git", ["init", "--quiet"], { cwd: rootDir, stdio: "ignore" });
+    writeFileSync(join(rootDir, ".gitignore"), "*\n");
+    writeFileSync(join(rootDir, "nota.txt"), "sem credencial\n");
+
+    expect(() => scanRepository({ rootDir })).toThrow(NoFilesScannedError);
   });
 
   it("lets a failure to list the files propagate", () => {

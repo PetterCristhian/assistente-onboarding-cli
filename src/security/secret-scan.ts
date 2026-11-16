@@ -92,6 +92,20 @@ export interface SecretScanDeps {
   readFile?: (absolutePath: string) => string | undefined;
 }
 
+/**
+ * A scan that read nothing proves nothing: Git listed no file, or none of the
+ * listed files exists under rootDir (the list came from another repository,
+ * for instance through GIT_DIR).
+ */
+export class NoFilesScannedError extends Error {
+  override readonly name = "NoFilesScannedError";
+
+  constructor(readonly listedFiles: number) {
+    super(`no file was scanned (${listedFiles} listed)`);
+  }
+}
+
+/** Throws NoFilesScannedError when not a single file could be read. */
 export function scanRepository(deps: SecretScanDeps): {
   scannedFiles: number;
   findings: SecretFinding[];
@@ -102,7 +116,8 @@ export function scanRepository(deps: SecretScanDeps): {
   let scannedFiles = 0;
 
   // No exception list: tests/ and outputs/ are scanned like everything else.
-  for (const file of listFiles(deps.rootDir)) {
+  const files = listFiles(deps.rootDir);
+  for (const file of files) {
     // The name of a file is as public as its content.
     const shownFile = redact(file);
     if (shownFile !== file) {
@@ -117,6 +132,9 @@ export function scanRepository(deps: SecretScanDeps): {
     for (const { line, column } of findSecretsInText(text)) {
       findings.push({ file: shownFile, line, column });
     }
+  }
+  if (scannedFiles === 0) {
+    throw new NoFilesScannedError(files.length);
   }
   return { scannedFiles, findings };
 }

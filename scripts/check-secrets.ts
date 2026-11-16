@@ -2,7 +2,10 @@
 // src/security/secret-scan.ts; this file only reports and sets the exit code:
 // 0 = clean, 1 = possible credential found, 2 = the scan could not run.
 import { fileURLToPath } from "node:url";
-import { scanRepository } from "../src/security/secret-scan.js";
+import {
+  NoFilesScannedError,
+  scanRepository,
+} from "../src/security/secret-scan.js";
 
 function describeFailure(error: unknown): string {
   if (typeof error === "object" && error !== null) {
@@ -24,6 +27,12 @@ function main(): number {
     result = scanRepository({ rootDir });
   } catch (error) {
     // Never pass in silence: a scan that did not run is a failure.
+    if (error instanceof NoFilesScannedError) {
+      console.error(
+        `check:secrets: nenhum arquivo foi varrido (o Git listou ${error.listedFiles} arquivos). A varredura não pode ser dada como limpa. Verifique se o comando roda dentro do repositório e se GIT_DIR ou GIT_WORK_TREE não apontam para outro lugar.`,
+      );
+      return 2;
+    }
     console.error(
       `check:secrets: não foi possível listar os arquivos com o Git (${describeFailure(error)}).`,
     );

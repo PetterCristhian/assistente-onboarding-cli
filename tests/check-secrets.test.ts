@@ -137,6 +137,30 @@ describe("scripts/check-secrets.ts", () => {
   );
 
   it(
+    "exits with 2, in Portuguese, when no file at all was scanned",
+    () => {
+      const folder = createScannedCopy();
+      // Everything ignored, the .gitignore itself included: Git lists nothing.
+      writeFileSync(join(folder, ".gitignore"), "*\n");
+      writeFileSync(join(folder, "nota.txt"), `${KEY}\n`);
+
+      const result = runScript(join(folder, "scripts", "check-secrets.ts"));
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(
+        "check:secrets: nenhum arquivo foi varrido (o Git listou 0 arquivos)",
+      );
+      expect(result.stderr).toContain(
+        "A varredura não pode ser dada como limpa",
+      );
+      expect(result.stderr).not.toContain("nenhuma credencial encontrada");
+      expect(result.stderr).not.toMatch(/^\s+at /m);
+      expect(result.stdout).toBe("");
+    },
+    CHILD_TIMEOUT_MS,
+  );
+
+  it(
     "exits with 2, never in silence, when Git cannot list the files",
     () => {
       const folder = mkdtempSync(join(tmpdir(), "eng44-check-secrets-"));
