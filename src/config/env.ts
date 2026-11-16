@@ -328,6 +328,11 @@ export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
     const envFilePath =
       deps.envFilePath ?? fileURLToPath(new URL("../../.env", import.meta.url));
 
+    // Names with the mark that were already there are not from the file.
+    const namesBeforeLoad = new Set(
+      Object.keys(env).filter((name) => name.startsWith(BYTE_ORDER_MARK)),
+    );
+
     let envFileWasLoaded = false;
     try {
       loadEnvFile(envFilePath);
@@ -345,9 +350,14 @@ export function loadConfig(deps: LoadConfigDeps = {}): AppConfig {
     // values may be the credential: they do not stay in the environment.
     if (envFileWasLoaded) {
       for (const name of Object.keys(env)) {
-        if (name.startsWith(BYTE_ORDER_MARK)) {
+        if (name.startsWith(BYTE_ORDER_MARK) && !namesBeforeLoad.has(name)) {
           mangledName ??= name;
-          delete env[name];
+          try {
+            delete env[name];
+          } catch {
+            // An env that cannot be changed (frozen): the name stays, and
+            // the guidance about the mark is given all the same.
+          }
         }
       }
     }

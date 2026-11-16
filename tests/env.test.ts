@@ -1021,3 +1021,64 @@ describe("parseConfig: a key that is too short", () => {
     expect(message).not.toContain("ab cd");
   });
 });
+
+describe("loadConfig: names with the mark that the .env did not create", () => {
+  it("keeps a name with the mark that was in the env before the load", () => {
+    const env: EnvSource = { "\ufeffOUTRA": "valor" };
+
+    const config = loadConfig({
+      env,
+      loadEnvFile: () => {
+        env.OPENAI_API_KEY = KEY;
+      },
+    });
+
+    expect(config.openaiApiKey).toBe(KEY);
+    expect(env["\ufeffOUTRA"]).toBe("valor");
+  });
+
+  it("removes and reports only the name that the load created", () => {
+    const env: EnvSource = { OPENAI_API_KEY: KEY, "\ufeffOUTRA": "valor" };
+    const load = () =>
+      loadConfig({
+        env,
+        loadEnvFile: () => {
+          env["\ufeffOPENAI_MODEL"] = "modelo-do-arquivo";
+        },
+      });
+
+    expect(load).toThrow(ConfigError);
+    expect(load).toThrow("(OPENAI_MODEL) não foi lida");
+    expect(Object.keys(env)).toEqual(["OPENAI_API_KEY", "\ufeffOUTRA"]);
+  });
+
+  it("gives the usual guidance when the name cannot be removed", () => {
+    const env: EnvSource = { OPENAI_API_KEY: KEY };
+    let caught: unknown;
+    try {
+      loadConfig({
+        env,
+        loadEnvFile: () => {
+          env["﻿OPENAI_MODEL"] = "modelo-do-arquivo";
+          Object.freeze(env);
+        },
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ConfigError);
+    expect(caught instanceof Error && caught.message).toContain(
+      "(OPENAI_MODEL) não foi lida",
+    );
+  });
+
+  it("accepts a frozen env that needs no change", () => {
+    const env: EnvSource = Object.freeze({
+      OPENAI_API_KEY: KEY,
+      "\ufeffOUTRA": "valor",
+    });
+
+    expect(loadConfig({ env, loadEnvFile: () => {} }).openaiApiKey).toBe(KEY);
+  });
+});
