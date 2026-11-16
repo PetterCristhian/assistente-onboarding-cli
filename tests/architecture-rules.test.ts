@@ -4,6 +4,14 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { userProfileSchema } from "../src/context/types.js";
+import {
+  emailDomain,
+  extractEmails,
+  listContextFiles,
+  listContextFolder,
+  readContextFile,
+} from "./helpers/context-files.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
@@ -20,6 +28,32 @@ function listTypeScriptFiles(...folders: string[]): string[] {
         .map((entry) => `${folder}/${entry.replaceAll("\\", "/")}`),
     )
     .sort();
+}
+
+function readSource(file: string): string {
+  return readFileSync(join(PROJECT_ROOT, file), "utf8");
+}
+
+/**
+ * The words that belong to the domain, read from context/ and never written
+ * here: the company name (the label of the e-mail domain), the e-mail domain
+ * and the people of the profiles.
+ */
+function domainTerms(): { company: string[]; people: string[] } {
+  const domains = [
+    ...new Set(
+      listContextFiles()
+        .flatMap((path) => extractEmails(readContextFile(path)))
+        .map(emailDomain),
+    ),
+  ];
+  const labels = domains.map((domain) => domain.split(".")[0] ?? "");
+  const people = listContextFolder("03-usuario").flatMap((path) => {
+    const parsed: unknown = JSON.parse(readContextFile(path));
+    const { nome, gestor } = userProfileSchema.parse(parsed);
+    return [nome, gestor];
+  });
+  return { company: [...labels, ...domains], people };
 }
 
 function filesMatching(files: string[], pattern: RegExp): string[] {
@@ -70,5 +104,62 @@ describe("architecture rules", () => {
     );
 
     expect(readers).toEqual([]);
+  });
+
+  // Architecture rule 1: the domain exists only in context/ and in the cases.
+  it("writes no company name, e-mail domain or person of a profile in the code", () => {
+    const { company, people } = domainTerms();
+    const files = listTypeScriptFiles("src", "scripts", "evals");
+
+    // Guards against passing with nothing to look for or nothing to look at.
+    expect(company.length).toBeGreaterThanOrEqual(2);
+    expect(people.length).toBeGreaterThanOrEqual(2);
+    expect(files.some((file) => file.startsWith("src/context/"))).toBe(true);
+    expect(files.some((file) => file.startsWith("scripts/"))).toBe(true);
+
+    const terms = [...company, ...people].map((term) => term.toLowerCase());
+    for (const term of terms) {
+      expect(term.trim().length).toBeGreaterThanOrEqual(4);
+    }
+    const holders = files.filter((file) => {
+      const content = readSource(file).toLowerCase();
+      return terms.some((term) => content.includes(term));
+    });
+
+    expect(holders).toEqual([]);
+  });
+
+  it("keeps the context builder pure: no disk, no clock, no environment", () => {
+    const builder = readSource("src/context/builder.ts");
+    const imported = [...builder.matchAll(/\bfrom\s+"([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+
+    expect(imported).toEqual(["./types.js"]);
+    expect(builder).not.toMatch(/\bimport\s*\(|\brequire\s*\(|\bimport\s+"/);
+    expect(builder).not.toMatch(/\bprocess\b|\bDate\b|Math\s*\.\s*random/);
+  });
+
+  // The clock is a parameter: only the entry points read the real time.
+  it("reads the clock in no file of src/context/", () => {
+    const files = listTypeScriptFiles("src").filter((file) =>
+      file.startsWith("src/context/"),
+    );
+    const readers = filesMatching(
+      files,
+      /new\s+Date\s*\(\s*\)|Date\s*\.\s*now|performance\s*\.\s*now/,
+    );
+
+    expect(files).toContain("src/context/loaders.ts");
+    expect(readers).toEqual([]);
+  });
+
+  it("reads no environment and no argument in src/context/", () => {
+    const files = listTypeScriptFiles("src").filter((file) =>
+      file.startsWith("src/context/"),
+    );
+
+    expect(files).toContain("src/context/loaders.ts");
+    expect(filesMatching(files, /\bprocess\b/)).toEqual([]);
   });
 });
