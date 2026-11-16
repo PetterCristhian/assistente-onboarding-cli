@@ -10,7 +10,7 @@
   "scripts": {
     "chat": "tsx src/cli/main.ts",
     "test": "vitest run",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . --max-warnings 0 && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "check:secrets": "tsx scripts/check-secrets.ts",
