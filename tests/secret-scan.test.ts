@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -648,5 +648,74 @@ describe("findSecretsInText: boundary before the prefix", () => {
     ]);
     // Decision: glued to a letter or digit, it reads as the end of a word.
     expect(findSecretsInText(encode(`texto${KEY}\n`))).toEqual([]);
+  });
+});
+
+// QA, retest of the security round: every encoding at every byte offset, real
+// binary content and adversarial lines.
+describe("findSecretsInText: retest of the wide readings (QA)", () => {
+  const encodings: Array<[string, (text: string) => string]> = [
+    ["UTF-16LE", (text) => utf16AsLatin1(text)],
+    ["UTF-16BE", (text) => utf16AsLatin1(text, { bigEndian: true })],
+    ["UTF-32LE", (text) => utf32AsLatin1(text)],
+    ["UTF-32BE", (text) => utf32AsLatin1(text, { bigEndian: true })],
+  ];
+
+  it.each(encodings)(
+    "finds a %s key after 0 to 9 bytes of any kind, with the column right",
+    (_label, encode) => {
+      const fillers = [
+        "abcdefghi",
+        "=========",
+        "\xe9\xe7\xff\x80\xe9\xe7\xff\x80\xe9",
+      ];
+      for (const filler of fillers) {
+        for (let length = 0; length <= 9; length += 1) {
+          for (const secret of [KEY, fakeMaskedOpenAiKey()]) {
+            for (const after of ["", "\r\n", " x"]) {
+              const content = filler.slice(0, length) + encode(secret + after);
+
+              expect(findSecretsInText(content)).toEqual([
+                { line: 1, column: length + 1 },
+              ]);
+            }
+          }
+        }
+      }
+    },
+  );
+
+  it("finds keys in different encodings in the same line", () => {
+    const content = `${utf16AsLatin1(`${KEY} ${KEY}`)}${utf16AsLatin1(KEY, { bigEndian: true })}${utf32AsLatin1(` ${KEY}`)}`;
+
+    expect(findSecretsInText(content)).toHaveLength(4);
+  });
+
+  it("finds nothing in the executable of Node itself", () => {
+    // Tens of megabytes of real binary, with ASCII and UTF-16 string tables.
+    const binary = readFileSync(process.execPath, "latin1");
+
+    expect(findSecretsInText(binary)).toEqual([]);
+  });
+
+  it("stays fast on lines made of the starts of keys in every encoding", () => {
+    const size = 4 * 1024 * 1024;
+    const starts = "s\0k\0-\0s\0\0\0k\0\0\0-\0\0\0\0s\0k\0-";
+    const contents = [
+      starts.repeat(Math.floor(size / starts.length)),
+      (utf16AsLatin1(`${KEY} `) + utf32AsLatin1(`${KEY} `)).repeat(
+        Math.floor(size / (6 * (KEY.length + 1))),
+      ),
+      utf16AsLatin1(`${["sk", ""].join("-")}${"*".repeat(2)}`).repeat(
+        Math.floor(size / 10),
+      ),
+    ];
+
+    const startedAt = performance.now();
+    for (const content of contents) {
+      findSecretsInText(content);
+    }
+
+    expect(performance.now() - startedAt).toBeLessThan(5000);
   });
 });
