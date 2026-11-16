@@ -275,3 +275,83 @@ describe("redact: hostile inputs", () => {
     expect(result).toBe(`${REDACTED} ${REDACTED}`);
   });
 });
+
+// QA of the walker that replaced the single regular expression: the same
+// sequences must be found wherever they are, and ordinary text must stay.
+describe("redact: where a key can be (QA)", () => {
+  const key = fakeOpenAiKey("q");
+  const other = fakeOpenAiKey("w");
+
+  it.each([
+    ["between parentheses", `(${key})`, `(${REDACTED})`],
+    ["between quotes", `'${key}'`, `'${REDACTED}'`],
+    [
+      "in a query string",
+      `https://x.invalid/v1?k=${key}&b=1`,
+      `https://x.invalid/v1?k=${REDACTED}&b=1`,
+    ],
+    [
+      "in the user part of a URL",
+      `https://${key}@x.invalid/`,
+      `https://${REDACTED}@x.invalid/`,
+    ],
+    ["glued to the text before it", `chave${key}`, `chave${REDACTED}`],
+    ["followed by a full stop", `${key}.`, `${REDACTED}.`],
+    ["between tabs", `a\t${key}\tb`, `a\t${REDACTED}\tb`],
+    ["between accented letters", `é${key}ç`, `é${REDACTED}ç`],
+    [
+      "at the end of the text, with no line break",
+      `linha\n${key}`,
+      `linha\n${REDACTED}`,
+    ],
+    ["between CRLF line breaks", `a\r\n${key}\r\nb`, `a\r\n${REDACTED}\r\nb`],
+    [
+      "after a short use of the prefix",
+      `${PREFIX}abc ${key}`,
+      `${PREFIX}abc ${REDACTED}`,
+    ],
+    ["two separated by a comma", `${key},${other}`, `${REDACTED},${REDACTED}`],
+    ["in an HTML tag", `<b>${key}</b>`, `<b>${REDACTED}</b>`],
+  ])("replaces a key %s", (_label, text, expected) => {
+    expect(redact(text)).toBe(expected);
+  });
+
+  it("ends the last span at the end of the text", () => {
+    const text = `${key} ${other}`;
+
+    expect(findSecretSpans(text)).toEqual([
+      { start: 0, end: key.length },
+      { start: key.length + 1, end: text.length },
+    ]);
+  });
+
+  it.each([
+    "use a task-list de hoje",
+    "risk-based e ask-me-anything",
+    "**task-force** e *task-force*",
+    "| task-id | *** |",
+    "desk-1 *** desk-2",
+    "helpdesk-suporte@empresa.invalid",
+    `o prefixo ${PREFIX} sozinho, ${PREFIX}** e ${PREFIX}*`,
+    "- [ ] task-1\n***\n",
+  ])("keeps ordinary text unchanged: %s", (text) => {
+    expect(redact(text)).toBe(text);
+    expect(findSecretSpans(text)).toEqual([]);
+  });
+
+  it("stays fast on megabytes of sequences that are one character short", () => {
+    const nearMiss = `${PREFIX}${"a".repeat(19)} `.repeat(350_000);
+    const startedAt = performance.now();
+
+    expect(redact(nearMiss)).toBe(nearMiss);
+    expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+
+  it("stays fast on hundreds of thousands of keys in a single line", () => {
+    const text = `${PREFIX}${"a".repeat(20)} `.repeat(350_000);
+    const startedAt = performance.now();
+
+    expect(redact(text)).toBe(`${REDACTED} `.repeat(350_000));
+    expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+});

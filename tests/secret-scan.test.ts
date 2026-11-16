@@ -437,3 +437,49 @@ describe("the repository itself", () => {
     expect(result.scannedFiles).toBeGreaterThan(20);
   });
 });
+
+describe("findSecretsInText: other places and encodings (QA)", () => {
+  it.each([
+    ["UTF-16LE", {}],
+    ["UTF-16BE", { bigEndian: true }],
+  ])("finds the masked key of a 401 message in %s", (_label, options) => {
+    const content = utf16AsLatin1(
+      `erro: ${fakeMaskedOpenAiKey()}\r\n`,
+      options,
+    );
+
+    expect(findSecretsInText(content)).toEqual([{ line: 1, column: 7 }]);
+  });
+
+  it("finds a UTF-16 key appended to a UTF-8 text that ends with a line break", () => {
+    // What `>>` of Windows PowerShell 5.1 does to an existing UTF-8 file.
+    const content = `anotações\n${utf16AsLatin1(`${KEY}\r\n`)}`;
+
+    expect(findSecretsInText(content)).toEqual([{ line: 2, column: 1 }]);
+  });
+
+  it("finds a key inside JSON and at the end of a file with no line break", () => {
+    expect(findSecretsInText(`{"a":{"k":"${KEY}"}}`)).toEqual([
+      { line: 1, column: 12 },
+    ]);
+    expect(findSecretsInText(`linha\n${KEY}`)).toEqual([
+      { line: 2, column: 1 },
+    ]);
+  });
+
+  it("finds nothing in Markdown and in words that end like the prefix", () => {
+    const text =
+      "**negrito** e ***forte***\n- task-list, risk-based, ask-me\n***\n| task-id | *** |\n";
+
+    expect(findSecretsInText(text)).toEqual([]);
+    expect(findSecretsInText(utf16AsLatin1(text))).toEqual([]);
+  });
+
+  it("stays fast with one key in each of many lines", () => {
+    const lines = 100_000;
+    const startedAt = performance.now();
+
+    expect(findSecretsInText(`${KEY}\n`.repeat(lines))).toHaveLength(lines);
+    expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+});

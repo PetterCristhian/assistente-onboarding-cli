@@ -909,3 +909,71 @@ describe("loadConfig with a real .env file", () => {
     expect(message).not.toMatch(/^\s+at /m);
   });
 });
+
+describe("parseConfig: other white space inside the key (QA)", () => {
+  const head = KEY.slice(0, 18);
+  const rest = KEY.slice(18);
+
+  it.each([
+    ["a no-break space", "\u00a0"],
+    ["an ideographic space", "\u3000"],
+    ["a vertical tab", "\v"],
+    ["a line separator", "\u2028"],
+    ["CRLF", "\r\n"],
+  ])("refuses a key with %s inside, without echoing it", (_label, space) => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: `${head}${space}${rest}`,
+      OPENAI_REASONING_EFFORT: rest,
+    });
+
+    expect(message).toContain("(o valor não é exibido)");
+    expect(message).not.toContain(head.slice(0, 10));
+    expect(message).not.toContain(rest.slice(-10));
+  });
+
+  it("never echoes the pieces of a key with a quote in the middle", () => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: `${head}'${rest}`,
+      OPENAI_REASONING_EFFORT: rest,
+      REQUEST_TIMEOUT_MS: `"${head}`,
+    });
+
+    expect(message).not.toContain(head.slice(0, 10));
+    expect(message).not.toContain(rest.slice(-10));
+  });
+});
+
+describe("loadConfig: a .env with a BOM, again and again (QA)", () => {
+  it("reports the mark on every call and leaves no trace in the env", () => {
+    const env: EnvSource = { OPENAI_API_KEY: KEY };
+    const load = () =>
+      loadConfig({
+        env,
+        loadEnvFile: () => {
+          env["\ufeffOPENAI_MODEL"] = "modelo-do-arquivo";
+        },
+      });
+
+    for (let call = 0; call < 3; call += 1) {
+      expect(load).toThrow("(OPENAI_MODEL) não foi lida");
+      expect(Object.keys(env)).toEqual(["OPENAI_API_KEY"]);
+    }
+  });
+
+  it("does not touch the names with the mark when no env file was loaded", () => {
+    const env: EnvSource = {
+      OPENAI_API_KEY: KEY,
+      "\ufeffOUTRA": "valor",
+    };
+
+    const config = loadConfig({
+      env,
+      loadEnvFile: () => {
+        throw errorWithCode("ENOENT");
+      },
+    });
+
+    expect(config.openaiApiKey).toBe(KEY);
+    expect(env["\ufeffOUTRA"]).toBe("valor");
+  });
+});
