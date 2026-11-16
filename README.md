@@ -2,7 +2,7 @@
 
 Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboarding de uma empresa fictícia obedecendo a um conjunto de políticas (P1–P5), com o contexto organizado em quatro camadas separadas e evidências de teste versionadas. Trabalho de pós-graduação (Engenharia de Contexto em IA).
 
-> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Os comandos `npm` abaixo passam a funcionar quando o esqueleto do projeto (issue 1) estiver implementado.
+> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto do projeto (issue 1) implementado, já funcionam `npm run chat` (por enquanto imprime só uma mensagem provisória), `npm test` e `npm run check`; a varredura de segredos entra no `check` na issue 2, e os demais comandos chegam nas issues seguintes.
 
 ## Requisitos
 

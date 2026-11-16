@@ -11,7 +11,7 @@ Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboar
 - LLM: SDK `openai`, Responses API, modelo `gpt-6-luna` (configurável por `OPENAI_MODEL`)
 - Validação: `zod`. Testes unitários: Vitest. Lint/format: ESLint + Prettier
 - Banco: nenhum (histórico em memória)
-- Hospedagem: nenhuma (execução local). CI: nenhum (fora do MVP)
+- Hospedagem: nenhuma (execução local). CI: GitHub Actions mínimo (`npm ci` + `npm run check` a cada push na `main` e a cada PR), sem a chave da OpenAI (ver ADR 0001)
 - Detalhes e justificativas: `docs/ARQUITETURA.md` e `docs/adr/`
 
 ## Comandos
@@ -77,7 +77,7 @@ docs/       PRD, ARQUITETURA, BACKLOG, adr/, CASOS-DE-TESTE, REUSO, ANALISE
 - Trabalhar direto na `main`
 - Desabilitar testes ou regras de lint para fazer passar
 - Adicionar dependência nova sem justificar no plano (runtime hoje: só `openai` e `zod`)
-- Ampliar o escopo além do PRD (sem RAG, sem persistência, sem segundo domínio, sem CI, sem outro provedor)
+- Ampliar o escopo além do PRD (sem RAG, sem persistência, sem segundo domínio, sem outro provedor; o CI fica só no `npm run check`, sem secrets e sem `npm run eval`)
 - Ajustar um caso de teste ou seu critério só para fazer a bateria passar: corrige-se o contexto, e a iteração é registrada em `docs/ANALISE.md`
 
 Se uma chave vazar: avisar o dono na hora para revogá-la no painel da OpenAI. Reescrever o histórico do Git não resolve.
