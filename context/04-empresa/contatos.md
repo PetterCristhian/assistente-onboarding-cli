@@ -20,8 +20,8 @@ Os canais abaixo atendem os funcionários da Orvalia. Os ramais são internos.
 | Registro de ponto | Atendimento de RH | rh@orvalia.example, ramal 2000 |
 | Pagamento e holerite | Folha de Pagamento | folha@orvalia.example, ramal 2300 |
 | Primeira semana | Atendimento de RH | rh@orvalia.example, ramal 2000 |
-| Comunicação | Suporte de TI | suporte-ti@orvalia.example, ramal 2800 |
-| Sistemas e acesso | Suporte de TI | suporte-ti@orvalia.example, ramal 2800 |
+| Ferramentas de comunicação | Suporte de TI | suporte-ti@orvalia.example, ramal 2800 |
+| Sistemas internos | Suporte de TI | suporte-ti@orvalia.example, ramal 2800 |
 
 ## Canais humanos por tipo de caso
 
