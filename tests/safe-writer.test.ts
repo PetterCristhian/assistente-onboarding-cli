@@ -129,4 +129,56 @@ describe("createSafeWriter", () => {
     ).rejects.toThrow("não pode ser convertido em JSON");
     expect(await readdir(rootDir)).toEqual([]);
   });
+
+  it("redacts a key in nested keys and values of a JSON document", async () => {
+    const value = {
+      [KEY]: { lista: [KEY, { [`k_${KEY}`]: `Bearer ${KEY}` }] },
+      headers: { authorization: `Bearer ${KEY}` },
+    };
+
+    const path = await writer.writeJson("outputs/aninhado.json", value);
+    await writer.appendJsonLine("logs/aninhado.jsonl", value);
+
+    const content = await readFile(path, "utf8");
+    const line = await readFile(
+      join(rootDir, "logs", "aninhado.jsonl"),
+      "utf8",
+    );
+    const parsed: unknown = JSON.parse(content);
+    expect(content).not.toContain(KEY);
+    expect(line).not.toContain(KEY);
+    expect(parsed).toEqual({
+      [REDACTED]: {
+        lista: [REDACTED, { [`k_${REDACTED}`]: `Bearer ${REDACTED}` }],
+      },
+      headers: { authorization: `Bearer ${REDACTED}` },
+    });
+  });
+
+  // Same result on Windows and on Linux, where "\" is not a separator.
+  it.each([
+    ["backslashes that leave outputs", "outputs\\..\\src\\x.txt"],
+    ["backslashes that leave the root", "logs\\..\\..\\fora.txt"],
+    ["a capitalized folder", "Outputs/a.txt"],
+    ["an upper-case folder", "LOGS/a.txt"],
+    ["a folder that only starts like outputs", "outputs-extra/a.txt"],
+    ["a folder that only starts like logs", "logs2/a.txt"],
+    ["the outputs folder itself, with a dot", "outputs/."],
+    ["a path that comes back to the bare folder", "outputs/x/.."],
+  ])("refuses %s and writes nothing", async (_label, target) => {
+    await expect(writer.writeText(target, "x")).rejects.toThrow(
+      "O escritor só grava em outputs/ e logs/.",
+    );
+    await expect(writer.appendText(target, "x")).rejects.toThrow(
+      "O escritor só grava em outputs/ e logs/.",
+    );
+    expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  it("accepts a path that goes around but stays inside outputs", async () => {
+    const path = await writer.writeText("./outputs/x/../y/./a.txt", "ok\n");
+
+    expect(path).toBe(resolve(rootDir, "outputs", "y", "a.txt"));
+    expect(await readFile(path, "utf8")).toBe("ok\n");
+  });
 });

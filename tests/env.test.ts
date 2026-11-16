@@ -1,4 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ConfigError,
   ENV_VARIABLE_NAMES,
@@ -302,6 +312,11 @@ describe("loadConfig", () => {
 
   it("uses process.loadEnvFile and process.env by default", () => {
     const spy = vi.spyOn(process, "loadEnvFile").mockImplementation(() => {});
+    // Blank first: a variable left in the shell of the developer (for example
+    // RETRY_MAX_ATTEMPTS=abc) must not decide the result of this test.
+    for (const name of ENV_VARIABLE_NAMES) {
+      vi.stubEnv(name, "");
+    }
     vi.stubEnv("OPENAI_API_KEY", KEY);
     vi.stubEnv("OPENAI_MODEL", "modelo-de-teste");
 
@@ -321,5 +336,173 @@ describe("loadConfig", () => {
 
     await expect(import("../src/config/env.js")).resolves.toBeDefined();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// The tests above inject the loader. These go through the real
+// process.loadEnvFile with a file on disk, in a temporary folder: the ".env"
+// of the project root is never read or written.
+describe("loadConfig with a real .env file", () => {
+  let folder: string;
+  let envFilePath: string;
+
+  beforeEach(() => {
+    folder = mkdtempSync(join(tmpdir(), "eng44-env-file-"));
+    envFilePath = join(folder, ".env");
+  });
+
+  afterEach(() => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+
+  /**
+   * Runs loadConfig against process.env without the nine variables (the env
+   * file loader never overwrites a variable that is already present), then
+   * puts the environment back exactly as it was.
+   */
+  function loadWithCleanEnvironment(preset: Record<string, string> = {}) {
+    const saved = ENV_VARIABLE_NAMES.map(
+      (name) => [name, process.env[name]] as const,
+    );
+    for (const name of ENV_VARIABLE_NAMES) {
+      delete process.env[name];
+    }
+    Object.assign(process.env, preset);
+
+    try {
+      return loadConfig({ envFilePath });
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  }
+
+  function loadErrorMessage(preset: Record<string, string> = {}): string {
+    try {
+      loadWithCleanEnvironment(preset);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      return error instanceof Error ? error.message : "";
+    }
+    throw new Error("loadConfig should have thrown");
+  }
+
+  it("reads the key and the other values from the file", () => {
+    writeFileSync(
+      envFilePath,
+      `OPENAI_API_KEY=${KEY}\nOPENAI_MODEL=modelo-do-arquivo\nRETRY_MAX_ATTEMPTS=5\n`,
+    );
+
+    const config = loadWithCleanEnvironment();
+
+    expect(config.openaiApiKey).toBe(KEY);
+    expect(config.openaiModel).toBe("modelo-do-arquivo");
+    expect(config.retryMaxAttempts).toBe(5);
+    expect(config.requestTimeoutMs).toBe(60000);
+  });
+
+  it("accepts CRLF line endings, quotes and an inline comment", () => {
+    writeFileSync(
+      envFilePath,
+      `OPENAI_API_KEY="${KEY}"\r\nRETRY_MAX_ATTEMPTS=4 # comentário\r\n`,
+    );
+
+    const config = loadWithCleanEnvironment();
+
+    expect(config.openaiApiKey).toBe(KEY);
+    expect(config.retryMaxAttempts).toBe(4);
+  });
+
+  it("leaves the environment of the process as it was", () => {
+    writeFileSync(envFilePath, `OPENAI_API_KEY=${KEY}\n`);
+    const before = ENV_VARIABLE_NAMES.map((name) => process.env[name]);
+
+    loadWithCleanEnvironment();
+
+    expect(ENV_VARIABLE_NAMES.map((name) => process.env[name])).toEqual(before);
+  });
+
+  it("gives the guidance when the file has an empty key", () => {
+    writeFileSync(envFilePath, "OPENAI_API_KEY=\n");
+
+    expect(loadErrorMessage()).toContain("OPENAI_API_KEY não está definida");
+  });
+
+  it("gives the guidance for an untouched copy of .env.example", () => {
+    const example = readFileSync(
+      fileURLToPath(new URL("../.env.example", import.meta.url)),
+    );
+    writeFileSync(envFilePath, example);
+
+    const message = loadErrorMessage();
+
+    expect(message).toContain("OPENAI_API_KEY não está definida");
+    expect(message.split("\n")).toHaveLength(6);
+  });
+
+  it("gives the guidance, not a read error, when the file does not exist", () => {
+    const message = loadErrorMessage();
+
+    expect(message).toContain("OPENAI_API_KEY não está definida");
+    expect(message).not.toContain("Não foi possível ler");
+  });
+
+  it("gives the guidance for a file that is not in the NAME=value format", () => {
+    writeFileSync(envFilePath, `isto não é um env\n{"json": true}\n: : :\n`);
+
+    expect(loadErrorMessage()).toContain("OPENAI_API_KEY não está definida");
+  });
+
+  it("lets an empty variable of the shell block the value of the file", () => {
+    writeFileSync(envFilePath, `OPENAI_API_KEY=${KEY}\n`);
+
+    const message = loadErrorMessage({ OPENAI_API_KEY: "" });
+
+    expect(message).toContain("OPENAI_API_KEY não está definida");
+    expect(message).not.toContain(KEY);
+  });
+
+  it("prefers a variable of the shell over the value of the file", () => {
+    const other = fakeOpenAiKey("B");
+    writeFileSync(envFilePath, `OPENAI_API_KEY=${KEY}\n`);
+
+    const config = loadWithCleanEnvironment({ OPENAI_API_KEY: other });
+
+    expect(config.openaiApiKey).toBe(other);
+  });
+
+  it("never echoes a key that the file puts in other variables", () => {
+    writeFileSync(
+      envFilePath,
+      [
+        `OPENAI_API_KEY=${KEY}`,
+        `OPENAI_REASONING_EFFORT=${KEY}`,
+        `REQUEST_TIMEOUT_MS=${KEY}`,
+        "RETRY_MAX_ATTEMPTS=abc",
+        "",
+      ].join("\n"),
+    );
+
+    const message = loadErrorMessage();
+
+    expect(message).toContain("OPENAI_REASONING_EFFORT");
+    expect(message).toContain("REQUEST_TIMEOUT_MS");
+    expect(message).toContain("RETRY_MAX_ATTEMPTS");
+    expect(message).not.toContain(KEY);
+    expect(message).not.toContain(KEY.slice(0, 12));
+  });
+
+  it("reports a .env that cannot be read as a file, without a stack trace", () => {
+    mkdirSync(envFilePath);
+
+    const message = loadErrorMessage();
+
+    expect(message).toContain('Não foi possível ler o arquivo ".env"');
+    expect(message).not.toMatch(/^\s+at /m);
   });
 });

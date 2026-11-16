@@ -1,3 +1,4 @@
+import { APIConnectionError, APIError, AuthenticationError } from "openai";
 import { describe, expect, it } from "vitest";
 import { summarizeError } from "../src/security/error-summary.js";
 import { REDACTED, createRedactor } from "../src/security/redact.js";
@@ -104,5 +105,77 @@ describe("summarizeError", () => {
 
     expect(summary.message.length).toBeLessThanOrEqual(500);
     expect(summary.message).not.toContain(KEY.slice(0, 10));
+  });
+});
+
+// Real error classes of the SDK, built without any network call.
+describe("summarizeError with errors of the openai SDK", () => {
+  const headers = new Headers({
+    authorization: `Bearer ${KEY}`,
+    "x-request-id": "req_abc123",
+  });
+
+  it("summarizes a real 401 without the key, the headers or the body", () => {
+    const error = APIError.generate(
+      401,
+      {
+        error: {
+          message: `Incorrect API key provided: ${KEY}.`,
+          type: "invalid_request_error",
+          code: "invalid_api_key",
+          param: null,
+        },
+      },
+      undefined,
+      headers,
+    );
+
+    const summary = summarizeError(error, redactor);
+    const serialized = JSON.stringify(summary);
+
+    expect(error).toBeInstanceOf(AuthenticationError);
+    expect(summary).toEqual({
+      status: 401,
+      code: "invalid_api_key",
+      type: "invalid_request_error",
+      message: `401 Incorrect API key provided: ${REDACTED}.`,
+      requestId: "req_abc123",
+    });
+    expect(serialized).not.toContain(KEY);
+    expect(serialized).not.toContain("authorization");
+  });
+
+  // Without a message in the body, the SDK writes the whole body into the
+  // message of the error: it still has to come out redacted and bounded.
+  it("redacts a body that the SDK copies into the message", () => {
+    const error = APIError.generate(
+      429,
+      { error: { detail: `quota of ${KEY}`, filler: "x".repeat(2000) } },
+      undefined,
+      headers,
+    );
+
+    const summary = summarizeError(error, redactor);
+
+    expect(summary.status).toBe(429);
+    expect(summary.message).toContain(REDACTED);
+    expect(summary.message.length).toBeLessThanOrEqual(500);
+    expect(JSON.stringify(summary)).not.toContain(KEY);
+  });
+
+  it("summarizes a real connection error with the code of its cause", () => {
+    const error = new APIConnectionError({
+      message: `connection to https://example.invalid/?key=${KEY} failed`,
+      cause: Object.assign(new Error(`refused ${KEY}`), {
+        code: "ECONNREFUSED",
+      }),
+    });
+
+    const summary = summarizeError(error, redactor);
+
+    expect(summary.code).toBe("ECONNREFUSED");
+    expect(summary.status).toBeUndefined();
+    expect(summary.message).toContain(REDACTED);
+    expect(JSON.stringify(summary)).not.toContain(KEY);
   });
 });

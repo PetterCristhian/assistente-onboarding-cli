@@ -103,3 +103,45 @@ describe("redact", () => {
     expect(first.source).toBe(second.source);
   });
 });
+
+describe("redact: hostile inputs", () => {
+  const key = fakeOpenAiKey();
+
+  it("treats an exact secret as plain text, not as a regular expression", () => {
+    const secret = "a.*+?^${}()|[]\\b/$&";
+
+    expect(redact(`x ${secret} y $& $1 abc`, [secret])).toBe(
+      `x ${REDACTED} y $& $1 abc`,
+    );
+  });
+
+  it.each([
+    ["glued to letters", `abc${key}`, `abc${REDACTED}`],
+    ["between symbols", `k=${key};n=1`, `k=${REDACTED};n=1`],
+    [
+      "in a URL query",
+      `https://example.invalid/v1?api_key=${key}&n=1`,
+      `https://example.invalid/v1?api_key=${REDACTED}&n=1`,
+    ],
+    ["alone on a line", `a\n${key}\r\nb`, `a\n${REDACTED}\r\nb`],
+    ["quoted", `'${key}' "${key}"`, `'${REDACTED}' "${REDACTED}"`],
+  ])("replaces a key %s", (_label, text, expected) => {
+    expect(redact(text)).toBe(expected);
+    expect(redact(text, [key])).toBe(expected);
+  });
+
+  it("redacts every key of a very large text", () => {
+    const text = `${"x".repeat(500)} ${key}\n`.repeat(4000);
+
+    const result = redact(text, [key]);
+
+    expect(result).not.toContain(key);
+    expect(result.split(REDACTED)).toHaveLength(4001);
+  });
+
+  it("redacts both when a secret is a substring of another", () => {
+    const result = redact("abcdef abc", ["abc", "abcdef"]);
+
+    expect(result).toBe(`${REDACTED} ${REDACTED}`);
+  });
+});
