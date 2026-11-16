@@ -244,6 +244,16 @@ export function createOpenAiLlmClient(
   });
   const defaultModel = config.openaiModel;
   const reasoning = { effort: config.openaiReasoningEffort };
+  // Sent with every call. The SDK reads OPENAI_CUSTOM_HEADERS by itself and
+  // applies it after its own authentication headers, so that variable could
+  // replace the credential or add an organization or a project. The headers
+  // of a call come last and win; `null` removes a header. A header with any
+  // other name cannot be blocked here (ADR 0002, decision 9).
+  const callHeaders = {
+    Authorization: `Bearer ${config.openaiApiKey}`,
+    "OpenAI-Organization": null,
+    "OpenAI-Project": null,
+  };
 
   /**
    * Runs one call under the total deadline (REQUEST_TIMEOUT_MS), which also
@@ -309,7 +319,7 @@ export function createOpenAiLlmClient(
         reasoning,
         stream: true,
       },
-      { signal },
+      { signal, headers: callHeaders },
     );
 
     // The final event carries no text: the text is the pieces, joined.
@@ -382,7 +392,7 @@ export function createOpenAiLlmClient(
           reasoning,
           text: { format: zodTextFormat(request.schema, request.schemaName) },
         },
-        { signal },
+        { signal, headers: callHeaders },
       );
     } catch (error) {
       // The SDK parses the output while reading the answer, so the model that
