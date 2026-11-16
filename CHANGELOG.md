@@ -41,6 +41,10 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - `writeJson` e `appendJsonLine` redigem cada string (valores e nomes de propriedade) antes de serializar, além do texto final: uma chave no início de uma linha de uma string, que o JSON grava como `\n` seguido da chave, não fica mais inteira no arquivo (ENG-44).
 - A mensagem de configuração inválida não exibe mais o valor de outra variável quando ele contém o valor de `OPENAI_API_KEY`, mesmo que a chave seja curta demais para ser redigida (ENG-44).
 
+- Os campos de texto do perfil e a data de hoje passam a ser recusados quando têm quebra de linha, que antes forjava outras linhas rotuladas na seção de dados do usuário; a mensagem cita o arquivo e o campo (ENG-47).
+- O montador de contexto passa a recusar um marcador reservado com atributo, barra a mais ou barra no fim (`</politicas attr>`, `<politicas/>`, `<//politicas>`), aberto e nunca fechado, ou partido entre dois documentos da base da empresa, e confere que o texto montado tem os oito marcadores uma vez cada. A mensagem passa a citar o documento da base da empresa, ou os dois documentos, em que o marcador está (ENG-47).
+- Os carregadores ignoram um arquivo cujo nome é só a extensão (`.json`, `.md`), recusam uma pasta de contexto vazia e recusam uma data atual com ano fora de 1 a 9999 (ENG-47).
+
 ### Alterado
 
 - `npm run chat` passa a exigir `OPENAI_API_KEY`: sem a chave, encerra com código diferente de zero e uma orientação em português, sem stack trace (ENG-44).
