@@ -151,6 +151,55 @@ describe("findSecretsInText with UTF-16 content", () => {
     expect(findings).toEqual([]);
     expect(performance.now() - startedAt).toBeLessThan(3000);
   });
+
+  it("finds a UTF-16 key of several megabytes", () => {
+    const line = utf16AsLatin1(`x ${KEY}${"a".repeat(2 * 1024 * 1024)}`);
+
+    expect(findSecretsInText(line)).toEqual([{ line: 1, column: 3 }]);
+  });
+});
+
+// Taking every NUL byte out of a line glued unrelated strings of a binary
+// together. Only bytes that alternate with NUL, as in UTF-16, are joined now.
+describe("findSecretsInText with strings separated by NUL bytes", () => {
+  const PREFIX = ["sk", ""].join("-");
+  const tail = "a".repeat(24);
+
+  it.each([
+    ["a word that ends like the prefix", `\x01\x02task-\0${tail}\0outra\0`],
+    ["the prefix alone", `\0${PREFIX}\0${tail}\0`],
+    ["two strings that only add up", `${PREFIX}abcdefghij\0klmnopqrstuvwxyz\0`],
+    ["NUL padding in the middle", `${PREFIX}abc\0\0\0\0${tail}\n`],
+    ["a single NUL in a UTF-16 looking run", `s\0k\0-\0${tail}`],
+    [
+      "UTF-16 that stops being UTF-16",
+      `${utf16AsLatin1(`${PREFIX}abc`)}${tail}`,
+    ],
+  ])("does not join the strings of a binary: %s", (_label, content) => {
+    expect(findSecretsInText(content)).toEqual([]);
+  });
+
+  it.each([
+    ["at an even offset", "\x7fELF\0\0\x01\x02"],
+    ["at an odd offset", "\x7fELF\0\0\x01"],
+  ])("still finds a UTF-16 key inside a binary, %s", (_label, header) => {
+    const littleEndian = `${header}${utf16AsLatin1(`x ${KEY}`)}\0\0\xff`;
+    const bigEndian = `${header}${utf16AsLatin1(`x ${KEY}`, { bigEndian: true })}\0\0\xff`;
+    // Counted in characters: the NUL bytes of the line are left out.
+    const column = header.replaceAll("\0", "").length + 3;
+
+    expect(findSecretsInText(littleEndian)).toEqual([{ line: 1, column }]);
+    expect(findSecretsInText(bigEndian)).toEqual([{ line: 1, column }]);
+  });
+
+  it("finds two UTF-16 keys in the same line, in order", () => {
+    const content = utf16AsLatin1(`${KEY} e ${fakeOpenAiKey("B")}\r\n`);
+
+    expect(findSecretsInText(content)).toEqual([
+      { line: 1, column: 1 },
+      { line: 1, column: KEY.length + 4 },
+    ]);
+  });
 });
 
 describe("scanRepository", () => {

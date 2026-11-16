@@ -24,14 +24,54 @@ function findColumns(lineText: string): number[] {
   return findSecretSpans(lineText).map((span) => span.start + 1);
 }
 
+// The start of a key in UTF-16, in either byte order.
+const UTF16_KEY_START = "s\0k\0-";
+
+/**
+ * Reads the line as UTF-16: keeps the bytes at the even (parity 0) or odd
+ * (parity 1) positions whose pair is a NUL byte, and puts a NUL in the place
+ * of the others, so that a sequence never goes across bytes that are not
+ * UTF-16. The character at index i comes from the byte at parity + 2 * i.
+ *
+ * Parity 0 is little endian from the start of the file. Parity 1 is big
+ * endian, and also little endian after the first line: the NUL byte of the
+ * line break stays at the start of the next line.
+ */
+function readAsUtf16(lineText: string, parity: 0 | 1): string {
+  let decoded = "";
+  for (let index = parity; index < lineText.length; index += 2) {
+    const pair = lineText[parity === 0 ? index + 1 : index - 1];
+    decoded += pair === "\0" ? lineText[index] : "\0";
+  }
+  return decoded;
+}
+
+/** Columns in characters: the NUL bytes and the byte order mark do not count. */
+function findUtf16Columns(lineText: string, isFirstLine: boolean): number[] {
+  const columns: number[] = [];
+  for (const parity of [0, 1] as const) {
+    for (const span of findSecretSpans(readAsUtf16(lineText, parity))) {
+      const before = lineText
+        .slice(0, parity + 2 * span.start)
+        .replaceAll("\0", "");
+      columns.push(
+        (isFirstLine ? before.replace(UTF16_BYTE_ORDER_MARK, "") : before)
+          .length + 1,
+      );
+    }
+  }
+  return columns.sort((a, b) => a - b);
+}
+
 /**
  * Expects the content decoded as latin1 (one character per byte).
  *
- * A line with NUL bytes and no key is looked at again without them: in UTF-16
- * (what `>` writes in Windows PowerShell 5.1) every ASCII character comes
- * with a NUL byte, which hides the key from the pattern. Taking the NUL bytes
- * out covers little and big endian, with or without a byte order mark, without
- * guessing the encoding. The column is then counted in characters, not bytes.
+ * A line with no key is looked at again as UTF-16 (what `>` writes in Windows
+ * PowerShell 5.1): every ASCII character comes with a NUL byte, which hides
+ * the key from the pattern. Both byte orders are tried, with or without a
+ * byte order mark, without guessing the encoding of the file. Only bytes that
+ * alternate with NUL are joined: strings of a binary that are merely
+ * separated by NUL bytes are not glued together.
  */
 export function findSecretsInText(
   text: string,
@@ -40,13 +80,8 @@ export function findSecretsInText(
 
   text.split("\n").forEach((lineText, index) => {
     let columns = findColumns(lineText);
-    if (columns.length === 0 && lineText.includes("\0")) {
-      const withoutNul = lineText.replaceAll("\0", "");
-      columns = findColumns(
-        index === 0
-          ? withoutNul.replace(UTF16_BYTE_ORDER_MARK, "")
-          : withoutNul,
-      );
+    if (columns.length === 0 && lineText.includes(UTF16_KEY_START)) {
+      columns = findUtf16Columns(lineText, index === 0);
     }
     for (const column of columns) {
       findings.push({ line: index + 1, column });
