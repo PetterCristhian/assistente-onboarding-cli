@@ -1,10 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { redact } from "../src/security/redact.js";
 
 // Contract of the policies document (docs/adr/0003-contexto-em-quatro-camadas.md
 // and F1 of docs/PRD.md): five rules, four fixed fields each, no data.
-const DOCUMENT = new URL("../context/02-politicas.md", import.meta.url);
+const DOCUMENT = fileURLToPath(
+  new URL("../context/02-politicas.md", import.meta.url),
+);
 
 const RULES = [
   { id: "P1", heading: "P1 — Tema proibido" },
