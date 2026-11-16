@@ -169,6 +169,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   │   └── builder.ts            # buildContext(): função pura, camadas delimitadas
 │   ├── llm/
 │   │   ├── client.ts             # interface LlmClient + implementação OpenAI
+│   │   ├── smoke.ts              # lógica do teste de fumaça usada por smoke-llm.ts
 │   │   ├── errors.ts             # classificação: transitório / rate limit / fatal
 │   │   └── retry.ts              # withRetry(): backoff, retry-after, avisos
 │   ├── chat/
@@ -192,6 +193,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 ├── scripts/
 │   ├── demo-falhas.ts            # stub HTTP local + cenários de falha
 │   ├── show-context.ts           # imprime o contexto montado
+│   ├── smoke-llm.ts              # teste de fumaça manual contra a API real (gasta crédito)
 │   └── check-secrets.ts          # varredura de credenciais nos arquivos do repositório
 │
 ├── tests/                        # testes unitários (Vitest), sem rede

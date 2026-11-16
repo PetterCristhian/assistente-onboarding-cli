@@ -20,6 +20,7 @@ Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboar
 - Ver o contexto montado: `npm run contexto`
 - Testes unitários (sem rede, sem chave): `npm test`
 - Bateria contra o modelo real (usa a chave e gasta crédito): `npm run eval`
+- Teste de fumaça do cliente OpenAI (usa a chave e gasta crédito; não rodar em laço): `npm run smoke:llm`
 - Demonstração de retry e rate limit (stub local, sem chave): `npm run demo:falhas`
 - Gerar `docs/CASOS-DE-TESTE.md`: `npm run casos:doc`
 - Lint/format: `npm run lint` / `npm run format`

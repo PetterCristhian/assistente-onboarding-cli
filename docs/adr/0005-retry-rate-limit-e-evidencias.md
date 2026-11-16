@@ -11,7 +11,7 @@ F8 exige retry limitado com espera crescente e aviso ao usuário; erros não rec
 
 ### Mecanismo
 
-1. **Retry próprio; o do SDK é desligado.** O cliente é criado com `maxRetries: 0` e `timeout` explícito. O SDK tenta de novo sozinho e em silêncio por padrão, o que impediria os avisos de "tentando novamente" e tornaria o comportamento não testável.
+1. **Retry próprio; o do SDK é desligado.** O cliente é criado com `maxRetries: 0` e `timeout` explícito. O SDK tenta de novo sozinho e em silêncio por padrão, o que impediria os avisos de "tentando novamente" e tornaria o comportamento não testável. O `timeout` do SDK não cobre o corpo de um stream (só conta até os cabeçalhos da resposta); por isso `REQUEST_TIMEOUT_MS` é imposto também por um temporizador do próprio cliente, como prazo total da chamada (ADR 0002, decisão 7). Um stream que estoura esse prazo termina com o mesmo erro de timeout do SDK.
 2. **Ponto único:** `withRetry()` em `src/llm/retry.ts` envolve toda chamada feita por `LlmClient` (geração, revisão, autoavaliação, juiz).
 3. **Classificação** em `src/llm/errors.ts`, a partir das classes de erro do SDK:
 
