@@ -17,6 +17,13 @@ export const LAYER_MARKERS = {
 
 type LayerKey = keyof typeof LAYER_MARKERS;
 
+const LAYER_ORDER = [
+  "globalInstructions",
+  "policies",
+  "userData",
+  "companyData",
+] as const satisfies readonly LayerKey[];
+
 /**
  * Written by the builder and not by the file of the global instructions, so
  * that it still holds when that file is replaced.
@@ -32,19 +39,59 @@ const LAYER_NAMES: Record<LayerKey, string> = {
   companyData: "dados da empresa",
 };
 
-// An opening or closing marker of any layer, also in capital letters or with
-// blanks inside: content that holds one could close its section early.
-const RESERVED_MARKER = new RegExp(
-  `<\\s*/?\\s*(?:${Object.values(LAYER_MARKERS).join("|")})\\s*>`,
-  "i",
+const DOCUMENT_SEPARATOR = "\n\n";
+const SECTION_SEPARATOR = "\n\n";
+
+// The reserved form is <\s*\/*\s*NAME\b[^>]*>, ignoring case, for the four
+// names: "<", blanks, slashes, blanks, the name of a layer as a whole word
+// and anything up to the next ">". Content that holds it could close its
+// section early. It is searched in two steps, this start and then the first
+// ">" after it, so that a long text never makes the search go back over
+// itself. A start with no ">" is refused too: in the assembled text the end
+// of its own section would close it.
+// Known limit: look-alike letters, zero-width characters, the full-width
+// "<" and entities such as "&lt;" are not seen as a marker.
+const RESERVED_MARKER_START = new RegExp(
+  `<\\s*(?:/+\\s*)?(?:${Object.values(LAYER_MARKERS).join("|")})\\b`,
+  "gi",
 );
+
+const QUOTED_MARKER_LIMIT = 60;
+
+interface FoundMarker {
+  readonly start: number;
+  /** The position right after the marker. */
+  readonly end: number;
+  readonly text: string;
+}
+
+/** The first reserved marker of the text, from the given position on. */
+function findReservedMarker(text: string, from = 0): FoundMarker | undefined {
+  RESERVED_MARKER_START.lastIndex = from;
+  const start = RESERVED_MARKER_START.exec(text);
+  if (start === null) {
+    return undefined;
+  }
+  const startEnd = start.index + start[0].length;
+  const close = text.indexOf(">", startEnd);
+  const end = close === -1 ? startEnd : close + 1;
+  return { start: start.index, end, text: text.slice(start.index, end) };
+}
+
+/** The marker as it is quoted in a message: one line, never a long one. */
+function quoteMarker(marker: string): string {
+  const line = marker.replace(/\s+/g, " ");
+  return line.length > QUOTED_MARKER_LIMIT
+    ? `${line.slice(0, QUOTED_MARKER_LIMIT)}...`
+    : line;
+}
 
 function refuseReservedMarkers(layer: LayerKey, contents: string[]): void {
   for (const content of contents) {
-    const found = RESERVED_MARKER.exec(content)?.[0];
+    const found = findReservedMarker(content);
     if (found !== undefined) {
       throw new ContextError(
-        `A camada "${LAYER_NAMES[layer]}" contém o marcador reservado "${found}", que não pode aparecer no conteúdo.`,
+        `A camada "${LAYER_NAMES[layer]}" contém o marcador reservado "${quoteMarker(found.text)}", que não pode aparecer no conteúdo.`,
       );
     }
   }
@@ -55,9 +102,43 @@ function section(layer: LayerKey, body: string): string {
   return `<${marker}>\n${body}\n</${marker}>`;
 }
 
+const EXPECTED_MARKERS = LAYER_ORDER.flatMap((layer) => [
+  `<${LAYER_MARKERS[layer]}>`,
+  `</${LAYER_MARKERS[layer]}>`,
+]);
+
+/**
+ * The last net: the assembled text holds the eight markers, once each and in
+ * the fixed order, and nothing else that has the reserved form.
+ */
+export function assertLayerMarkers(text: string): void {
+  const found: string[] = [];
+  let from = 0;
+  while (found.length <= EXPECTED_MARKERS.length) {
+    const marker = findReservedMarker(text, from);
+    if (marker === undefined) {
+      break;
+    }
+    found.push(marker.text);
+    from = marker.end;
+  }
+
+  if (
+    found.length !== EXPECTED_MARKERS.length ||
+    found.some((marker, index) => marker !== EXPECTED_MARKERS[index])
+  ) {
+    throw new ContextError(
+      "O contexto montado deve conter os oito marcadores de camada, uma vez cada e na ordem fixa.",
+    );
+  }
+}
+
 export function buildContext(layers: ContextLayers): BuiltContext {
   const { nome, cargo, area, dataInicio, gestor } = layers.userProfile;
-  const documents = layers.companyData.map((document) => document.content);
+  // Checked as one text: a marker may start in a document and end in the next.
+  const companyBody = layers.companyData
+    .map((document) => document.content)
+    .join(DOCUMENT_SEPARATOR);
 
   refuseReservedMarkers("globalInstructions", [layers.globalInstructions]);
   refuseReservedMarkers("policies", [layers.policies]);
@@ -69,7 +150,7 @@ export function buildContext(layers: ContextLayers): BuiltContext {
     gestor,
     layers.currentDate,
   ]);
-  refuseReservedMarkers("companyData", documents);
+  refuseReservedMarkers("companyData", [companyBody]);
 
   // The loader of the profile refuses a line break in its values; the date
   // comes from the entry point and is checked here.
@@ -96,16 +177,13 @@ export function buildContext(layers: ContextLayers): BuiltContext {
       `${POLICY_PRECEDENCE_CLAUSE}\n\n${layers.policies}`,
     ),
     userData: section("userData", userData),
-    companyData: section("companyData", documents.join("\n\n")),
+    companyData: section("companyData", companyBody),
   };
 
-  return {
-    sections,
-    text: [
-      sections.globalInstructions,
-      sections.policies,
-      sections.userData,
-      sections.companyData,
-    ].join("\n\n"),
-  };
+  const text = LAYER_ORDER.map((layer) => sections[layer]).join(
+    SECTION_SEPARATOR,
+  );
+  assertLayerMarkers(text);
+
+  return { sections, text };
 }

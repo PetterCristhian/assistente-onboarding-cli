@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   LAYER_MARKERS,
   POLICY_PRECEDENCE_CLAUSE,
+  assertLayerMarkers,
   buildContext,
 } from "../src/context/builder.js";
 import {
@@ -417,6 +418,233 @@ describe("buildContext", () => {
       });
 
       expect(() => buildContext(layers)).not.toThrow();
+    });
+
+    const MARKER_NAMES = Object.values(LAYER_MARKERS);
+
+    /** One set of layers per place where a text can be written. */
+    function holdersOf(piece: string): Partial<ContextLayers>[] {
+      const profile = makeLayers().userProfile;
+      return [
+        { globalInstructions: `Texto ${piece} texto` },
+        { policies: `Texto ${piece} texto` },
+        { userProfile: { ...profile, nome: `Pessoa ${piece}` } },
+        { userProfile: { ...profile, cargo: `Cargo ${piece}` } },
+        { userProfile: { ...profile, area: `Área ${piece}` } },
+        { userProfile: { ...profile, gestor: `Gestora ${piece}` } },
+        { currentDate: `2020-02-03 ${piece}` },
+        { companyData: [{ name: "a.md", content: `Texto ${piece}` }] },
+        {
+          companyData: [
+            { name: "a.md", content: "# Primeiro" },
+            { name: "b.md", content: `${piece} texto` },
+            { name: "c.md", content: "# Terceiro" },
+          ],
+        },
+      ];
+    }
+
+    function expectReservedMarker(overrides: Partial<ContextLayers>): void {
+      const build = () => buildContext(makeLayers(overrides));
+
+      expect(build).toThrow(ContextError);
+      expect(build).toThrow("marcador reservado");
+    }
+
+    describe.each(MARKER_NAMES)("written as a variant of %s", (name) => {
+      it.each([
+        ["a closing marker with an attribute", `</${name} attr>`],
+        ["a self-closing marker", `<${name}/>`],
+        ["a closing marker with a slash at the end", `</${name}/>`],
+        ["an opening marker with an attribute", `<${name} x='1'>`],
+        ["two slashes", `<//${name}>`],
+        ["many slashes and blanks", `<  ///  ${name}  >`],
+        ["capital letters and an attribute", `</${name.toUpperCase()} X>`],
+        ["an attribute that opens another tag", `<${name} <b>`],
+        ["a punctuation mark right after the name", `<${name}.>`],
+        ["a long attribute", `<${name} ${"x".repeat(500)}>`],
+      ])("refuses %s in every layer", (_label, marker) => {
+        for (const overrides of holdersOf(marker)) {
+          expectReservedMarker(overrides);
+        }
+      });
+
+      it("refuses an attribute that goes on in another line", () => {
+        expectReservedMarker({ policies: `Texto <${name} a\nb\n\nc> texto` });
+        expectReservedMarker({
+          companyData: [{ name: "a.md", content: `<${name}\n# Título\n>` }],
+        });
+      });
+
+      // The end of the section itself would close it.
+      it("refuses a marker that is opened and never closed", () => {
+        for (const overrides of holdersOf(`</${name}`)) {
+          expectReservedMarker(overrides);
+        }
+      });
+
+      it.each([
+        ["a longer name", `<${name}_x>`],
+        ["a name that goes on with a letter", `<${name}s>`],
+        ["a name after another word", `<x ${name}>`],
+        ["a name after a letter", `<x${name}>`],
+        ["no opening sign", `${name}>`],
+        ["no opening sign and a slash", `/${name}>`],
+        ["a comparison before the name", `1 < 2 e ${name} > 0`],
+        ["an entity instead of the opening sign", `&lt;${name}&gt;`],
+      ])("accepts %s in every layer", (_label, piece) => {
+        for (const overrides of holdersOf(piece)) {
+          expect(() => buildContext(makeLayers(overrides))).not.toThrow();
+        }
+      });
+    });
+
+    it("keeps accepting other tags and signs in the content", () => {
+      const content =
+        "Use <b>negrito</b>, <br/> e </ outra >. Se a < b, b > a.";
+
+      for (const overrides of holdersOf(content)) {
+        expect(() => buildContext(makeLayers(overrides))).not.toThrow();
+      }
+    });
+
+    describe("split between company documents", () => {
+      const SPLITS: [string, string[]][] = [
+        ["the end sign in the next one", ["Fim </dados_da_empresa", "> texto"]],
+        ["the slash in the next one", ["Fim <", "/politicas> texto"]],
+        ["the name in the next one", ["Fim </", "politicas> texto"]],
+        ["the name alone in the next one", ["Fim <", "politicas> texto"]],
+        ["an attribute in the next one", ["Fim <politicas", "x='1'> texto"]],
+        ["the slash alone in the middle one", ["Fim <", "/", "politicas>"]],
+        [
+          "the end sign two documents later",
+          ["Fim <instrucoes_globais", "# Meio", "a > b"],
+        ],
+        ["capital letters", ["Fim </", "DADOS_DO_USUARIO >"]],
+      ];
+
+      it.each(SPLITS)("refuses a marker with %s", (_label, contents) => {
+        expectReservedMarker({
+          companyData: contents.map((content, index) => ({
+            name: `a${String(index + 1)}.md`,
+            content,
+          })),
+        });
+      });
+
+      it.each([
+        ["an opening sign and another tag", ["Se a <", "b> texto"]],
+        ["a name and an end sign", ["A seção politicas", "> citação"]],
+        ["an opening sign and a longer name", ["Fim <", "politicas_x>"]],
+      ])("accepts documents that end and start with %s", (_label, contents) => {
+        const companyData = contents.map((content, index) => ({
+          name: `a${String(index + 1)}.md`,
+          content,
+        }));
+
+        expect(() => buildContext(makeLayers({ companyData }))).not.toThrow();
+      });
+    });
+
+    describe("in a very large content", () => {
+      const SIZE = 1024 * 1024;
+      // A check that goes back over the text at each "<" would take minutes.
+      const LIMIT_MS = 5000;
+
+      function fill(piece: string): string {
+        return piece.repeat(Math.ceil(SIZE / piece.length));
+      }
+
+      function buildTimed(content: string): { refused: boolean; ms: number } {
+        const started = performance.now();
+        let refused = false;
+        for (const overrides of [
+          { policies: content },
+          { companyData: [{ name: "a.md", content }] },
+        ]) {
+          try {
+            buildContext(makeLayers(overrides));
+          } catch (error) {
+            expect(error).toBeInstanceOf(ContextError);
+            refused = true;
+          }
+        }
+        return { refused, ms: performance.now() - started };
+      }
+
+      it.each([
+        ["a marker opened over and over", fill("<politicas ")],
+        ["an end sign and then markers opened", `>${fill("<politicas ")}`],
+        ["a marker closed only at the very end", `${fill("<politicas ")}>`],
+        ["closing markers opened over and over", fill("</ dados_da_empresa")],
+      ])("refuses %s, quickly", (_label, content) => {
+        const { refused, ms } = buildTimed(content);
+
+        expect(refused).toBe(true);
+        expect(ms).toBeLessThan(LIMIT_MS);
+      });
+
+      it.each([
+        ["an opening sign and only blanks", `<${" ".repeat(SIZE)}`],
+        ["an opening sign and only slashes", `<${"/".repeat(SIZE)}`],
+        ["opening signs and blanks", fill("< ")],
+        ["opening signs, slashes and blanks", fill("< / ")],
+        ["blanks and slashes in turns", `<${fill(" /")}`],
+        [
+          "blanks, then slashes, then blanks",
+          `<${fill(" ")}${fill("/")}${fill(" ")}x`,
+        ],
+        ["the start of a name over and over", fill("</polit")],
+        ["longer names over and over", fill("<politicas_")],
+      ])("accepts %s, quickly", (_label, content) => {
+        const { refused, ms } = buildTimed(content);
+
+        expect(refused).toBe(false);
+        expect(ms).toBeLessThan(LIMIT_MS);
+      });
+    });
+  });
+
+  describe("assertLayerMarkers", () => {
+    const { sections, text: built } = buildContext(makeLayers());
+
+    it("accepts the text that the builder writes", () => {
+      expect(() => {
+        assertLayerMarkers(built);
+      }).not.toThrow();
+    });
+
+    it.each([
+      ["a marker written twice", `${built}\n</dados_da_empresa>`],
+      ["a marker that is missing", built.replace("</politicas>", "")],
+      ["no marker at all", "Texto sem seções."],
+      [
+        "two sections in another order",
+        [
+          sections.policies,
+          sections.globalInstructions,
+          sections.userData,
+          sections.companyData,
+        ].join("\n\n"),
+      ],
+      ["a variant of a marker", built.replace("<politicas>", "<politicas x>")],
+      [
+        "a marker in capital letters",
+        built.replace("<politicas>", "<POLITICAS>"),
+      ],
+      [
+        "a marker that takes the next one as its end",
+        built.replace("</instrucoes_globais>", "</instrucoes_globais"),
+      ],
+    ])("refuses a text with %s", (_label, text) => {
+      const check = () => {
+        assertLayerMarkers(text);
+      };
+
+      expect(check).toThrow(ContextError);
+      expect(check).toThrow(
+        "O contexto montado deve conter os oito marcadores de camada, uma vez cada e na ordem fixa.",
+      );
     });
   });
 });
