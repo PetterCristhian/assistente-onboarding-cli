@@ -483,3 +483,22 @@ describe("findSecretsInText: other places and encodings (QA)", () => {
     expect(performance.now() - startedAt).toBeLessThan(5000);
   });
 });
+
+describe("findSecretsInText: many UTF-16 keys in a single line", () => {
+  it("stays linear, with every column right", () => {
+    const count = 20_000;
+    const item = `${["sk", ""].join("-")}${"a".repeat(20)} `;
+    const content = utf16AsLatin1(item.repeat(count));
+    const startedAt = performance.now();
+
+    const findings = findSecretsInText(content);
+
+    expect(performance.now() - startedAt).toBeLessThan(5000);
+    expect(findings).toHaveLength(count);
+    expect(findings[1]).toEqual({ line: 1, column: item.length + 1 });
+    expect(findings[count - 1]).toEqual({
+      line: 1,
+      column: (count - 1) * item.length + 1,
+    });
+  });
+});

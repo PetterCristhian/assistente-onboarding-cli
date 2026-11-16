@@ -46,21 +46,45 @@ function readAsUtf16(lineText: string, parity: 0 | 1): string {
   return decoded;
 }
 
-/** Columns in characters: the NUL bytes and the byte order mark do not count. */
-function findUtf16Columns(lineText: string, isFirstLine: boolean): number[] {
+/**
+ * Columns in characters of the given byte offsets, which must be in ascending
+ * order: the NUL bytes and the byte order mark do not count. The line is
+ * walked only once, whatever the number of offsets.
+ */
+function toColumns(
+  lineText: string,
+  offsets: readonly number[],
+  isFirstLine: boolean,
+): number[] {
+  const markLength = isFirstLine
+    ? (UTF16_BYTE_ORDER_MARK.exec(lineText)?.[0].length ?? 0)
+    : 0;
   const columns: number[] = [];
+  let position = markLength;
+  let characters = 0;
+  for (const offset of offsets) {
+    for (; position < offset; position += 1) {
+      if (lineText[position] !== "\0") {
+        characters += 1;
+      }
+    }
+    columns.push(characters + 1);
+  }
+  return columns;
+}
+
+function findUtf16Columns(lineText: string, isFirstLine: boolean): number[] {
+  const offsets: number[] = [];
   for (const parity of [0, 1] as const) {
     for (const span of findSecretSpans(readAsUtf16(lineText, parity))) {
-      const before = lineText
-        .slice(0, parity + 2 * span.start)
-        .replaceAll("\0", "");
-      columns.push(
-        (isFirstLine ? before.replace(UTF16_BYTE_ORDER_MARK, "") : before)
-          .length + 1,
-      );
+      offsets.push(parity + 2 * span.start);
     }
   }
-  return columns.sort((a, b) => a - b);
+  return toColumns(
+    lineText,
+    offsets.sort((a, b) => a - b),
+    isFirstLine,
+  );
 }
 
 /**
