@@ -31,6 +31,18 @@ export type FakeFetchStep =
       readonly body: unknown;
       readonly headers?: Readonly<Record<string, string>>;
     }
+  /**
+   * A body written as given, piece by piece, with any content type. With
+   * `breakAfter`, the body fails after its pieces, as a dropped connection
+   * does in the real `fetch`.
+   */
+  | {
+      readonly kind: "raw";
+      readonly status?: number;
+      readonly contentType: string;
+      readonly parts: readonly string[];
+      readonly breakAfter?: boolean;
+    }
   /** No answer at all: pending until the request is aborted. */
   | { readonly kind: "no-response" }
   /** The connection fails, as `fetch` does: a TypeError with a cause. */
@@ -86,6 +98,37 @@ function sseBody(
         return;
       }
       controller.close();
+    },
+  });
+}
+
+/** What the real `fetch` throws when the connection drops in the body. */
+export function droppedConnectionError(): TypeError {
+  return new TypeError("terminated", {
+    cause: Object.assign(new Error("other side closed"), {
+      code: "UND_ERR_SOCKET",
+    }),
+  });
+}
+
+function piecewiseBody(
+  parts: readonly string[],
+  breakAfter: boolean,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      await Promise.resolve();
+      const next = parts[index];
+      index += 1;
+      if (next !== undefined) {
+        controller.enqueue(encoder.encode(next));
+      } else if (breakAfter) {
+        controller.error(droppedConnectionError());
+      } else {
+        controller.close();
+      }
     },
   });
 }
@@ -146,6 +189,13 @@ export function createFakeOpenAiFetch(
           new Response(JSON.stringify(step.body), {
             status: step.status ?? 200,
             headers: { "content-type": "application/json", ...step.headers },
+          }),
+        );
+      case "raw":
+        return Promise.resolve(
+          new Response(piecewiseBody(step.parts, step.breakAfter === true), {
+            status: step.status ?? 200,
+            headers: { "content-type": step.contentType },
           }),
         );
       case "no-response":
@@ -234,6 +284,14 @@ export function textDelta(delta: string): SseEvent {
     event: "response.output_text.delta",
     data: { type: "response.output_text.delta", delta },
   };
+}
+
+/** One event of a stream, as the bytes that the provider would write. */
+export function sseText(event: SseEvent): string {
+  return `event: ${event.event}
+data: ${JSON.stringify(event.data)}
+
+`;
 }
 
 /** The final event of a stream: completed, failed or incomplete. */

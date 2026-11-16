@@ -377,11 +377,9 @@ describe("generateStructured", () => {
 
       expect(error).toBeInstanceOf(LlmResponseError);
       expect(error).toMatchObject({ kind });
-      // The SDK refuses an invalid output while it reads the answer, before
-      // handing it over: only then is the model that answered not known.
-      expect((error as LlmResponseError).model).toBe(
-        kind === "invalid_output" ? undefined : FAKE_RETURNED_MODEL,
-      );
+      // The answer of the provider was read, so the model is known even
+      // when what it wrote is refused.
+      expect((error as LlmResponseError).model).toBe(FAKE_RETURNED_MODEL);
       expect((error as Error).message).not.toContain("SECRET-TEXT");
       expect(JSON.stringify(error)).not.toContain("SECRET-TEXT");
       expect((error as Error).cause).toBeUndefined();

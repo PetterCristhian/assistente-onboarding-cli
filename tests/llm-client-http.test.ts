@@ -580,11 +580,44 @@ describe("what a real connection can deliver", () => {
         }),
       );
 
-      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(LlmResponseError);
+      expect(error).toMatchObject({ kind: "interrupted" });
       expect(error).not.toBeInstanceOf(APIUserAbortError);
       expect(error).not.toBeInstanceOf(APIConnectionTimeoutError);
       expect(received).toEqual(["partial"]);
       expect(server.seen).toHaveLength(1);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "a structured answer that is not JSON, or that drops in the middle, is interrupted and not invalid output",
+    async () => {
+      server.reply(({ head, end }) => {
+        head(200, JSON_HEADERS);
+        end("<html>502 Bad Gateway</html>");
+      });
+      const notJson = await rejectionOf(structured(clientWith()));
+
+      const whole = JSON.stringify(
+        fakeResponseBody({ text: JSON.stringify(ANSWER) }),
+      );
+      server.reply(({ head, write, destroy }) => {
+        head(200, {
+          ...JSON_HEADERS,
+          "content-length": String(Buffer.byteLength(whole)),
+        });
+        write(whole.slice(0, 30));
+        setTimeout(destroy, 30);
+      });
+      const dropped = await rejectionOf(structured(clientWith()));
+
+      for (const error of [notJson, dropped]) {
+        expect(error).toBeInstanceOf(LlmResponseError);
+        expect(error).toMatchObject({ kind: "interrupted" });
+        expect((error as Error).message).not.toContain("502");
+      }
+      expect(server.seen).toHaveLength(2);
     },
     TEST_TIMEOUT_MS,
   );
@@ -619,7 +652,8 @@ describe("what a real connection can deliver", () => {
 
       const error = await rejectionOf(clientWith().streamText(REQUEST));
 
-      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(LlmResponseError);
+      expect(error).toMatchObject({ kind: "interrupted" });
       expect((error as Error).message).not.toContain("not json");
       expect(server.seen).toHaveLength(1);
     },

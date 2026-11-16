@@ -1,13 +1,13 @@
 // The only path to the provider (CLAUDE.md, architecture rule 2): the
 // LlmClient interface that the rest of the project depends on.
 // See docs/adr/0002-modelo-e-api-openai.md.
-import OpenAI, { APIConnectionTimeoutError, APIUserAbortError } from "openai";
+import OpenAI, {
+  APIConnectionTimeoutError,
+  APIUserAbortError,
+  OpenAIError,
+} from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import type {
-  EasyInputMessage,
-  Response,
-  ResponseUsage,
-} from "openai/resources/responses/responses";
+import type { EasyInputMessage } from "openai/resources/responses/responses";
 import { z } from "zod";
 import type { AppConfig } from "../config/env.js";
 
@@ -68,13 +68,18 @@ export interface LlmClient {
 }
 
 /**
- * What the provider answered without an error of transport or of API, but
- * that is no usable answer:
- * - interrupted: the stream ended before the answer was complete;
- * - failed / incomplete: the provider reported the answer as such;
+ * What the provider answered without an error of API, but that is no usable
+ * answer:
+ * - interrupted: the answer could not be read to its end (the stream ended
+ *   before the final event, the connection dropped, or what arrived is not
+ *   what the provider writes);
+ * - failed: the provider reported the answer as such, or sent one outside
+ *   its own format;
+ * - incomplete: the provider reported the answer as such;
  * - empty: complete, with no text;
  * - refusal: the model refused to answer;
- * - invalid_output: structured output that is not JSON or not in the schema.
+ * - invalid_output: the answer was read, and the structured output of the
+ *   MODEL is not JSON or not in the schema.
  */
 export type LlmResponseErrorKind =
   | "interrupted"
@@ -84,14 +89,28 @@ export type LlmResponseErrorKind =
   | "refusal"
   | "invalid_output";
 
+/**
+ * What is kept of the failure of transport behind an interrupted answer: its
+ * kind, never the error itself, whose text may quote what was being read.
+ */
+export interface LlmTransportCause {
+  readonly name?: string;
+  readonly code?: string;
+}
+
 /** The message is written for the user and never quotes the model output. */
 export class LlmResponseError extends Error {
   override readonly name = "LlmResponseError";
   readonly kind: LlmResponseErrorKind;
   readonly model?: string;
 
-  constructor(kind: LlmResponseErrorKind, message: string, model?: string) {
-    super(message);
+  constructor(
+    kind: LlmResponseErrorKind,
+    message: string,
+    model?: string,
+    cause?: LlmTransportCause,
+  ) {
+    super(message, cause === undefined ? undefined : { cause });
     this.kind = kind;
     if (model !== undefined) {
       this.model = model;
@@ -118,6 +137,8 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 const MESSAGES = {
   interrupted: "A resposta do modelo foi interrompida antes de terminar.",
+  unreadable: "A resposta do provedor não pôde ser lida até o fim.",
+  malformed: "O provedor devolveu uma resposta fora do formato esperado.",
   failed: "O provedor informou que a geração da resposta falhou",
   incomplete: "A resposta do modelo ficou incompleta",
   empty: "O modelo não devolveu nenhum texto.",
@@ -139,8 +160,74 @@ function withDetail(message: string, label: string, detail: unknown): string {
     : `${message}.`;
 }
 
-function toUsage(usage: ResponseUsage | undefined): { usage?: LlmUsage } {
-  if (usage === undefined) {
+// --- What is read from the provider ---------------------------------------
+// The types of the SDK describe what the provider promises, and the SDK does
+// not check them. Only the fields below are used, and they are checked here.
+
+const providerUsageSchema = z.object({
+  input_tokens: z.number(),
+  output_tokens: z.number(),
+  total_tokens: z.number(),
+});
+
+const providerResponseSchema = z.object({
+  model: z.string().nullish(),
+  status: z.string().nullish(),
+  error: z.object({ code: z.unknown().optional() }).nullish(),
+  incomplete_details: z.object({ reason: z.unknown().optional() }).nullish(),
+  output: z
+    .array(
+      z.object({
+        type: z.string(),
+        content: z
+          .array(z.object({ type: z.string(), text: z.string().nullish() }))
+          .nullish(),
+      }),
+    )
+    .nullish(),
+  usage: providerUsageSchema.nullish(),
+});
+
+type ProviderResponse = z.infer<typeof providerResponseSchema>;
+
+const streamEventSchema = z.object({
+  type: z.string(),
+  delta: z.unknown().optional(),
+  response: z.unknown().optional(),
+});
+
+function malformedAnswer(model?: string): LlmResponseError {
+  return new LlmResponseError("failed", MESSAGES.malformed, model);
+}
+
+/** The model that answered: a text that is not blank, or nothing. */
+function modelOf(response: ProviderResponse): string | undefined {
+  const model = response.model;
+  return typeof model === "string" && model.trim() !== "" ? model : undefined;
+}
+
+function readResponse(raw: unknown): ProviderResponse {
+  const parsed = providerResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw malformedAnswer();
+  }
+  return parsed.data;
+}
+
+/** A response that ended well: it must say which model answered. */
+function readCompletedResponse(
+  raw: unknown,
+): ProviderResponse & { model: string } {
+  const response = readResponse(raw);
+  const model = modelOf(response);
+  if (model === undefined) {
+    throw malformedAnswer();
+  }
+  return { ...response, model };
+}
+
+function toUsage(usage: ProviderResponse["usage"]): { usage?: LlmUsage } {
+  if (usage === undefined || usage === null) {
     return {};
   }
   return {
@@ -152,24 +239,43 @@ function toUsage(usage: ResponseUsage | undefined): { usage?: LlmUsage } {
   };
 }
 
-function hasRefusal(response: Response): boolean {
-  return response.output.some(
-    (item) =>
-      item.type === "message" &&
-      item.content.some((content) => content.type === "refusal"),
+function messageContents(response: ProviderResponse) {
+  return (response.output ?? [])
+    .filter((item) => item.type === "message")
+    .flatMap((item) => item.content ?? []);
+}
+
+/** The pieces of text of the answer, in order. Empty when it has none. */
+function outputTexts(response: ProviderResponse): string[] {
+  return messageContents(response)
+    .filter((content) => content.type === "output_text")
+    .map((content) => content.text ?? "");
+}
+
+function hasRefusal(response: ProviderResponse): boolean {
+  return messageContents(response).some(
+    (content) => content.type === "refusal",
   );
 }
 
-/** Why a response that ended carries no usable output. */
-function unusableResponse(response: Response): LlmResponseError {
-  if (response.status === "failed") {
+/**
+ * Why a response that ended carries no usable output. `reported` is what the
+ * stream said about it, which counts more than what the response repeats.
+ */
+function unusableResponse(
+  response: ProviderResponse,
+  reported?: "failed" | "incomplete",
+): LlmResponseError {
+  const status = reported ?? response.status;
+  const model = modelOf(response);
+  if (status === "failed") {
     return new LlmResponseError(
       "failed",
       withDetail(MESSAGES.failed, "código", response.error?.code),
-      response.model,
+      model,
     );
   }
-  if (response.status === "incomplete") {
+  if (status === "incomplete") {
     return new LlmResponseError(
       "incomplete",
       withDetail(
@@ -177,12 +283,49 @@ function unusableResponse(response: Response): LlmResponseError {
         "motivo",
         response.incomplete_details?.reason,
       ),
-      response.model,
+      model,
     );
   }
   return hasRefusal(response)
-    ? new LlmResponseError("refusal", MESSAGES.refusal, response.model)
-    : new LlmResponseError("empty", MESSAGES.empty, response.model);
+    ? new LlmResponseError("refusal", MESSAGES.refusal, model)
+    : new LlmResponseError("empty", MESSAGES.empty, model);
+}
+
+function identifierIn(value: unknown, key: string): string | undefined {
+  if (typeof value !== "object" || value === null || !(key in value)) {
+    return undefined;
+  }
+  const found = (value as Record<string, unknown>)[key];
+  return typeof found === "string" && IDENTIFIER.test(found)
+    ? found
+    : undefined;
+}
+
+/**
+ * A failure while the answer was being read. The errors of the SDK (of API,
+ * of connection, of timeout, of cancellation) pass as they are. Anything
+ * else is the transport giving up in the middle (the `fetch` of Node throws
+ * a TypeError, the SDK a SyntaxError for an event that is not JSON): it
+ * becomes an interrupted answer, which carries only the kind of the failure.
+ */
+function failureWhileReading(error: unknown, message: string): unknown {
+  if (error instanceof OpenAIError || error instanceof LlmResponseError) {
+    return error;
+  }
+  const name = identifierIn(error, "name");
+  const code =
+    identifierIn(error, "code") ??
+    identifierIn(error instanceof Error ? error.cause : undefined, "code");
+  const cause: LlmTransportCause = Object.freeze({
+    ...(name === undefined ? {} : { name }),
+    ...(code === undefined ? {} : { code }),
+  });
+  return new LlmResponseError(
+    "interrupted",
+    message,
+    undefined,
+    name === undefined && code === undefined ? undefined : cause,
+  );
 }
 
 /** Names the refused fields; never their values. */
@@ -322,30 +465,67 @@ export function createOpenAiLlmClient(
       { signal, headers: callHeaders },
     );
 
-    // The final event carries no text: the text is the pieces, joined.
+    // The text is the pieces, joined, in the order in which they arrived.
     let text = "";
     let chunks = 0;
-    let completed: Response | undefined;
-    for await (const event of stream) {
-      // Nothing is delivered after the call was interrupted. Leaving the
-      // loop also makes the SDK abort the request.
-      if (signal.aborted) {
-        break;
+    let completed: (ProviderResponse & { model: string }) | undefined;
+    // Read by hand, so that a failure of the transport (which comes out of
+    // `next`) is told apart from what the callback of the caller throws.
+    const events: AsyncIterator<unknown> = stream[Symbol.asyncIterator]();
+    let ended = false;
+    try {
+      for (;;) {
+        let next: IteratorResult<unknown>;
+        try {
+          next = await events.next();
+        } catch (error) {
+          ended = true;
+          throw failureWhileReading(error, MESSAGES.interrupted);
+        }
+        if (next.done === true) {
+          ended = true;
+          break;
+        }
+        // Nothing is delivered after the call was interrupted.
+        if (signal.aborted) {
+          break;
+        }
+        const event = streamEventSchema.safeParse(next.value);
+        if (!event.success) {
+          // Not an event of the provider: nothing to use in it.
+          continue;
+        }
+        switch (event.data.type) {
+          case "response.output_text.delta": {
+            const delta = event.data.delta;
+            if (typeof delta !== "string") {
+              throw malformedAnswer();
+            }
+            text += delta;
+            chunks += 1;
+            request.onChunk?.(delta);
+            break;
+          }
+          case "response.completed":
+            completed = readCompletedResponse(event.data.response);
+            break;
+          case "response.failed":
+          case "response.incomplete": {
+            const said = providerResponseSchema.safeParse(event.data.response);
+            throw unusableResponse(
+              said.success ? said.data : {},
+              event.data.type === "response.failed" ? "failed" : "incomplete",
+            );
+          }
+          default:
+            break;
+        }
       }
-      switch (event.type) {
-        case "response.output_text.delta":
-          text += event.delta;
-          chunks += 1;
-          request.onChunk?.(event.delta);
-          break;
-        case "response.completed":
-          completed = event.response;
-          break;
-        case "response.failed":
-        case "response.incomplete":
-          throw unusableResponse(event.response);
-        default:
-          break;
+    } finally {
+      // Leaving before the end makes the SDK abort the request. The call is
+      // already decided: a failure to close the stream changes nothing.
+      if (!ended) {
+        await events.return?.().catch(() => undefined);
       }
     }
 
@@ -354,7 +534,18 @@ export function createOpenAiLlmClient(
       throw new LlmResponseError("interrupted", MESSAGES.interrupted);
     }
     if (text === "") {
-      throw unusableResponse(completed);
+      // No piece carried text. The final event may still hold the answer:
+      // it is then delivered whole, as a single piece.
+      const whole = outputTexts(completed).join("");
+      if (whole === "") {
+        throw unusableResponse(completed);
+      }
+      if (signal.aborted) {
+        throw new APIUserAbortError();
+      }
+      text = whole;
+      chunks += 1;
+      request.onChunk?.(whole);
     }
     return {
       text,
@@ -381,9 +572,12 @@ export function createOpenAiLlmClient(
     input: EasyInputMessage[],
     signal: AbortSignal,
   ): Promise<LlmStructuredResult<z.infer<S>>> {
-    let response: Response & { output_parsed: unknown };
-    try {
-      response = await sdk.responses.parse(
+    // The raw HTTP answer: its body is read and checked here, in two steps,
+    // so that an answer of the provider that cannot be read (transport) is
+    // never taken for an invalid output of the model. The parsing helper of
+    // the SDK throws the same SyntaxError for both.
+    const http = await sdk.responses
+      .create(
         {
           model: request.model ?? defaultModel,
           instructions: request.instructions,
@@ -393,37 +587,48 @@ export function createOpenAiLlmClient(
           text: { format: zodTextFormat(request.schema, request.schemaName) },
         },
         { signal, headers: callHeaders },
-      );
+      )
+      .asResponse();
+
+    let body: unknown;
+    try {
+      body = JSON.parse(await http.text());
     } catch (error) {
-      // The SDK parses the output while reading the answer, so the model that
-      // answered is not known here.
-      if (error instanceof z.ZodError) {
-        throw new LlmResponseError(
-          "invalid_output",
-          outsideSchemaMessage(error),
-        );
-      }
-      if (error instanceof SyntaxError) {
-        throw new LlmResponseError("invalid_output", MESSAGES.notJson);
-      }
-      throw error;
+      throw failureWhileReading(error, MESSAGES.unreadable);
     }
 
-    // A refusal and an incomplete answer do not throw: nothing was parsed.
-    if (response.output_parsed === null) {
+    const response = readResponse(body);
+    if (response.status === "failed" || response.status === "incomplete") {
       throw unusableResponse(response);
     }
-    const checked = request.schema.safeParse(response.output_parsed);
+    const model = modelOf(response);
+    if (model === undefined) {
+      throw malformedAnswer();
+    }
+    const texts = outputTexts(response);
+    if (texts.length === 0) {
+      // A refusal, or no output at all.
+      throw unusableResponse(response);
+    }
+
+    // From here on, what is judged is the output of the model.
+    let output: unknown;
+    try {
+      output = JSON.parse(texts.join(""));
+    } catch {
+      throw new LlmResponseError("invalid_output", MESSAGES.notJson, model);
+    }
+    const checked = request.schema.safeParse(output);
     if (!checked.success) {
       throw new LlmResponseError(
         "invalid_output",
         outsideSchemaMessage(checked.error),
-        response.model,
+        model,
       );
     }
     return {
       value: checked.data,
-      model: response.model,
+      model,
       ...toUsage(response.usage),
     };
   }
