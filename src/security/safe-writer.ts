@@ -29,10 +29,52 @@ const ALLOWED_TOP_LEVEL_DIRECTORIES = ["outputs", "logs"];
 const NOT_SERIALIZABLE_MESSAGE =
   "O valor informado não pode ser convertido em JSON.";
 
-function serialize(value: unknown, indentation?: number): string {
+/**
+ * Redacts every string before it is escaped by JSON.stringify: an escape
+ * (a line break written as "\n", a quote as '\"') changes what comes before
+ * and inside a secret, and the redaction of the final text alone could miss
+ * it. Used as the replacer, so it sees exactly what is going to be written
+ * (after toJSON) and changes nothing about what can or cannot be serialized.
+ */
+function createStringRedactor(redactText: Redactor) {
+  return (_name: string, value: unknown): unknown => {
+    if (typeof value === "string") {
+      return redactText(value);
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return value;
+    }
+    // The names of the properties are strings too. The object is only
+    // copied when a name changes; its values are visited next, by
+    // JSON.stringify itself, which also still finds a circular reference.
+    const names = Object.keys(value);
+    const safeNames = names.map(redactText);
+    if (safeNames.every((safeName, index) => safeName === names[index])) {
+      return value;
+    }
+    const source = value as Record<string, unknown>;
+    const copy: Record<string, unknown> = {};
+    names.forEach((name, index) => {
+      // defineProperty: a name such as "__proto__" stays an own property.
+      Object.defineProperty(copy, safeNames[index] ?? name, {
+        value: source[name],
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    });
+    return copy;
+  };
+}
+
+function serialize(
+  value: unknown,
+  redactText: Redactor,
+  indentation?: number,
+): string {
   let json: unknown;
   try {
-    json = JSON.stringify(value, null, indentation);
+    json = JSON.stringify(value, createStringRedactor(redactText), indentation);
   } catch {
     // BigInt, circular reference, a toJSON that throws. The original error is
     // dropped on purpose: its text is in English and may quote the value.
@@ -102,11 +144,12 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
       write(relativePath, content, "overwrite"),
     appendText: (relativePath, content) =>
       write(relativePath, content, "append"),
-    // Redaction runs on the final text, after JSON.stringify. Both are async
-    // so that a value that cannot be serialized rejects instead of throwing.
+    // Redaction runs twice: on every string before JSON.stringify, and on
+    // the final text in write(). Both are async so that a value that cannot
+    // be serialized rejects instead of throwing.
     writeJson: async (relativePath, value) =>
-      write(relativePath, serialize(value, 2), "overwrite"),
+      write(relativePath, serialize(value, applyRedaction, 2), "overwrite"),
     appendJsonLine: async (relativePath, value) =>
-      write(relativePath, serialize(value), "append"),
+      write(relativePath, serialize(value, applyRedaction), "append"),
   };
 }

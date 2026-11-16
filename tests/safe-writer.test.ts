@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { REDACTED, createRedactor } from "../src/security/redact.js";
+import { findSecretsInText } from "../src/security/secret-scan.js";
 import { createSafeWriter } from "../src/security/safe-writer.js";
 import type { SafeWriter } from "../src/security/safe-writer.js";
 import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
+import { AFTER_AN_ESCAPE, ORDINARY_TEXT } from "./helpers/key-placements.js";
 
 const KEY = fakeOpenAiKey();
 
@@ -343,5 +345,162 @@ describe("createSafeWriter", () => {
 
     expect(path).toBe(resolve(rootDir, "outputs", "y", "a.txt"));
     expect(await readFile(path, "utf8")).toBe("ok\n");
+  });
+});
+
+// QA of ENG-44 (B6): redaction ran only on the text that JSON.stringify
+// produced, where a key at the start of a line comes right after the "n" of
+// a line break.
+describe("createSafeWriter: a key that JSON.stringify escapes around", () => {
+  const other = fakeOpenAiKey("B");
+
+  async function writeBoth(value: unknown): Promise<[string, string]> {
+    const jsonPath = await writer.writeJson("outputs/run/turno.json", value);
+    const linePath = await writer.appendJsonLine("logs/sessao.jsonl", value);
+    const line = await readFile(linePath, "utf8");
+    // Removed, so that the next call reads only what it appended.
+    await rm(linePath);
+    return [await readFile(jsonPath, "utf8"), line];
+  }
+
+  it("redacts a key at the start of a line of a string, in both methods", async () => {
+    const contents = await writeBoth({
+      pergunta: `minha chave antiga:\n${other}`,
+    });
+
+    for (const content of contents) {
+      expect(content).not.toContain(other);
+      expect(JSON.parse(content)).toEqual({
+        pergunta: `minha chave antiga:\n${REDACTED}`,
+      });
+      expect(findSecretsInText(content)).toEqual([]);
+    }
+  });
+
+  it.each([
+    ["a tab", "\t"],
+    ["a carriage return", "\r"],
+    ["CRLF", "\r\n"],
+    ["an ANSI reset", "\x1b[0m"],
+    ["a quote", '"'],
+    ["a backslash", "\\"],
+    ["a form feed", "\f"],
+  ])("redacts a key and a masked key after %s", async (_label, before) => {
+    const masked = fakeMaskedOpenAiKey();
+
+    const contents = await writeBoth({
+      [`nome${before}${other}`]: [`a${before}${other}`, { b: before + masked }],
+    });
+
+    for (const content of contents) {
+      expect(content).not.toContain(other);
+      expect(content).not.toContain(masked);
+      expect(JSON.parse(content)).toEqual({
+        [`nome${before}${REDACTED}`]: [
+          `a${before}${REDACTED}`,
+          { b: before + REDACTED },
+        ],
+      });
+      expect(findSecretsInText(content)).toEqual([]);
+    }
+  });
+
+  it.each(AFTER_AN_ESCAPE)(
+    "leaves no finding when a string already holds a key after %s",
+    async (_label, build) => {
+      const contents = await writeBoth({ texto: build(other) });
+
+      for (const content of contents) {
+        expect(content).not.toContain(other);
+        expect(JSON.parse(content)).toEqual({ texto: build(REDACTED) });
+        expect(findSecretsInText(content)).toEqual([]);
+      }
+    },
+  );
+
+  it("redacts each string before it is serialized, names and values at any depth", async () => {
+    // Only the string itself holds this secret: in the JSON text the line
+    // break and the quotes are escaped, and the exact value is not there.
+    const secret = 'primeira linha\n"segunda" linha';
+    const strict = createSafeWriter({
+      redact: createRedactor([secret]),
+      rootDir,
+    });
+    const value = {
+      [secret]: 1,
+      lista: [secret, [`x ${secret}`], { [`k ${secret}`]: { v: secret } }],
+      data: { toJSON: () => `de toJSON: ${secret}` },
+      numero: 7,
+      nulo: null,
+    };
+    const expected = {
+      [REDACTED]: 1,
+      lista: [
+        REDACTED,
+        [`x ${REDACTED}`],
+        { [`k ${REDACTED}`]: { v: REDACTED } },
+      ],
+      data: `de toJSON: ${REDACTED}`,
+      numero: 7,
+      nulo: null,
+    };
+
+    const jsonPath = await strict.writeJson("outputs/s.json", value);
+    const linePath = await strict.appendJsonLine("logs/s.jsonl", value);
+
+    for (const path of [jsonPath, linePath]) {
+      const content = await readFile(path, "utf8");
+      expect(content).not.toContain("segunda");
+      expect(JSON.parse(content)).toEqual(expected);
+    }
+  });
+
+  it("writes a top-level string and keeps the layout of the document", async () => {
+    const [json, line] = await writeBoth(`chave:\n${other}`);
+    const [indented, single] = await writeBoth({ a: [1, { b: "x" }], c: "y" });
+
+    expect(json).toBe(`${JSON.stringify(`chave:\n${REDACTED}`)}\n`);
+    expect(line).toBe(`${JSON.stringify(`chave:\n${REDACTED}`)}\n`);
+    expect(indented).toBe(
+      `${JSON.stringify({ a: [1, { b: "x" }], c: "y" }, null, 2)}\n`,
+    );
+    expect(single).toBe(`${JSON.stringify({ a: [1, { b: "x" }], c: "y" })}\n`);
+  });
+
+  it("keeps a property named __proto__ as a property", async () => {
+    const value: unknown = JSON.parse(
+      `{"__proto__":{"x":1},${JSON.stringify(`k ${other}`)}:2}`,
+    );
+
+    const [json] = await writeBoth(value);
+
+    expect(json).toContain('"__proto__"');
+    expect(JSON.parse(json)).toEqual(
+      JSON.parse(`{"__proto__":{"x":1},"k ${REDACTED}":2}`),
+    );
+  });
+
+  it("still rejects a circular value whose property names hold a key", async () => {
+    const circular: Record<string, unknown> = { [`k ${other}`]: 1 };
+    circular[`self ${other}`] = circular;
+
+    for (const attempt of [
+      () => writer.writeJson("outputs/c.json", circular),
+      () => writer.appendJsonLine("logs/c.jsonl", circular),
+    ]) {
+      await expect(attempt()).rejects.toThrow(
+        "O valor informado não pode ser convertido em JSON.",
+      );
+    }
+    expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  it.each(ORDINARY_TEXT)("keeps ordinary text unchanged: %s", async (text) => {
+    const value = { resposta: `linha\n${text}\tfim`, [text]: [text] };
+
+    for (const content of await writeBoth(value)) {
+      expect(JSON.parse(content)).toEqual(value);
+      expect(findSecretsInText(content)).toEqual([]);
+    }
   });
 });
