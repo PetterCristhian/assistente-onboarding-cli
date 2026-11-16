@@ -8,12 +8,21 @@ export const REDACTED = "[REDACTED]";
 //   1. the prefix and 20 or more key characters;
 //   2. the masked form that the API quotes in a 401 message: the prefix, maybe
 //      some key characters, three or more asterisks and whatever follows them.
-//      Fewer than three would also take Markdown bold around the prefix. The
-//      exact masked format was not confirmed against the real API.
-// The asterisk is accepted in form 1 so that a long visible start does not
-// leave the asterisks and the last characters behind.
+//      The exact masked format was not confirmed against the real API.
+// In both, the sequence goes on over key characters and runs of three or more
+// asterisks. A run of one or two asterisks ends it: that is Markdown (bold or
+// italic) around the key, not a mask. Three asterisks right after a key are
+// taken with it: they cannot be told from a mask with nothing after it.
+//
+// The prefix must not come right after an ASCII letter or digit: there it is
+// the end of a word (task-, disk-, helpdesk-), and the answers of the model
+// are written through redact(). The price is a key glued to a letter or
+// digit, which only the exact secret catches. "_" and "-" do not count as
+// part of a word: no word ends in "sk" right after them, and a key does come
+// after them (NAME_<key>, copy-<key>).
 const KEY_PREFIX = "sk-";
 const KEY_CHARACTERS = "A-Za-z0-9_-";
+const NOT_AFTER = "A-Za-z0-9";
 const MIN_KEY_LENGTH = 20;
 const MIN_MASK_ASTERISKS = 3;
 
@@ -21,8 +30,10 @@ const MIN_MASK_ASTERISKS = 3;
 // bounded quantifiers. The rest is walked by findSecretSpans: an unbounded
 // greedy quantifier overflows the stack of the engine on a run of millions of
 // key characters ("Maximum call stack size exceeded").
-const SECRET_START_SOURCE = `${KEY_PREFIX}(?:[*${KEY_CHARACTERS}]{${MIN_KEY_LENGTH}}|[${KEY_CHARACTERS}]{0,${MIN_KEY_LENGTH - 1}}\\*{${MIN_MASK_ASTERISKS}})`;
-const AFTER_SECRET_SOURCE = `[^*${KEY_CHARACTERS}]`;
+const SECRET_START_SOURCE = `(?<![${NOT_AFTER}])${KEY_PREFIX}(?:[${KEY_CHARACTERS}]{${MIN_KEY_LENGTH}}|[${KEY_CHARACTERS}]{0,${MIN_KEY_LENGTH - 1}}[*]{${MIN_MASK_ASTERISKS}})`;
+// What ends a sequence: a character that cannot be part of it, or a run of
+// asterisks shorter than a mask.
+const SECRET_END_SOURCE = `[^*${KEY_CHARACTERS}]|(?<![*])[*]{1,${MIN_MASK_ASTERISKS - 1}}(?![*])`;
 
 export interface SecretSpan {
   /** Index of the first character of the sequence. */
@@ -38,7 +49,7 @@ export interface SecretSpan {
  */
 export function findSecretSpans(text: string): SecretSpan[] {
   const secretStart = new RegExp(SECRET_START_SOURCE, "g");
-  const afterSecret = new RegExp(AFTER_SECRET_SOURCE, "g");
+  const secretEnd = new RegExp(SECRET_END_SOURCE, "g");
   const spans: SecretSpan[] = [];
 
   for (
@@ -46,9 +57,9 @@ export function findSecretSpans(text: string): SecretSpan[] {
     match !== null;
     match = secretStart.exec(text)
   ) {
-    // The sequence goes on up to the first character that cannot be part of it.
-    afterSecret.lastIndex = secretStart.lastIndex;
-    const end = afterSecret.exec(text)?.index ?? text.length;
+    // The sequence goes on up to the first thing that cannot be part of it.
+    secretEnd.lastIndex = secretStart.lastIndex;
+    const end = secretEnd.exec(text)?.index ?? text.length;
     spans.push({ start: match.index, end });
     secretStart.lastIndex = end;
   }

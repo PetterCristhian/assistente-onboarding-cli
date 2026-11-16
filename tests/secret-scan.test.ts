@@ -617,3 +617,36 @@ describe("findSecretsInText: UTF-16 at any offset and UTF-32", () => {
     expect(findSecretsInText(content)).toEqual([]);
   });
 });
+
+describe("findSecretsInText: boundary before the prefix", () => {
+  const ordinary =
+    "***task-force***\n- disk-***\n***risk-x***\ntask-force-management-department\nhelpdesk-abertura-de-chamados-ti\n";
+
+  it("finds nothing in words that end like the prefix, in any encoding", () => {
+    expect(findSecretsInText(ordinary)).toEqual([]);
+    expect(findSecretsInText(utf16AsLatin1(ordinary))).toEqual([]);
+    expect(
+      findSecretsInText(utf16AsLatin1(ordinary, { bigEndian: true })),
+    ).toEqual([]);
+    expect(findSecretsInText(utf32AsLatin1(ordinary))).toEqual([]);
+  });
+
+  it.each([
+    ["plain", (text: string) => text],
+    ["UTF-16LE", (text: string) => utf16AsLatin1(text)],
+    ["UTF-16BE", (text: string) => utf16AsLatin1(text, { bigEndian: true })],
+    ["UTF-32LE", (text: string) => utf32AsLatin1(text)],
+  ])("applies the same boundary to %s content", (_label, encode) => {
+    expect(findSecretsInText(encode(`KEY=${KEY}\n`))).toEqual([
+      { line: 1, column: 5 },
+    ]);
+    expect(findSecretsInText(encode(`"${KEY}"\n`))).toEqual([
+      { line: 1, column: 2 },
+    ]);
+    expect(findSecretsInText(encode(`**${KEY}**\n`))).toEqual([
+      { line: 1, column: 3 },
+    ]);
+    // Decision: glued to a letter or digit, it reads as the end of a word.
+    expect(findSecretsInText(encode(`texto${KEY}\n`))).toEqual([]);
+  });
+});

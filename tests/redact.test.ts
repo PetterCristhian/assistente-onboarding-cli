@@ -243,7 +243,7 @@ describe("redact: hostile inputs", () => {
   });
 
   it.each([
-    ["glued to letters", `abc${key}`, `abc${REDACTED}`],
+    ["glued to a symbol after letters", `abc_${key}`, `abc_${REDACTED}`],
     ["between symbols", `k=${key};n=1`, `k=${REDACTED};n=1`],
     [
       "in a URL query",
@@ -295,7 +295,7 @@ describe("redact: where a key can be (QA)", () => {
       `https://${key}@x.invalid/`,
       `https://${REDACTED}@x.invalid/`,
     ],
-    ["glued to the text before it", `chave${key}`, `chave${REDACTED}`],
+    ["glued to a colon after text", `chave:${key}`, `chave:${REDACTED}`],
     ["followed by a full stop", `${key}.`, `${REDACTED}.`],
     ["between tabs", `a\t${key}\tb`, `a\t${REDACTED}\tb`],
     ["between accented letters", `é${key}ç`, `é${REDACTED}ç`],
@@ -353,5 +353,89 @@ describe("redact: where a key can be (QA)", () => {
 
     expect(redact(text)).toBe(`${REDACTED} `.repeat(350_000));
     expect(performance.now() - startedAt).toBeLessThan(5000);
+  });
+});
+
+// The prefix is also the end of ordinary words (task-, disk-, helpdesk-), and
+// asterisks are also Markdown: neither may be taken for a key.
+describe("redact: boundary before the prefix and Markdown around a key", () => {
+  const key = fakeOpenAiKey("m");
+
+  it.each([
+    "***task-force***",
+    "disk-***",
+    "um ***risk-x*** no texto",
+    "| desk-*** | ask-**** |",
+    "task-force-management-department",
+    "helpdesk-abertura-de-chamados-ti",
+    "o item 9task-force-management-department",
+    `x9${PREFIX}${"a".repeat(24)}`,
+    `abc${PREFIX}***wXyZ`,
+  ])("keeps a word that only ends like the prefix: %s", (text) => {
+    expect(redact(text)).toBe(text);
+    expect(findSecretSpans(text)).toEqual([]);
+  });
+
+  it.each([
+    ["an equals sign", "KEY="],
+    ["a double quote", '"'],
+    ["a single quote", "'"],
+    ["a slash", "/"],
+    ["a colon", ":"],
+    ["an at sign", "@"],
+    ["a parenthesis", "("],
+    ["a space", "valor "],
+    ["a full stop", "fim."],
+    ["a comma", "a,"],
+    ["an underscore", "MINHA_"],
+    ["a hyphen", "copia-"],
+    ["an asterisk", "*"],
+    ["an accented letter", "é"],
+  ])("replaces a key right after %s", (_label, before) => {
+    const masked = fakeMaskedOpenAiKey({ start: "abc", asterisks: 3 });
+
+    expect(redact(`${before}${key} fim`)).toBe(`${before}${REDACTED} fim`);
+    expect(redact(`${before}${masked} fim`)).toBe(`${before}${REDACTED} fim`);
+  });
+
+  it.each([["texto"], ["Texto9"], ["A"], ["0"]])(
+    "takes a key glued to %j as part of a word, unless it is the key in use",
+    (before) => {
+      const text = `${before}${key} fim`;
+
+      // Decision: an ASCII letter or digit before the prefix makes it the
+      // end of a word. The exact key in use is still replaced.
+      expect(redact(text)).toBe(text);
+      expect(redact(text, [key])).toBe(`${before}${REDACTED} fim`);
+    },
+  );
+
+  it.each([
+    ["bold", "**", "**"],
+    ["italic", "*", "*"],
+    ["bold in a sentence", "a chave **", "** vazou"],
+    ["a list item with one asterisk after", "- ", "* nota"],
+  ])("keeps the Markdown around a key: %s", (_label, before, after) => {
+    const masked = fakeMaskedOpenAiKey({ start: "abc", asterisks: 3 });
+
+    expect(redact(`${before}${key}${after}`)).toBe(
+      `${before}${REDACTED}${after}`,
+    );
+    expect(redact(`${before}${masked}${after}`)).toBe(
+      `${before}${REDACTED}${after}`,
+    );
+  });
+
+  it.each([
+    ["visible start and end", { start: "abc", asterisks: 3 }],
+    ["no visible start", { project: false, asterisks: 3 }],
+    ["only asterisks", { asterisks: 8, end: "" }],
+    ["long visible start", { start: "a".repeat(30), asterisks: 5 }],
+  ])("still replaces the whole masked key: %s", (_label, options) => {
+    const masked = fakeMaskedOpenAiKey(options);
+
+    expect(redact(masked)).toBe(REDACTED);
+    expect(redact(`(${masked})`)).toBe(`(${REDACTED})`);
+    expect(findSecretSpans(masked)).toEqual([{ start: 0, end: masked.length }]);
   });
 });
