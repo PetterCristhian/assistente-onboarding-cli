@@ -503,6 +503,31 @@ describe("loadCompanyData", () => {
     expect(reader.reads).toHaveLength(2);
   });
 
+  it("ignores a file whose name is only the extension", () => {
+    const reader = fakeReader({
+      ...madeUpFiles(),
+      [join(COMPANY_DIR, ".md")]: "# Sem nome",
+    });
+
+    const documents = loadCompanyData(COMPANY_DIR, reader);
+
+    expect(documents.map((document) => document.name)).toEqual([
+      "a-primeiro.md",
+      "b-segundo.md",
+    ]);
+    expect(reader.reads).toHaveLength(2);
+  });
+
+  it("refuses a folder whose only file is named as the extension", () => {
+    const reader = fakeReader({ [join(COMPANY_DIR, ".md")]: "# Sem nome" });
+
+    expect(
+      contextErrorMessage(() => loadCompanyData(COMPANY_DIR, reader)),
+    ).toBe(
+      `A pasta da camada "dados da empresa" não contém nenhum arquivo .md: ${COMPANY_DIR}.`,
+    );
+  });
+
   it("normalizes each document", () => {
     const reader = fakeReader({
       [join(COMPANY_DIR, "a.md")]: `${BOM}# Título\r\n\r\nLinha.\r\n`,
@@ -569,6 +594,40 @@ describe("listProfiles", () => {
     expect(reader.lists).toEqual([PROFILE_DIR]);
     expect(reader.reads).toEqual([]);
   });
+
+  it("ignores a file whose name is only the extension", () => {
+    const reader = fakeReader({
+      ...madeUpFiles(),
+      [join(PROFILE_DIR, ".json")]: profileJson(VALID_PROFILE),
+    });
+
+    expect(listProfiles(ROOT, reader)).toEqual(["alfa", "beta"]);
+    expect(
+      resolveContextSources({ contextDir: ROOT }, reader).userProfileFile,
+    ).toBe(FIRST_PROFILE);
+  });
+
+  it("refuses a folder whose only file is named as the extension", () => {
+    const reader = fakeReader({
+      [join(PROFILE_DIR, ".json")]: profileJson(VALID_PROFILE),
+    });
+
+    expect(contextErrorMessage(() => listProfiles(ROOT, reader))).toBe(
+      `A pasta da camada "dados do usuário" não contém nenhum arquivo .json: ${PROFILE_DIR}.`,
+    );
+  });
+
+  it.each(["", " ", "  \t "])(
+    'refuses the empty context folder "%s"',
+    (dir) => {
+      const reader = fakeReader(madeUpFiles());
+
+      expect(contextErrorMessage(() => listProfiles(dir, reader))).toBe(
+        "A pasta de contexto informada está vazia: informe o caminho de uma pasta.",
+      );
+      expect(reader.lists).toEqual([]);
+    },
+  );
 
   it("names the layer and the expected path of a missing folder", () => {
     expect(contextErrorMessage(() => listProfiles(ROOT, fakeReader({})))).toBe(
@@ -638,6 +697,31 @@ describe("resolveContextSources", () => {
       expect(path.startsWith(join(otherRoot, "0"))).toBe(true);
     }
   });
+
+  it.each(["", " ", "  \t "])(
+    'refuses the empty context folder "%s"',
+    (dir) => {
+      const reader = fakeReader(madeUpFiles());
+
+      expect(
+        contextErrorMessage(() =>
+          resolveContextSources({ contextDir: dir }, reader),
+        ),
+      ).toBe(
+        "A pasta de contexto informada está vazia: informe o caminho de uma pasta.",
+      );
+      expect(
+        contextErrorMessage(() =>
+          loadContextLayers(
+            { contextDir: dir },
+            { reader, now: () => new Date(2020, 1, 3, 12, 0) },
+          ),
+        ),
+      ).toContain("pasta de contexto");
+      expect(reader.lists).toEqual([]);
+      expect(reader.reads).toEqual([]);
+    },
+  );
 
   it("returns absolute paths for a relative context folder", () => {
     const sources = resolveContextSources(
@@ -720,6 +804,31 @@ describe("formatCurrentDate", () => {
 
   it("refuses a date that is not valid", () => {
     expect(() => formatCurrentDate(new Date(Number.NaN))).toThrow(ContextError);
+  });
+
+  it.each([
+    ["the year zero", 0],
+    ["a year before the common era", -1],
+    ["a year with five digits", 10000],
+    ["the last year a date can hold", 275760],
+  ])("refuses %s", (_label, year) => {
+    const date = new Date(2020, 5, 15, 12, 0);
+    date.setFullYear(year);
+
+    expect(contextErrorMessage(() => formatCurrentDate(date))).toBe(
+      "A data atual recebida do relógio está fora do intervalo aceito (anos de 1 a 9999).",
+    );
+  });
+
+  it.each([
+    [1, "0001-06-15"],
+    [999, "0999-06-15"],
+    [9999, "9999-06-15"],
+  ])("accepts the year %d, written with four digits", (year, expected) => {
+    const date = new Date(2020, 5, 15, 12, 0);
+    date.setFullYear(year);
+
+    expect(formatCurrentDate(date).startsWith(`${expected} (`)).toBe(true);
   });
 
   it("names the seven days of the week in Portuguese", () => {

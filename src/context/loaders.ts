@@ -142,7 +142,12 @@ function listLayerFiles(
     throw unreadable(path, error);
   }
 
-  const matching = sortByCode(names.filter((name) => name.endsWith(extension)));
+  // A name that is only the extension (".md") is not a file of the layer.
+  const matching = sortByCode(
+    names.filter(
+      (name) => name.endsWith(extension) && name.length > extension.length,
+    ),
+  );
   if (matching.length === 0) {
     throw new ContextError(
       `A pasta da camada "${layer}" não contém nenhum arquivo ${extension}: ${path}.`,
@@ -151,11 +156,21 @@ function listLayerFiles(
   return matching;
 }
 
+/** An empty path would be read as the current folder. */
+function refuseEmptyContextDir(contextDir: string): void {
+  if (contextDir.trim() === "") {
+    throw new ContextError(
+      "A pasta de contexto informada está vazia: informe o caminho de uma pasta.",
+    );
+  }
+}
+
 /** Names of the profiles of a context folder, ordered, without extension. */
 export function listProfiles(
   contextDir: string,
   reader: ContextFileReader = nodeFileReader,
 ): string[] {
+  refuseEmptyContextDir(contextDir);
   return listLayerFiles(
     join(contextDir, USER_PROFILE_DIR),
     USER_DATA_LAYER,
@@ -182,6 +197,7 @@ export function resolveContextSources(
     );
   }
 
+  refuseEmptyContextDir(options.contextDir ?? DEFAULT_CONTEXT_DIR);
   const contextDir = resolve(options.contextDir ?? DEFAULT_CONTEXT_DIR);
   const profileDir = join(contextDir, USER_PROFILE_DIR);
   const profiles = listProfiles(contextDir, reader);
@@ -329,6 +345,12 @@ function twoDigits(value: number): string {
 export function formatCurrentDate(now: Date): string {
   if (Number.isNaN(now.getTime())) {
     throw new ContextError("A data atual recebida do relógio não é válida.");
+  }
+  // The format has four digits for the year, with no sign.
+  if (now.getFullYear() < 1 || now.getFullYear() > 9999) {
+    throw new ContextError(
+      "A data atual recebida do relógio está fora do intervalo aceito (anos de 1 a 9999).",
+    );
   }
   const year = String(now.getFullYear()).padStart(4, "0");
   const date = `${year}-${twoDigits(now.getMonth() + 1)}-${twoDigits(now.getDate())}`;
