@@ -203,6 +203,15 @@ const streamEventSchema = z.object({
   type: z.string(),
   delta: z.unknown().optional(),
   response: z.unknown().optional(),
+  // Of `response.output_item.added` and of the events of its content.
+  output_index: z.unknown().optional(),
+  item: z.unknown().optional(),
+});
+
+// What is looked at in an item that the stream announces.
+const announcedItemSchema = z.object({
+  type: z.string(),
+  phase: z.string().nullish(),
 });
 
 function malformedAnswer(model?: string): LlmResponseError {
@@ -497,6 +506,10 @@ export function createOpenAiLlmClient(
     let text = "";
     let chunks = 0;
     let completed: (ProviderResponse & { model: string }) | undefined;
+    // The positions, in the output, of the messages that are not part of the
+    // answer (a commentary): the stream announces each item, with its phase,
+    // before the pieces of its text, and each piece says where it belongs.
+    const notAnswer = new Set<number>();
     // Read by hand, so that a failure of the transport (which comes out of
     // `next`) is told apart from what the callback of the caller throws.
     const events: AsyncIterator<unknown> = stream[Symbol.asyncIterator]();
@@ -524,10 +537,28 @@ export function createOpenAiLlmClient(
           continue;
         }
         switch (event.data.type) {
+          case "response.output_item.added": {
+            const item = announcedItemSchema.safeParse(event.data.item);
+            const index = event.data.output_index;
+            if (
+              item.success &&
+              item.data.type === MESSAGE_ITEM &&
+              !isAnswerPhase(item.data.phase) &&
+              typeof index === "number"
+            ) {
+              notAnswer.add(index);
+            }
+            break;
+          }
           case "response.output_text.delta": {
             const delta = event.data.delta;
             if (typeof delta !== "string") {
               throw malformedAnswer();
+            }
+            const index = event.data.output_index;
+            if (typeof index === "number" && notAnswer.has(index)) {
+              // A piece of commentary: not for the user.
+              break;
             }
             text += delta;
             chunks += 1;

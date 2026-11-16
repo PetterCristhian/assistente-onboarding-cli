@@ -262,3 +262,104 @@ describe("an output item that the client does not use is not checked", () => {
     expect((error as Error).message).toContain("fora do formato esperado");
   });
 });
+
+describe("streamText leaves the commentary of the model out of the answer", () => {
+  function itemAdded(index: number, item: unknown): SseEvent {
+    const type = "response.output_item.added";
+    return { event: type, data: { type, output_index: index, item } };
+  }
+
+  function deltaOf(index: number, delta: string): SseEvent {
+    const type = "response.output_text.delta";
+    return {
+      event: type,
+      data: { type, output_index: index, content_index: 0, delta },
+    };
+  }
+
+  const inProgress = (phase?: Phase) => ({
+    ...message([], phase),
+    status: "in_progress",
+  });
+
+  async function streamOf(events: readonly SseEvent[]) {
+    const { client } = setup([{ kind: "sse", events }]);
+    const received: string[] = [];
+    const result = await client.streamText({
+      ...REQUEST,
+      onChunk: (chunk) => received.push(chunk),
+    });
+    return { result, received };
+  }
+
+  it("delivers only the pieces of the final answer", async () => {
+    const { result, received } = await streamOf([
+      itemAdded(0, REASONING),
+      itemAdded(1, inProgress("commentary")),
+      deltaOf(1, "pensando... "),
+      itemAdded(2, inProgress("final_answer")),
+      deltaOf(2, "res"),
+      deltaOf(2, "posta"),
+      completedEvent([
+        REASONING,
+        message(["pensando... "], "commentary", "msg_1"),
+        message(["resposta"], "final_answer", "msg_2"),
+      ]),
+    ]);
+
+    expect(received).toEqual(["res", "posta"]);
+    expect(result).toMatchObject({ text: "resposta", chunks: 2 });
+  });
+
+  it.each([
+    ["null", null],
+    ["absent", undefined],
+  ] as const)("delivers a message whose phase is %s", async (_label, phase) => {
+    const { result, received } = await streamOf([
+      itemAdded(0, inProgress(phase)),
+      deltaOf(0, "resposta"),
+      completedEvent([message(["resposta"], phase)]),
+    ]);
+
+    expect(received).toEqual(["resposta"]);
+    expect(result.text).toBe("resposta");
+  });
+
+  it("takes the text of the final event by the same rule, when no piece of the answer arrived", async () => {
+    const { result, received } = await streamOf([
+      itemAdded(0, inProgress("commentary")),
+      deltaOf(0, "pensando... "),
+      completedEvent([
+        message(["pensando... "], "commentary", "msg_1"),
+        message(["resposta"], "final_answer", "msg_2"),
+      ]),
+    ]);
+
+    expect(received).toEqual(["resposta"]);
+    expect(result).toMatchObject({ text: "resposta", chunks: 1 });
+  });
+
+  it("reports an answer made only of commentary as empty, with nothing delivered", async () => {
+    const { client } = setup([
+      {
+        kind: "sse",
+        events: [
+          itemAdded(0, inProgress("commentary")),
+          deltaOf(0, "pensando... "),
+          completedEvent([message(["pensando... "], "commentary")]),
+        ],
+      },
+    ]);
+    const received: string[] = [];
+
+    const error = await rejectionOf(
+      client.streamText({
+        ...REQUEST,
+        onChunk: (chunk) => received.push(chunk),
+      }),
+    );
+
+    expect(error).toMatchObject({ kind: "empty", model: FAKE_RETURNED_MODEL });
+    expect(received).toEqual([]);
+  });
+});
