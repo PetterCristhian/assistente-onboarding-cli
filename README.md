@@ -26,6 +26,8 @@ Copy-Item .env.example .env   # PowerShell
 cp .env.example .env          # bash
 ```
 
+O `.env` precisa estar em UTF-8 sem BOM. No Windows PowerShell 5, não crie o arquivo com `>` (ele grava UTF-16): copie o exemplo e edite a cópia.
+
 Depois:
 
 ```bash
@@ -49,7 +51,7 @@ A cada pull request e a cada push na `main`, o GitHub Actions ([`.github/workflo
 
 ## Credencial
 
-Este repositório é público. A chave da OpenAI fica somente no arquivo `.env` local, que é ignorado pelo Git, ou em variável de ambiente. Nunca coloque uma chave real em `.env.example`, em código, em documentação, em issue ou em mensagem de commit. Se uma chave vazar, revogue-a imediatamente no painel da OpenAI. Detalhes em [`docs/adr/0007-protecao-da-credencial.md`](docs/adr/0007-protecao-da-credencial.md).
+Este repositório é público. A chave da OpenAI fica somente no arquivo `.env` local, que é ignorado pelo Git, ou em variável de ambiente. Nunca coloque uma chave real em `.env.example`, em código, em documentação, em issue ou em mensagem de commit. O `npm run check:secrets` procura o formato de chave no conteúdo (inclusive em arquivos UTF-16) e no nome de cada arquivo não ignorado pelo Git, sem exibir o valor encontrado. Se uma chave vazar, revogue-a imediatamente no painel da OpenAI. Detalhes em [`docs/adr/0007-protecao-da-credencial.md`](docs/adr/0007-protecao-da-credencial.md).
 
 ## Deploy
 
