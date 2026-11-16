@@ -9,7 +9,7 @@ import {
   listRepositoryFiles,
   scanRepository,
 } from "../src/security/secret-scan.js";
-import { fakeOpenAiKey } from "./helpers/fake-key.js";
+import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const KEY = fakeOpenAiKey();
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -46,6 +46,19 @@ describe("findSecretsInText", () => {
       { line: 2, column: 3 },
       { line: 2, column: KEY.length + 6 },
     ]);
+  });
+
+  // Decision: the masked form counts as a finding. It only shows up in a
+  // versioned file when an error message was written without redaction.
+  it.each([
+    ["project key", {}],
+    ["classic key with few asterisks", { project: false, asterisks: 3 }],
+  ])("reports a masked key as a finding: %s", (_label, options) => {
+    const masked = fakeMaskedOpenAiKey(options);
+
+    const findings = findSecretsInText(`erro 401\n  chave: ${masked}.\n`);
+
+    expect(findings).toEqual([{ line: 2, column: 10 }]);
   });
 
   it("finds nothing in a clean text", () => {

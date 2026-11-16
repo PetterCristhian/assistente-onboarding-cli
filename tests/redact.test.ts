@@ -5,7 +5,7 @@ import {
   createSecretPattern,
   redact,
 } from "../src/security/redact.js";
-import { fakeOpenAiKey } from "./helpers/fake-key.js";
+import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const PREFIX = ["sk", ""].join("-");
 
@@ -101,6 +101,59 @@ describe("redact", () => {
     expect(first).not.toBe(second);
     expect(first.global).toBe(true);
     expect(first.source).toBe(second.source);
+  });
+});
+
+// The API quotes a rejected key in the 401 message with asterisks in the
+// middle. The exact format was not confirmed against the real API, so several
+// plausible variations are covered.
+describe("redact: masked key", () => {
+  it.each([
+    ["project key, many asterisks", {}],
+    ["project key, few asterisks", { asterisks: 3 }],
+    ["project key, start and end visible", { start: "AbCd", asterisks: 8 }],
+    ["classic key, many asterisks", { project: false, asterisks: 44 }],
+    ["classic key, few asterisks", { project: false, asterisks: 5 }],
+    [
+      "classic key, start and end visible",
+      { project: false, start: "abc", asterisks: 3, end: "9_-z" },
+    ],
+    ["no character after the asterisks", { asterisks: 12, end: "" }],
+    ["long visible start", { start: "a".repeat(24), asterisks: 4 }],
+  ])("replaces the whole masked form: %s", (_label, options) => {
+    const masked = fakeMaskedOpenAiKey(options);
+    const text = `401 Incorrect API key provided: ${masked}. You can find your API key at https://example.invalid/keys.`;
+
+    const result = redact(text);
+
+    expect(result).toBe(
+      `401 Incorrect API key provided: ${REDACTED}. You can find your API key at https://example.invalid/keys.`,
+    );
+    expect(result).not.toContain("*");
+    expect(createRedactor([fakeOpenAiKey()])(text)).toBe(result);
+  });
+
+  it("leaves no visible character of a masked key behind", () => {
+    const masked = fakeMaskedOpenAiKey({ start: "QqQq", end: "ZzZz" });
+
+    const result = redact(`"${masked}" e (${masked})`);
+
+    expect(result).toBe(`"${REDACTED}" e (${REDACTED})`);
+    expect(result).not.toContain("QqQq");
+    expect(result).not.toContain("ZzZz");
+  });
+
+  it("keeps the prefix followed by fewer than three asterisks", () => {
+    // Markdown bold around the prefix is not a masked key.
+    const text = `use o prefixo **${PREFIX}** e depois ${PREFIX}*x`;
+
+    expect(redact(text)).toBe(text);
+  });
+
+  it("keeps ordinary text with asterisks unchanged", () => {
+    const text = "*** separador ***\n- **negrito** e task-1 * 3 ** 2\n";
+
+    expect(redact(text)).toBe(text);
   });
 });
 

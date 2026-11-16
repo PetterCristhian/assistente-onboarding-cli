@@ -4,8 +4,16 @@
 
 export const REDACTED = "[REDACTED]";
 
-// Single source of the key shape, shared with the repository scan.
-const SECRET_PATTERN_SOURCE = "sk-[A-Za-z0-9_-]{20,}";
+// Single source of the key shape, shared with the repository scan. Two forms:
+//   1. the prefix and 20 or more key characters;
+//   2. the masked form that the API quotes in a 401 message: the prefix, maybe
+//      some key characters, three or more asterisks and whatever follows them.
+//      Fewer than three would also take Markdown bold around the prefix. The
+//      exact masked format was not confirmed against the real API.
+// The asterisk is accepted in form 1 so that a long visible start does not
+// leave the asterisks and the last characters behind.
+const SECRET_PATTERN_SOURCE =
+  "sk-(?:[A-Za-z0-9_*-]{20,}|[A-Za-z0-9_-]*\\*{3,}[A-Za-z0-9_*-]*)";
 
 /** Returns a new instance on every call, so no `lastIndex` state is shared. */
 export function createSecretPattern(): RegExp {
