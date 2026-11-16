@@ -2,7 +2,7 @@
 
 Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboarding de uma empresa fictícia obedecendo a um conjunto de políticas (P1–P5), com o contexto organizado em quatro camadas separadas e evidências de teste versionadas. Trabalho de pós-graduação (Engenharia de Contexto em IA).
 
-> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto do projeto (issue 1) implementado, já funcionam `npm run chat` (por enquanto imprime só uma mensagem provisória), `npm test` e `npm run check`; a varredura de segredos entra no `check` na issue 2, e os demais comandos chegam nas issues seguintes.
+> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto (issue 1) e a configuração por ambiente (issue 2) implementados, já funcionam `npm test`, `npm run check` (que agora inclui a varredura de segredos, `npm run check:secrets`) e `npm run chat`. O `npm run chat` exige `OPENAI_API_KEY` no `.env` ou no ambiente: sem ela, encerra com uma orientação de correção; com ela, por enquanto imprime só uma mensagem provisória. Os demais comandos chegam nas issues seguintes.
 
 ## Requisitos
 
@@ -25,6 +25,8 @@ Copy-Item .env.example .env   # PowerShell
 ```bash
 cp .env.example .env          # bash
 ```
+
+O `.env` precisa estar em UTF-8 sem BOM. No Windows PowerShell 5, não crie o arquivo com `>` (ele grava UTF-16): copie o exemplo e edite a cópia.
 
 Depois:
 
@@ -49,7 +51,7 @@ A cada pull request e a cada push na `main`, o GitHub Actions ([`.github/workflo
 
 ## Credencial
 
-Este repositório é público. A chave da OpenAI fica somente no arquivo `.env` local, que é ignorado pelo Git, ou em variável de ambiente. Nunca coloque uma chave real em `.env.example`, em código, em documentação, em issue ou em mensagem de commit. Se uma chave vazar, revogue-a imediatamente no painel da OpenAI. Detalhes em [`docs/adr/0007-protecao-da-credencial.md`](docs/adr/0007-protecao-da-credencial.md).
+Este repositório é público. A chave da OpenAI fica somente no arquivo `.env` local, que é ignorado pelo Git, ou em variável de ambiente. Nunca coloque uma chave real em `.env.example`, em código, em documentação, em issue ou em mensagem de commit. O `npm run check:secrets` procura o formato de chave no conteúdo (inclusive em arquivos UTF-16) e no nome de cada arquivo não ignorado pelo Git, sem exibir o valor encontrado. Se uma chave vazar, revogue-a imediatamente no painel da OpenAI. Detalhes em [`docs/adr/0007-protecao-da-credencial.md`](docs/adr/0007-protecao-da-credencial.md).
 
 ## Deploy
 

@@ -176,7 +176,10 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   │   ├── critique.ts           # autoavaliação com saída estruturada
 │   │   └── rate-limiter.ts       # janela deslizante local
 │   ├── security/
-│   │   └── redact.ts             # remove credenciais de qualquer texto gravado
+│   │   ├── redact.ts             # remove credenciais de qualquer texto gravado
+│   │   ├── safe-writer.ts        # escritor único de outputs/ e logs/ (aplica redact)
+│   │   ├── error-summary.ts      # resume um erro: status, código, tipo, mensagem
+│   │   └── secret-scan.ts        # lógica da varredura usada por check-secrets.ts
 │   └── logging/
 │       └── session-log.ts        # registro da sessão em logs/ (redigido)
 │
