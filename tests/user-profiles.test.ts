@@ -1,35 +1,20 @@
 // Structure of the user profiles of context/03-usuario/ (layer 3 of
-// docs/adr/0003-contexto-em-quatro-camadas.md). No name is written here.
+// docs/adr/0003-contexto-em-quatro-camadas.md). No name is written here. The
+// contract is the one that the loader applies (src/context/types.ts).
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { userProfileSchema, type UserProfile } from "../src/context/types.js";
 import { listContextFolder, readContextFile } from "./helpers/context-files.js";
 
 const PROFILE_FOLDER = "03-usuario";
 const PROFILE_COUNT = 2;
 
-const filledText = z
-  .string()
-  .refine((value) => value.trim() !== "" && value === value.trim());
-
-// Local copy of the profile contract. ENG-47 replaces this schema by the one
-// that src/context/ exports, so that the test and the loader share one source.
-const profileSchema = z.strictObject({
-  nome: filledText,
-  cargo: filledText,
-  area: filledText,
-  dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  gestor: filledText,
-});
-
-type Profile = z.infer<typeof profileSchema>;
-
 const PROFILE_FILES = listContextFolder(PROFILE_FOLDER).filter((path) =>
   path.endsWith(".json"),
 );
 
-function readProfile(path: string): Profile {
+function readProfile(path: string): UserProfile {
   const parsed: unknown = JSON.parse(readContextFile(path));
-  return profileSchema.parse(parsed);
+  return userProfileSchema.parse(parsed);
 }
 
 /** "Érica D'Ávila" becomes "erica-d-avila". */
@@ -51,17 +36,19 @@ describe("user profiles", () => {
   it.each(PROFILE_FILES)("gives %s exactly the five text fields", (path) => {
     const parsed: unknown = JSON.parse(readContextFile(path));
 
-    expect(profileSchema.safeParse(parsed).success).toBe(true);
+    expect(userProfileSchema.safeParse(parsed).success).toBe(true);
   });
 
-  it.each(PROFILE_FILES)("writes in %s a start date that exists", (path) => {
-    const { dataInicio } = readProfile(path);
-    const date = new Date(`${dataInicio}T00:00:00Z`);
+  it.each(["2026-02-31", "2026-13-01", "2026-1-5", "05/01/2026"])(
+    "has a contract that refuses the start date %s",
+    (dataInicio) => {
+      const [path = ""] = PROFILE_FILES;
+      const profile = { ...readProfile(path), dataInicio };
 
-    // An impossible day, such as the 31st of a short month, does not survive.
-    expect(Number.isNaN(date.getTime())).toBe(false);
-    expect(date.toISOString().slice(0, 10)).toBe(dataInicio);
-  });
+      // An impossible day, such as the 31st of a short month, does not survive.
+      expect(userProfileSchema.safeParse(profile).success).toBe(false);
+    },
+  );
 
   it.each(PROFILE_FILES)("names %s after the person it describes", (path) => {
     const { nome } = readProfile(path);
