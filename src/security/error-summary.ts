@@ -15,6 +15,8 @@ export interface ErrorSummary {
 }
 
 const MAX_MESSAGE_LENGTH = 500;
+// code, type and request id are short identifiers; anything longer is cut.
+const MAX_FIELD_LENGTH = 200;
 const UNKNOWN_ERROR_MESSAGE = "Erro desconhecido.";
 
 /** Duck typing on purpose: this module does not depend on the SDK. */
@@ -51,18 +53,18 @@ export function summarizeError(error: unknown, redact: Redactor): ErrorSummary {
   const code =
     pickString(error, "code") ?? pickString(pick(error, "cause"), "code");
   if (code !== undefined) {
-    summary.code = redact(code);
+    summary.code = redact(code).slice(0, MAX_FIELD_LENGTH);
   }
 
   const type = pickString(error, "type") ?? pickString(error, "name");
   if (type !== undefined) {
-    summary.type = redact(type);
+    summary.type = redact(type).slice(0, MAX_FIELD_LENGTH);
   }
 
   const requestId =
     pickString(error, "requestID") ?? pickString(error, "request_id");
   if (requestId !== undefined) {
-    summary.requestId = redact(requestId);
+    summary.requestId = redact(requestId).slice(0, MAX_FIELD_LENGTH);
   }
 
   return summary;

@@ -98,6 +98,51 @@ describe("summarizeError", () => {
     expect(summary.message).toHaveLength(500);
   });
 
+  it("limits code, type and request id to 200 characters", () => {
+    const summary = summarizeError(
+      {
+        message: "falhou",
+        code: "c".repeat(5000),
+        type: "t".repeat(5000),
+        requestID: "r".repeat(5000),
+      },
+      redactor,
+    );
+
+    expect(summary.code).toBe("c".repeat(200));
+    expect(summary.type).toBe("t".repeat(200));
+    expect(summary.requestId).toBe("r".repeat(200));
+  });
+
+  it("limits the name of an error and the code of its cause", () => {
+    const error = Object.assign(
+      new Error("falhou", { cause: { code: "c".repeat(5000) } }),
+      { name: "n".repeat(5000), request_id: "r".repeat(5000) },
+    );
+
+    const summary = summarizeError(error, redactor);
+
+    expect(summary.code).toHaveLength(200);
+    expect(summary.type).toHaveLength(200);
+    expect(summary.requestId).toHaveLength(200);
+  });
+
+  it("redacts code, type and request id before cutting them", () => {
+    const filler = "x".repeat(190);
+    const summary = summarizeError(
+      {
+        message: "falhou",
+        code: `${filler} ${KEY}`,
+        type: `${filler} ${KEY}`,
+        requestID: `${filler} ${KEY}`,
+      },
+      redactor,
+    );
+
+    expect(JSON.stringify(summary)).not.toContain(KEY.slice(0, 10));
+    expect(summary.code?.length).toBeLessThanOrEqual(200);
+  });
+
   it("redacts before truncating, so a cut key never survives", () => {
     const error = new Error(`${"m".repeat(480)} ${KEY}`);
 
