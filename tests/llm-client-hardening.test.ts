@@ -560,6 +560,30 @@ describe("streamText: a final event with the text and no piece before it", () =>
   });
 });
 
+describe("generateStructured: the schema that goes on the wire", () => {
+  // Recorded in ADR 0002, decision 10: whether the API accepts this key is
+  // for the smoke test to confirm.
+  it("carries the $schema key of JSON Schema draft-07, written by the SDK", async () => {
+    const { client, requests } = setup([jsonAnswer(VERDICT)]);
+
+    await structured(client);
+
+    const body = requests[0]?.body as {
+      text: { format: { schema: Record<string, unknown> } };
+    };
+    expect(body.text.format.schema.$schema).toBe(
+      "http://json-schema.org/draft-07/schema#",
+    );
+    // Only what can be sent: the parsing helpers of the SDK stay local.
+    expect(Object.keys(body.text.format).sort()).toEqual([
+      "name",
+      "schema",
+      "strict",
+      "type",
+    ]);
+  });
+});
+
 describe("the listener of the total deadline", () => {
   it("is removed from the signal of every call, however the call ends", async () => {
     // The signal that each call runs under is made of the signal of the
