@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { REDACTED, createRedactor } from "../src/security/redact.js";
 import { createSafeWriter } from "../src/security/safe-writer.js";
 import type { SafeWriter } from "../src/security/safe-writer.js";
-import { fakeOpenAiKey } from "./helpers/fake-key.js";
+import { fakeMaskedOpenAiKey, fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const KEY = fakeOpenAiKey();
 
@@ -225,6 +225,72 @@ describe("createSafeWriter", () => {
       expect(message).not.toContain("chave-fora-do-padrao");
     }
     expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  describe("with a redactor that does nothing", () => {
+    let identityWriter: SafeWriter;
+
+    beforeEach(() => {
+      identityWriter = createSafeWriter({ redact: (text) => text, rootDir });
+    });
+
+    it("still applies the base pattern to every content it writes", async () => {
+      const masked = fakeMaskedOpenAiKey();
+      const text = await identityWriter.writeText(
+        "outputs/a.txt",
+        `chave ${KEY}\n`,
+      );
+      await identityWriter.appendText("outputs/a.txt", `erro: ${masked}.\n`);
+      const json = await identityWriter.writeJson("outputs/a.json", {
+        chave: KEY,
+      });
+      const lines = await identityWriter.appendJsonLine("logs/a.jsonl", {
+        authorization: `Bearer ${KEY}`,
+      });
+
+      expect(await readFile(text, "utf8")).toBe(
+        `chave ${REDACTED}\nerro: ${REDACTED}.\n`,
+      );
+      expect(JSON.parse(await readFile(json, "utf8"))).toEqual({
+        chave: REDACTED,
+      });
+      expect(JSON.parse(await readFile(lines, "utf8"))).toEqual({
+        authorization: `Bearer ${REDACTED}`,
+      });
+    });
+
+    it("still refuses a path with a key-shaped sequence, redacted in the message", async () => {
+      const attempts = [
+        () => identityWriter.writeText(`outputs/${KEY}.txt`, "x"),
+        () => identityWriter.appendText(`src/${KEY}.txt`, "x"),
+      ];
+
+      for (const attempt of attempts) {
+        const error: unknown = await attempt().then(
+          () => undefined,
+          (reason: unknown) => reason,
+        );
+        const message = error instanceof Error ? error.message : "";
+
+        expect(message).toContain("o caminho contém uma possível credencial");
+        expect(message).not.toContain(KEY.slice(0, 12));
+      }
+      expect(await readdir(rootDir)).toEqual([]);
+    });
+  });
+
+  it("applies the given redactor on top of the base pattern", async () => {
+    const custom = createSafeWriter({
+      redact: (text) => text.replaceAll("segredo-do-chamador", "<fora>"),
+      rootDir,
+    });
+
+    const path = await custom.writeText(
+      "logs/a.txt",
+      `segredo-do-chamador e ${KEY}`,
+    );
+
+    expect(await readFile(path, "utf8")).toBe(`<fora> e ${REDACTED}`);
   });
 
   it("redacts a key in nested keys and values of a JSON document", async () => {

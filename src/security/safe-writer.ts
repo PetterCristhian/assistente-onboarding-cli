@@ -3,6 +3,7 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { redact as redactBasePattern } from "./redact.js";
 import type { Redactor } from "./redact.js";
 
 export interface SafeWriter {
@@ -17,6 +18,7 @@ export interface SafeWriter {
 }
 
 export interface SafeWriterOptions {
+  /** Usually createRedactor([key in use]). The base pattern always applies. */
   redact: Redactor;
   /** Default: the project root, wherever the cwd is. */
   rootDir?: string;
@@ -48,9 +50,14 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     options.rootDir ?? fileURLToPath(new URL("../../", import.meta.url)),
   );
 
+  // The writer does not trust the redactor it receives: whatever it does (or
+  // fails to do), the key-shaped pattern is applied last.
+  const applyRedaction: Redactor = (text) =>
+    redactBasePattern(options.redact(text));
+
   function resolveTarget(relativePath: string): string {
     // A file name is as public as the content: outputs/ is versioned.
-    const shownPath = options.redact(relativePath);
+    const shownPath = applyRedaction(relativePath);
     if (shownPath !== relativePath) {
       throw new Error(
         "Caminho de escrita não permitido: o caminho contém uma possível credencial (o valor não é exibido). Nada foi gravado.",
@@ -79,7 +86,7 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     mode: "overwrite" | "append",
   ): Promise<string> {
     const absolutePath = resolveTarget(relativePath);
-    const safeContent = options.redact(content);
+    const safeContent = applyRedaction(content);
 
     await mkdir(dirname(absolutePath), { recursive: true });
     if (mode === "append") {
