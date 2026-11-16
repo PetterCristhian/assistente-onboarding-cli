@@ -5,7 +5,7 @@
 import { closeSync, openSync, readSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { redact } from "../security/redact.js";
+import { MIN_EXACT_SECRET_LENGTH, redact } from "../security/redact.js";
 
 export const REASONING_EFFORTS = [
   "none",
@@ -86,8 +86,13 @@ function integerVariable(rule: IntegerRule) {
 
 const envSchema = z.object({
   // After trimming, white space can only be in the middle: a key pasted with
-  // a line break, or two values in the same line.
-  OPENAI_API_KEY: z.preprocess(normalize, z.string().regex(/^\S+$/u)),
+  // a line break, or two values in the same line. A key shorter than the
+  // shortest secret that redact() replaces is no key, and it would be quoted
+  // in the message about another variable.
+  OPENAI_API_KEY: z.preprocess(
+    normalize,
+    z.string().regex(/^\S+$/u).min(MIN_EXACT_SECRET_LENGTH),
+  ),
   OPENAI_MODEL: z.preprocess(
     normalize,
     z.string().default(DEFAULT_OPENAI_MODEL),
@@ -122,6 +127,8 @@ const MISSING_API_KEY_MESSAGE = [
 ].join("\n");
 
 const API_KEY_WHITE_SPACE_MESSAGE = `Configuração inválida: ${API_KEY_VARIABLE} contém espaço, tabulação ou quebra de linha no meio do valor (o valor não é exibido). Cole a chave inteira em uma única linha, sem espaços, no ".env" ou na variável de ambiente.`;
+
+const API_KEY_TOO_SHORT_MESSAGE = `Configuração inválida: ${API_KEY_VARIABLE} tem menos de ${MIN_EXACT_SECRET_LENGTH} caracteres (o valor não é exibido): não é uma chave da OpenAI. Cole a chave inteira no ".env" ou na variável de ambiente.`;
 
 function envFileEncodingMessage(problem: string): string {
   return [
@@ -204,10 +211,14 @@ function howToFix(fallback: string | number): string {
 
 function describeProblem(name: string, source: EnvSource): string {
   if (name === API_KEY_VARIABLE) {
-    // Present but refused by the schema: the only rule is the white space.
-    return normalize(source[name]) === undefined
-      ? MISSING_API_KEY_MESSAGE
-      : API_KEY_WHITE_SPACE_MESSAGE;
+    // Present but refused by the schema: white space inside, or too short.
+    const value = normalize(source[name]);
+    if (typeof value !== "string") {
+      return MISSING_API_KEY_MESSAGE;
+    }
+    return /\s/u.test(value)
+      ? API_KEY_WHITE_SPACE_MESSAGE
+      : API_KEY_TOO_SHORT_MESSAGE;
   }
   if (isIntegerVariable(name)) {
     const rule = INTEGER_RULES[name];

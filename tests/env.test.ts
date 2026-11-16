@@ -16,6 +16,7 @@ import {
   parseConfig,
 } from "../src/config/env.js";
 import type { EnvSource } from "../src/config/env.js";
+import { MIN_EXACT_SECRET_LENGTH } from "../src/security/redact.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const KEY = fakeOpenAiKey();
@@ -975,5 +976,48 @@ describe("loadConfig: a .env with a BOM, again and again (QA)", () => {
 
     expect(config.openaiApiKey).toBe(KEY);
     expect(env["\ufeffOUTRA"]).toBe("valor");
+  });
+});
+
+// redact() ignores exact secrets shorter than MIN_EXACT_SECRET_LENGTH, so a
+// key that short could be quoted in the message about another variable.
+describe("parseConfig: a key that is too short", () => {
+  it.each([["Z"], ["Zq9!xW"], ["Zq9!xW7"], ["  Zq9!xW7  "], ['"Zq9!x"']])(
+    "refuses the key %j without showing it",
+    (shortKey) => {
+      const message = configErrorMessage({ OPENAI_API_KEY: shortKey });
+
+      expect(message).toContain(
+        `OPENAI_API_KEY tem menos de ${MIN_EXACT_SECRET_LENGTH} caracteres`,
+      );
+      expect(message).toContain("o valor não é exibido");
+      expect(message).not.toContain(shortKey.trim());
+      expect(message).not.toContain("Zq9");
+      expect(message).not.toContain("não está definida");
+    },
+  );
+
+  it("names the short key first, before the problem of another variable", () => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: "Zq9!xW7",
+      RETRY_MAX_ATTEMPTS: "muitas",
+    });
+
+    expect(message.split("\n")[0]).toContain("OPENAI_API_KEY tem menos de");
+    expect(message).toContain("RETRY_MAX_ATTEMPTS deve ser um número inteiro");
+    expect(message).not.toContain("Zq9");
+  });
+
+  it("accepts a key with exactly the minimum length", () => {
+    const key = "k".repeat(MIN_EXACT_SECRET_LENGTH);
+
+    expect(parseConfig({ OPENAI_API_KEY: key }).openaiApiKey).toBe(key);
+  });
+
+  it("keeps the white space message for a short key with a space inside", () => {
+    const message = configErrorMessage({ OPENAI_API_KEY: "ab cd" });
+
+    expect(message).toContain("contém espaço, tabulação ou quebra de linha");
+    expect(message).not.toContain("ab cd");
   });
 });
