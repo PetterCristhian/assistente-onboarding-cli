@@ -1,0 +1,264 @@
+// Findings of the second review of the OpenAI client (ENG-48), each with the
+// test that failed before its fix. The real SDK with a fake `fetch`: no
+// request ever leaves the process, and the key is a fake one built at runtime.
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import {
+  LlmResponseError,
+  createOpenAiLlmClient,
+  type LlmClient,
+  type LlmClientConfig,
+} from "../src/llm/client.js";
+import { fakeOpenAiKey } from "./helpers/fake-key.js";
+import {
+  FAKE_RETURNED_MODEL,
+  createFakeOpenAiFetch,
+  fakeResponseBody,
+  type FakeFetchStep,
+  type SseEvent,
+} from "./helpers/fake-openai-fetch.js";
+
+const CONFIG: LlmClientConfig = {
+  openaiApiKey: fakeOpenAiKey(),
+  openaiModel: "configured-model",
+  openaiReasoningEffort: "low",
+  requestTimeoutMs: 5_000,
+};
+const REQUEST = {
+  instructions: "Assembled context.",
+  input: [{ role: "user" as const, content: "question" }],
+};
+const verdictSchema = z.object({ approved: z.boolean(), reason: z.string() });
+const VERDICT = { approved: true, reason: "fine" };
+const OTHER_VERDICT = { approved: false, reason: "other" };
+
+function setup(script: readonly FakeFetchStep[]) {
+  const fake = createFakeOpenAiFetch(script);
+  const client = createOpenAiLlmClient(CONFIG, { fetch: fake.fetch });
+  return { client, requests: fake.requests };
+}
+
+function structured(client: LlmClient) {
+  return client.generateStructured({
+    ...REQUEST,
+    schema: verdictSchema,
+    schemaName: "verdict",
+  });
+}
+
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected the promise to reject.");
+}
+
+// --- Output items, as the provider writes them ----------------------------
+
+type Phase = "commentary" | "final_answer" | null | undefined;
+
+function outputText(text: string): Record<string, unknown> {
+  return { type: "output_text", text, annotations: [] };
+}
+
+function message(
+  texts: readonly string[],
+  phase?: Phase,
+  id = "msg_fake",
+): Record<string, unknown> {
+  return {
+    type: "message",
+    id,
+    role: "assistant",
+    status: "completed",
+    content: texts.map(outputText),
+    ...(phase === undefined ? {} : { phase }),
+  };
+}
+
+const REASONING = {
+  type: "reasoning",
+  id: "rs_fake",
+  summary: [{ type: "summary_text", text: "thinking it over" }],
+};
+
+/** A response object with the given output items and other changes. */
+function bodyWith(
+  output: readonly unknown[],
+  changes: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...(fakeResponseBody() as Record<string, unknown>),
+    output,
+    ...changes,
+  };
+}
+
+function jsonStep(
+  output: readonly unknown[],
+  changes: Record<string, unknown> = {},
+): FakeFetchStep {
+  return { kind: "json", body: bodyWith(output, changes) };
+}
+
+function completedEvent(output: readonly unknown[]): SseEvent {
+  return {
+    event: "response.completed",
+    data: { type: "response.completed", response: bodyWith(output) },
+  };
+}
+
+describe("generateStructured reads the output as `responses.parse` does", () => {
+  it("skips the reasoning and the commentary, and reads the final answer", async () => {
+    const { client } = setup([
+      jsonStep([
+        REASONING,
+        message(["Let me check the policies first."], "commentary", "msg_1"),
+        message([JSON.stringify(VERDICT)], "final_answer", "msg_2"),
+      ]),
+    ]);
+
+    await expect(structured(client)).resolves.toMatchObject({
+      value: VERDICT,
+      model: FAKE_RETURNED_MODEL,
+    });
+  });
+
+  it("reads each piece of text by itself and returns the first one", async () => {
+    const { client } = setup([
+      jsonStep([
+        message([JSON.stringify(VERDICT), JSON.stringify(OTHER_VERDICT)]),
+      ]),
+    ]);
+
+    await expect(structured(client)).resolves.toMatchObject({ value: VERDICT });
+  });
+
+  it.each([
+    ["is not JSON", "not a JSON"],
+    ["is outside the schema", JSON.stringify({ approved: "yes" })],
+  ])(
+    "passes over a piece that %s when a later one is valid",
+    async (_l, bad) => {
+      const { client } = setup([
+        jsonStep([message([bad, JSON.stringify(VERDICT)])]),
+      ]);
+
+      await expect(structured(client)).resolves.toMatchObject({
+        value: VERDICT,
+      });
+    },
+  );
+
+  it("does not take a commentary for the answer, even when it is valid", async () => {
+    const { client } = setup([
+      jsonStep([
+        message([JSON.stringify(OTHER_VERDICT)], "commentary", "msg_1"),
+        message([JSON.stringify(VERDICT)], "final_answer", "msg_2"),
+      ]),
+    ]);
+
+    await expect(structured(client)).resolves.toMatchObject({ value: VERDICT });
+  });
+
+  it.each([
+    ["null", null],
+    ["absent", undefined],
+  ] as const)("reads a message whose phase is %s", async (_label, phase) => {
+    const { client } = setup([
+      jsonStep([message([JSON.stringify(VERDICT)], phase)]),
+    ]);
+
+    await expect(structured(client)).resolves.toMatchObject({ value: VERDICT });
+  });
+
+  // A commentary is not an answer: with nothing else, the model gave none.
+  // `invalid_output` is kept for a final answer that was read and judged.
+  it("reports an output made only of commentary as empty", async () => {
+    const { client } = setup([
+      jsonStep([REASONING, message([JSON.stringify(VERDICT)], "commentary")]),
+    ]);
+
+    const error = await rejectionOf(structured(client));
+
+    expect(error).toBeInstanceOf(LlmResponseError);
+    expect(error).toMatchObject({ kind: "empty", model: FAKE_RETURNED_MODEL });
+  });
+
+  it("still reports invalid_output when no piece of the final answer passes", async () => {
+    const { client } = setup([
+      jsonStep([
+        message(["free text"], "commentary", "msg_1"),
+        message(["not a JSON", "nor this"], "final_answer", "msg_2"),
+      ]),
+      jsonStep([
+        message([
+          JSON.stringify({ approved: "yes", reason: "x" }),
+          JSON.stringify({ approved: true }),
+        ]),
+      ]),
+    ]);
+
+    const notJson = await rejectionOf(structured(client));
+    const outside = await rejectionOf(structured(client));
+
+    expect(notJson).toMatchObject({
+      kind: "invalid_output",
+      model: FAKE_RETURNED_MODEL,
+    });
+    expect((notJson as Error).message).toContain("não é um JSON válido");
+    expect(outside).toMatchObject({ kind: "invalid_output" });
+    // The first piece that was refused is the one that is described.
+    expect((outside as Error).message).toContain("campos: approved");
+  });
+});
+
+describe("an output item that the client does not use is not checked", () => {
+  const UNUSED = [
+    { type: "reasoning", id: "rs_1", content: "a text, not a list" },
+    { type: "web_search_call", id: "ws_1", content: { query: "x" } },
+    { type: "custom_tool_call", id: "ct_1", content: [7, null, "x"] },
+    { type: "function_call", id: "fc_1", phase: 3 },
+  ];
+
+  it("in a structured answer", async () => {
+    const { client } = setup([
+      jsonStep([...UNUSED, message([JSON.stringify(VERDICT)])]),
+    ]);
+
+    await expect(structured(client)).resolves.toMatchObject({ value: VERDICT });
+  });
+
+  it("in the final event of a stream", async () => {
+    const { client } = setup([
+      {
+        kind: "sse",
+        events: [completedEvent([...UNUSED, message(["the answer"])])],
+      },
+    ]);
+
+    await expect(client.streamText(REQUEST)).resolves.toMatchObject({
+      text: "the answer",
+    });
+  });
+
+  it.each([
+    ["a content that is not a list", { type: "message", content: "x" }],
+    ["a piece that is not an object", { type: "message", content: ["x"] }],
+    [
+      "a text that is not a text",
+      { type: "message", content: [{ type: "output_text", text: 7 }] },
+    ],
+    ["a phase that is not a text", { ...message(["{}"]), phase: 3 }],
+    ["no type", { content: [] }],
+  ])("still refuses a message with %s", async (_label, item) => {
+    const { client } = setup([jsonStep([item])]);
+
+    const error = await rejectionOf(structured(client));
+
+    expect(error).toBeInstanceOf(LlmResponseError);
+    expect((error as Error).message).toContain("fora do formato esperado");
+  });
+});

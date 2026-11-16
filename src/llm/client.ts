@@ -170,21 +170,30 @@ const providerUsageSchema = z.object({
   total_tokens: z.number(),
 });
 
+const MESSAGE_ITEM = "message";
+
+// The only output item that is read. `phase` tells a commentary of the model
+// from its final answer; older answers do not carry it.
+const messageItemSchema = z.object({
+  type: z.literal(MESSAGE_ITEM),
+  phase: z.string().nullish(),
+  content: z
+    .array(z.object({ type: z.string(), text: z.string().nullish() }))
+    .nullish(),
+});
+
+// Any other item (reasoning, tool calls) is not used, so only its type is
+// looked at: its content may have any form.
+const unusedItemSchema = z
+  .object({ type: z.string().refine((type) => type !== MESSAGE_ITEM) })
+  .transform(() => ({ type: "unused" as const }));
+
 const providerResponseSchema = z.object({
   model: z.string().nullish(),
   status: z.string().nullish(),
   error: z.object({ code: z.unknown().optional() }).nullish(),
   incomplete_details: z.object({ reason: z.unknown().optional() }).nullish(),
-  output: z
-    .array(
-      z.object({
-        type: z.string(),
-        content: z
-          .array(z.object({ type: z.string(), text: z.string().nullish() }))
-          .nullish(),
-      }),
-    )
-    .nullish(),
+  output: z.array(z.union([messageItemSchema, unusedItemSchema])).nullish(),
   usage: providerUsageSchema.nullish(),
 });
 
@@ -239,23 +248,37 @@ function toUsage(usage: ProviderResponse["usage"]): { usage?: LlmUsage } {
   };
 }
 
-function messageContents(response: ProviderResponse) {
-  return (response.output ?? [])
-    .filter((item) => item.type === "message")
-    .flatMap((item) => item.content ?? []);
+type ProviderMessage = z.infer<typeof messageItemSchema>;
+
+function messagesOf(response: ProviderResponse): ProviderMessage[] {
+  return (response.output ?? []).filter((item) => item.type === MESSAGE_ITEM);
 }
 
-/** The pieces of text of the answer, in order. Empty when it has none. */
-function outputTexts(response: ProviderResponse): string[] {
-  return messageContents(response)
+/**
+ * The rule of `parseResponse` in the SDK (lib/ResponsesParser): a message
+ * is part of the answer when it has no phase or its phase is the final
+ * answer. Any other phase (a commentary) is not for the user.
+ */
+function isAnswerPhase(phase: string | null | undefined): boolean {
+  return phase === undefined || phase === null || phase === "final_answer";
+}
+
+/**
+ * The pieces of text of the answer, in order, one for each `output_text`.
+ * Empty when the answer has none.
+ */
+function answerTexts(response: ProviderResponse): string[] {
+  return messagesOf(response)
+    .filter((message) => isAnswerPhase(message.phase))
+    .flatMap((message) => message.content ?? [])
     .filter((content) => content.type === "output_text")
     .map((content) => content.text ?? "");
 }
 
 function hasRefusal(response: ProviderResponse): boolean {
-  return messageContents(response).some(
-    (content) => content.type === "refusal",
-  );
+  return messagesOf(response)
+    .flatMap((message) => message.content ?? [])
+    .some((content) => content.type === "refusal");
 }
 
 /**
@@ -541,7 +564,7 @@ export function createOpenAiLlmClient(
     if (text === "") {
       // No piece carried text. The final event may still hold the answer:
       // it is then delivered whole, as a single piece.
-      const whole = outputTexts(completed).join("");
+      const whole = answerTexts(completed).join("");
       if (whole === "") {
         throw unusableResponse(completed);
       }
@@ -580,7 +603,7 @@ export function createOpenAiLlmClient(
     // The raw HTTP answer: its body is read and checked here, in two steps,
     // so that an answer of the provider that cannot be read (transport) is
     // never taken for an invalid output of the model. The parsing helper of
-    // the SDK throws the same SyntaxError for both.
+    // the SDK throws the same class of error (SyntaxError) for both.
     const http = await sdk.responses
       .create(
         {
@@ -610,32 +633,46 @@ export function createOpenAiLlmClient(
     if (model === undefined) {
       throw malformedAnswer();
     }
-    const texts = outputTexts(response);
+    const texts = answerTexts(response);
     if (texts.length === 0) {
-      // A refusal, or no output at all.
+      // A refusal, only commentary, or no output at all.
       throw unusableResponse(response);
     }
 
-    // From here on, what is judged is the output of the model.
-    let output: unknown;
-    try {
-      output = JSON.parse(texts.join(""));
-    } catch {
-      throw new LlmResponseError("invalid_output", MESSAGES.notJson, model);
-    }
-    const checked = request.schema.safeParse(output);
-    if (!checked.success) {
-      throw new LlmResponseError(
+    // From here on, what is judged is the output of the model. As in the
+    // SDK, each piece of text is read by itself, never joined to the others,
+    // and the first one that is valid is the answer.
+    let refused: LlmResponseError | undefined;
+    for (const text of texts) {
+      let output: unknown;
+      try {
+        output = JSON.parse(text);
+      } catch {
+        refused ??= new LlmResponseError(
+          "invalid_output",
+          MESSAGES.notJson,
+          model,
+        );
+        continue;
+      }
+      const checked = request.schema.safeParse(output);
+      if (checked.success) {
+        return {
+          value: checked.data,
+          model,
+          ...toUsage(response.usage),
+        };
+      }
+      refused ??= new LlmResponseError(
         "invalid_output",
         outsideSchemaMessage(checked.error),
         model,
       );
     }
-    return {
-      value: checked.data,
-      model,
-      ...toUsage(response.usage),
-    };
+    // No piece is valid: the first one that was refused is the one reported.
+    throw (
+      refused ?? new LlmResponseError("invalid_output", MESSAGES.notJson, model)
+    );
   }
 
   function generateStructured<S extends z.ZodType>(
