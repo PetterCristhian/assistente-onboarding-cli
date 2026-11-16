@@ -1,7 +1,9 @@
+import { readFile } from "node:fs/promises";
 import { getEventListeners } from "node:events";
 import { APIUserAbortError } from "openai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import * as llm from "../src/llm/client.js";
 import { LlmResponseError } from "../src/llm/client.js";
 import {
   FAKE_LLM_MODEL,
@@ -463,5 +465,48 @@ describe("createFakeLlmClient: as strict as the real client", () => {
     });
 
     expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+});
+
+describe("createFakeLlmClient: the second review (ENG-48)", () => {
+  it("reports an empty text as the real client does", async () => {
+    const client = createFakeLlmClient([
+      { text: "", model: "writer" },
+      { text: "", chunks: ["", ""] },
+    ]);
+    const received: string[] = [];
+    const request = {
+      instructions: INSTRUCTIONS,
+      input: [QUESTION],
+      onChunk: (chunk: string) => received.push(chunk),
+    };
+
+    const first = await client.streamText(request).catch((e: unknown) => e);
+    const second = await client.streamText(request).catch((e: unknown) => e);
+
+    expect(first).toBeInstanceOf(LlmResponseError);
+    expect(first).toMatchObject({ kind: "empty", model: "writer" });
+    expect(second).toMatchObject({ kind: "empty", model: FAKE_LLM_MODEL });
+    // The empty pieces that the script names still arrive, as in a stream.
+    expect(received).toEqual(["", ""]);
+  });
+
+  it("takes the errors of the SDK from the client, not from the SDK", async () => {
+    const source = await readFile(
+      new URL("./helpers/fake-llm-client.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(/from\s+["']openai/);
+  });
+
+  it("finds in the client the errors of the SDK that the project needs", () => {
+    const abort = new llm.APIUserAbortError();
+    const timeout = new llm.APIConnectionTimeoutError();
+
+    expect(abort).toBeInstanceOf(APIUserAbortError);
+    expect(timeout).toBeInstanceOf(llm.APIConnectionError);
+    expect(timeout).toBeInstanceOf(llm.APIError);
+    expect(llm.RateLimitError.prototype).toBeInstanceOf(llm.APIError);
   });
 });

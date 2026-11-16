@@ -11,6 +11,17 @@ import type { EasyInputMessage } from "openai/resources/responses/responses";
 import { z } from "zod";
 import type { AppConfig } from "../config/env.js";
 
+// The errors of the SDK pass through this client as they are. They are
+// exported here so that whoever tells them apart (the retry, the tests) does
+// not import the SDK: this file is the only one that does.
+export {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  APIUserAbortError,
+  RateLimitError,
+} from "openai";
+
 export interface LlmMessage {
   readonly role: "user" | "assistant";
   readonly content: string;

@@ -2,9 +2,9 @@
 // call takes the next step of the script, in order. It is as strict as the
 // real client (src/llm/client.ts) about what it accepts and about
 // cancellation, so that a test that passes here does not fail there.
-import { APIUserAbortError } from "openai";
 import type { z } from "zod";
 import {
+  APIUserAbortError,
   LlmResponseError,
   type LlmClient,
   type LlmRequest,
@@ -33,6 +33,7 @@ interface FakeStepTiming {
 /**
  * Answers a streamText call. Without `chunks`, the text is a single chunk.
  * With `chunks`, the text must be the chunks joined, as in the real client.
+ * An empty text is reported as an `empty` answer, as in the real client.
  */
 export interface FakeTextStep extends FakeStepTiming {
   readonly text: string;
@@ -191,7 +192,8 @@ export function createFakeLlmClient(
 
     // One chunk per turn, each after an `await`: as in a real stream, none
     // is delivered while the caller is still inside the call.
-    const chunks = isPartial(step) ? step.chunks : (step.chunks ?? [step.text]);
+    const whole = isPartial(step) || step.text === "" ? [] : [step.text];
+    const chunks = step.chunks ?? whole;
     for (const chunk of chunks) {
       await nextTick(request.signal);
       request.onChunk?.(chunk);
@@ -200,9 +202,18 @@ export function createFakeLlmClient(
     if (isPartial(step)) {
       throw asError(step.error);
     }
+    const model = step.model ?? FAKE_LLM_MODEL;
+    if (step.text === "") {
+      // The real client never returns an empty text.
+      throw new LlmResponseError(
+        "empty",
+        "O modelo não devolveu nenhum texto.",
+        model,
+      );
+    }
     return {
       text: step.text,
-      model: step.model ?? FAKE_LLM_MODEL,
+      model,
       chunks: chunks.length,
       ...(step.usage === undefined ? {} : { usage: step.usage }),
     };
