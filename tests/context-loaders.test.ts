@@ -1,6 +1,8 @@
 // One loader per context layer (docs/adr/0003-contexto-em-quatro-camadas.md).
 // The disk is a reader in memory with made-up content, except in the last
 // block, which loads the real context/ without writing any of its data here.
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildContext } from "../src/context/builder.js";
@@ -327,6 +329,50 @@ describe("loadUserProfile", () => {
     );
   });
 
+  it.each([
+    ["a number", "42"],
+    ["a boolean", "true"],
+    ["a list of profiles", `[${JSON.stringify(VALID_PROFILE)}]`],
+  ])("refuses a JSON that is %s, naming the file", (_label, content) => {
+    const message = contextErrorMessage(() => load(content));
+
+    expect(message).toContain(`Perfil inválido em ${FIRST_PROFILE}:`);
+    expect(message).toContain("objeto JSON");
+  });
+
+  it.each(["2024-02-29", "2000-02-29"])(
+    "accepts the leap day %s as a start date",
+    (dataInicio) => {
+      const profile = { ...VALID_PROFILE, dataInicio };
+
+      expect(load(profileJson(profile))).toEqual(profile);
+    },
+  );
+
+  it.each(["2023-02-29", "1900-02-29", "2026-04-31", "2026-01-00"])(
+    "refuses %s, a day that does not exist",
+    (dataInicio) => {
+      const profile = { ...VALID_PROFILE, dataInicio };
+
+      expect(contextErrorMessage(() => load(profileJson(profile)))).toBe(
+        `Perfil inválido em ${FIRST_PROFILE}: campo "dataInicio" deve ser uma data existente no formato AAAA-MM-DD.`,
+      );
+    },
+  );
+
+  it("names the field written with another case as missing and unknown", () => {
+    const profile: Record<string, unknown> = { ...VALID_PROFILE };
+    delete profile.nome;
+    profile.Nome = "Pessoa Alfa";
+
+    expect(
+      contextErrorMessage(() => load(profileJson(profile))).split("\n"),
+    ).toEqual([
+      `Perfil inválido em ${FIRST_PROFILE}: campo "nome" é obrigatório.`,
+      `Perfil inválido em ${FIRST_PROFILE}: campo "Nome" não é reconhecido.`,
+    ]);
+  });
+
   it("refuses an empty file", () => {
     expect(contextErrorMessage(() => load("\n"))).toBe(
       `O arquivo da camada "dados do usuário" está vazio: ${FIRST_PROFILE}.`,
@@ -557,6 +603,22 @@ describe("resolveContextSources", () => {
     );
   });
 
+  it.each(["ALFA", "Alfa", "alfa.json", "alfa ", "alfa:fluxo"])(
+    'does not find the profile "%s", which is not the exact name of one',
+    (profile) => {
+      const reader = fakeReader(madeUpFiles());
+
+      expect(
+        contextErrorMessage(() =>
+          resolveContextSources({ contextDir: ROOT, profile }, reader),
+        ),
+      ).toBe(
+        `Perfil "${profile}" não encontrado. Caminho esperado: ${join(PROFILE_DIR, `${profile}.json`)}. Perfis disponíveis: alfa, beta.`,
+      );
+      expect(reader.reads).toEqual([]);
+    },
+  );
+
   it.each(["../alfa", "..\\alfa", "sub/alfa", "sub\\alfa", "..", "", "  "])(
     'refuses the profile "%s", which is not a plain name',
     (profile) => {
@@ -596,6 +658,37 @@ describe("formatCurrentDate", () => {
   it("refuses a date that is not valid", () => {
     expect(() => formatCurrentDate(new Date(Number.NaN))).toThrow(ContextError);
   });
+
+  it("names the seven days of the week in Portuguese", () => {
+    // 2020-02-02 was a Sunday.
+    const week = [2, 3, 4, 5, 6, 7, 8].map((day) =>
+      formatCurrentDate(new Date(2020, 1, day, 12, 0)),
+    );
+
+    expect(week).toEqual([
+      "2020-02-02 (domingo)",
+      "2020-02-03 (segunda-feira)",
+      "2020-02-04 (terça-feira)",
+      "2020-02-05 (quarta-feira)",
+      "2020-02-06 (quinta-feira)",
+      "2020-02-07 (sexta-feira)",
+      "2020-02-08 (sábado)",
+    ]);
+  });
+
+  it.each([
+    [new Date(2023, 11, 31, 23, 59, 59, 999), "2023-12-31 (domingo)"],
+    [new Date(2024, 0, 1, 0, 0, 0, 0), "2024-01-01 (segunda-feira)"],
+    [new Date(2024, 1, 29, 23, 59, 59, 999), "2024-02-29 (quinta-feira)"],
+    [new Date(2024, 2, 1, 0, 0, 0, 0), "2024-03-01 (sexta-feira)"],
+    [new Date(2023, 1, 28, 23, 59, 59, 999), "2023-02-28 (terça-feira)"],
+    [new Date(2023, 2, 1, 0, 0, 0, 0), "2023-03-01 (quarta-feira)"],
+  ])(
+    "keeps the date and the day of the week together at the edge %s",
+    (date, expected) => {
+      expect(formatCurrentDate(date)).toBe(expected);
+    },
+  );
 });
 
 describe("loadContextLayers", () => {
@@ -738,5 +831,129 @@ describe("the real context/ folder", () => {
 
     expect(names).toContain("02-politicas.md");
     expect(names).not.toContain("03-usuario");
+  });
+});
+
+// The reader of the real disk, on a folder made for the test and removed
+// after it. Every content here is made up.
+describe("nodeFileReader on a temporary folder", () => {
+  function withTemporaryContext(action: (root: string) => void): void {
+    const root = mkdtempSync(join(tmpdir(), "made-up-context-"));
+    try {
+      writeFileSync(join(root, "01-instrucoes-globais.md"), "# Instruções\n");
+      writeFileSync(join(root, "02-politicas.md"), "# Regras\r\n");
+      mkdirSync(join(root, "03-usuario"));
+      writeFileSync(
+        join(root, "03-usuario", "alfa.json"),
+        profileJson(VALID_PROFILE),
+      );
+      mkdirSync(join(root, "04-empresa"));
+      writeFileSync(join(root, "04-empresa", "b.md"), "# Segundo\n");
+      writeFileSync(join(root, "04-empresa", "a.md"), `${BOM}# Primeiro\r\n`);
+      action(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  const now = () => new Date(2020, 1, 3, 12, 0);
+
+  it("loads the four layers from the disk, normalized and ordered", () => {
+    withTemporaryContext((root) => {
+      expect(loadContextLayers({ contextDir: root }, { now })).toEqual({
+        globalInstructions: "# Instruções",
+        policies: "# Regras",
+        userProfile: VALID_PROFILE,
+        companyData: [
+          { name: "a.md", content: "# Primeiro" },
+          { name: "b.md", content: "# Segundo" },
+        ],
+        currentDate: "2020-02-03 (segunda-feira)",
+      });
+    });
+  });
+
+  it("ignores a subfolder and a file that does not end in .md in the company data", () => {
+    withTemporaryContext((root) => {
+      const folder = join(root, "04-empresa");
+      mkdirSync(join(folder, "pasta.md"));
+      writeFileSync(join(folder, "pasta.md", "c.md"), "# Dentro da pasta\n");
+      writeFileSync(join(folder, "nota.txt"), "# Nota\n");
+      writeFileSync(join(folder, "copia.md.bak"), "# Cópia\n");
+
+      expect(loadCompanyData(folder).map((document) => document.name)).toEqual([
+        "a.md",
+        "b.md",
+      ]);
+    });
+  });
+
+  it("ignores a folder whose name ends in .json among the profiles", () => {
+    withTemporaryContext((root) => {
+      mkdirSync(join(root, "03-usuario", "a-pasta.json"));
+
+      expect(listProfiles(root)).toEqual(["alfa"]);
+    });
+  });
+
+  it("reports a folder in the place of a layer file, with its path", () => {
+    withTemporaryContext((root) => {
+      const file = join(root, "02-politicas.md");
+      rmSync(file);
+      mkdirSync(file);
+
+      const message = contextErrorMessage(() =>
+        loadContextLayers({ contextDir: root }, { now }),
+      );
+
+      expect(message).toMatch(/^Não foi possível ler /);
+      expect(message).toContain(file);
+      expect(message).not.toMatch(/\n|illegal operation/);
+    });
+  });
+
+  it("reports a file in the place of a layer folder, with its path", () => {
+    withTemporaryContext((root) => {
+      const folder = join(root, "04-empresa");
+      rmSync(folder, { recursive: true });
+      writeFileSync(folder, "# Não é pasta\n");
+
+      const message = contextErrorMessage(() =>
+        loadContextLayers({ contextDir: root }, { now }),
+      );
+
+      expect(message).toMatch(/^Não foi possível ler /);
+      expect(message).toContain(folder);
+    });
+  });
+
+  it.each(["01-instrucoes-globais.md", "02-politicas.md"])(
+    "names the expected path when %s is not on the disk",
+    (name) => {
+      withTemporaryContext((root) => {
+        rmSync(join(root, name));
+
+        const message = contextErrorMessage(() =>
+          loadContextLayers({ contextDir: root }, { now }),
+        );
+
+        expect(message).toContain(
+          `não encontrado. Caminho esperado: ${join(root, name)}.`,
+        );
+      });
+    },
+  );
+
+  it("names the file of a blank company document", () => {
+    withTemporaryContext((root) => {
+      const file = join(root, "04-empresa", "c.md");
+      writeFileSync(file, " \r\n\t\r\n");
+
+      expect(
+        contextErrorMessage(() =>
+          loadContextLayers({ contextDir: root }, { now }),
+        ),
+      ).toBe(`O arquivo da camada "dados da empresa" está vazio: ${file}.`);
+    });
   });
 });

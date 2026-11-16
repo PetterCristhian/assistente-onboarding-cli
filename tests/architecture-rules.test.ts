@@ -129,6 +129,31 @@ describe("architecture rules", () => {
     expect(holders).toEqual([]);
   });
 
+  // The check above reads only TypeScript: a name in a file of another kind
+  // would pass it. evals/ is left out, because its cases hold the domain.
+  it("writes no company name, e-mail domain or person in any other file of src/ and scripts/", () => {
+    const { company, people } = domainTerms();
+    const terms = [...company, ...people].map((term) => term.toLowerCase());
+    const files = ["src", "scripts"].flatMap((folder) =>
+      readdirSync(join(PROJECT_ROOT, folder), {
+        recursive: true,
+        withFileTypes: true,
+      })
+        .filter((entry) => entry.isFile())
+        .map((entry) => join(entry.parentPath, entry.name)),
+    );
+
+    expect(terms.length).toBeGreaterThanOrEqual(4);
+    expect(files.length).toBeGreaterThan(0);
+
+    const holders = files.filter((file) => {
+      const content = readFileSync(file, "utf8").toLowerCase();
+      return terms.some((term) => content.includes(term));
+    });
+
+    expect(holders).toEqual([]);
+  });
+
   it("keeps the context builder pure: no disk, no clock, no environment", () => {
     const builder = readSource("src/context/builder.ts");
     const imported = [...builder.matchAll(/\bfrom\s+"([^"]+)"/g)].map(
