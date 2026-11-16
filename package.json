@@ -13,7 +13,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "check:secrets": "tsx scripts/check-secrets.ts",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run check:secrets"
   },
   "dependencies": {
     "openai": "^7.57.0",
