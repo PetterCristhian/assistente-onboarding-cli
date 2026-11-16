@@ -418,6 +418,9 @@ describe("generateStructured", () => {
 });
 
 const SHORT_TIMEOUT: LlmClientConfig = { ...CONFIG, requestTimeoutMs: 60 };
+// For the test that needs a chunk to arrive BEFORE the deadline: with 60 ms,
+// a busy machine could reach the deadline first.
+const ROOMY_TIMEOUT: LlmClientConfig = { ...CONFIG, requestTimeoutMs: 300 };
 const TEST_TIMEOUT_MS = 3_000;
 const VERDICT_JSON = JSON.stringify({ approved: true, reason: "fine" });
 
@@ -447,7 +450,7 @@ describe("total deadline of a call", () => {
     async () => {
       const { client } = setup(
         [{ kind: "sse", events: [textDelta("partial")], hang: true }],
-        SHORT_TIMEOUT,
+        ROOMY_TIMEOUT,
       );
       const received: string[] = [];
 
