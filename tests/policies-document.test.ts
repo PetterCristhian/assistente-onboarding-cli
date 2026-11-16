@@ -25,7 +25,10 @@ const LABELS = {
 const RULE_WITH_NESTED_LIST = "P4";
 const NESTED_LIST_ITEMS = 6;
 
-const BOM = "﻿";
+// Written as code points: an invisible character in the source is easy to lose.
+const BOM = String.fromCodePoint(0xfeff);
+const REPLACEMENT_CHARACTER = String.fromCodePoint(0xfffd);
+const KEYCAP = String.fromCodePoint(0x20e3);
 const FIELD_LINE = /^- \*\*(.+?):\*\*(.*)$/;
 const NESTED_ITEM_LINE = /^\s+- \S/;
 
@@ -157,5 +160,129 @@ describe("policies document", () => {
     const content = readDocument();
 
     expect(redact(content)).toBe(content);
+  });
+});
+
+// Lists of every kind, by the field that holds them. "stray" counts the items
+// that are outside the agreed place: before the first rule, at the top level
+// of a rule without being one of its fields, or with another kind of marker.
+function countListItems(content: string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  let heading: string | undefined;
+  let label: string | undefined;
+
+  const add = (key: string): void => {
+    counts[key] = (counts[key] ?? 0) + 1;
+  };
+
+  for (const line of content.split("\n")) {
+    if (line.startsWith("## ")) {
+      heading = line.slice(3).trim();
+      label = undefined;
+      continue;
+    }
+    const match = FIELD_LINE.exec(line);
+    if (heading !== undefined && match?.[1] !== undefined) {
+      label = match[1];
+      continue;
+    }
+    if (!/^\s*(?:[-*+]|\p{N}+[.)])\s/u.test(line)) {
+      continue;
+    }
+    const isNested = NESTED_ITEM_LINE.test(line);
+    if (heading === undefined || label === undefined || !isNested) {
+      add("stray");
+    } else {
+      add(`${heading.slice(0, 2)}/${label}`);
+    }
+  }
+  return counts;
+}
+
+describe("policies document: file format", () => {
+  it("uses line feeds only, with no other blank character than the space", () => {
+    // Carriage return, tab, no-break space and the like.
+    expect(readDocument()).not.toMatch(/[^\S \n]/u);
+  });
+
+  it("ends with a single line break and has no trailing space", () => {
+    const content = readDocument();
+
+    expect(content.endsWith("\n")).toBe(true);
+    expect(content.endsWith("\n\n")).toBe(false);
+    expect(content).not.toMatch(/ $/m);
+  });
+
+  it("is valid UTF-8 with no invisible character", () => {
+    const content = readDocument();
+
+    // What the decoder leaves in place of a byte that is not UTF-8.
+    expect(content).not.toContain(REPLACEMENT_CHARACTER);
+    // Zero-width characters, direction marks and a BOM anywhere.
+    expect(content).not.toMatch(/\p{Cf}/u);
+  });
+
+  it("has no emoji made of flags, keycaps or variation selectors", () => {
+    expect(readDocument()).not.toMatch(
+      /\p{Regional_Indicator}|\p{Variation_Selector}/u,
+    );
+    expect(readDocument()).not.toContain(KEYCAP);
+  });
+
+  it("holds no number of any script other than the rule identifiers", () => {
+    const withoutIdentifiers = readDocument().replace(/P[1-5](?!\p{N})/gu, "");
+
+    expect(withoutIdentifiers).not.toMatch(/\p{N}/u);
+  });
+
+  it.each(["%", "$", "€", "£"])("does not contain %s", (marker) => {
+    expect(readDocument()).not.toContain(marker);
+  });
+
+  it("has nothing shaped like an address (a dot or a slash inside a word)", () => {
+    expect(readDocument()).not.toMatch(/\p{L}[./\\]\p{L}/u);
+  });
+});
+
+describe("policies document: layout", () => {
+  it("has one title on the first line and no heading besides the rules", () => {
+    const lines = readDocument().split("\n");
+    const levels = lines
+      .filter((line) => /^#+(?:\s|$)/.test(line))
+      .map((line) => line.indexOf(" "));
+
+    expect(lines[0]).toMatch(/^# \S/);
+    expect(levels).toEqual([1, ...RULES.map(() => 2)]);
+    // Underlined headings.
+    expect(readDocument()).not.toMatch(/^\s*(?:=+|-{2,})\s*$/m);
+  });
+
+  it.each(RULES)("lists the fields of $id in the agreed order", ({ id }) => {
+    expect(findSection(id).fields.map((field) => field.label)).toEqual(
+      Object.values(LABELS),
+    );
+  });
+
+  it("keeps its only list inside the description of the agreed rule", () => {
+    expect(countListItems(readDocument())).toEqual({
+      [`${RULE_WITH_NESTED_LIST}/${LABELS.description}`]: NESTED_LIST_ITEMS,
+    });
+  });
+
+  it.each(RULES)(
+    "fills the example of $id with one quoted question",
+    ({ id }) => {
+      const [example] = fieldValues(findSection(id), LABELS.example);
+
+      expect(example).toMatch(/^"[^"]+\?"$/);
+    },
+  );
+
+  it("gives each rule an example of its own", () => {
+    const examples = RULES.flatMap(({ id }) =>
+      fieldValues(findSection(id), LABELS.example),
+    );
+
+    expect(new Set(examples).size).toBe(RULES.length);
   });
 });
