@@ -313,6 +313,36 @@ describe("parseConfig: invalid values", () => {
     expect(message).not.toContain("minha-chave");
   });
 
+  it.each([
+    ["only an opening quote", (key: string) => `"${key}`],
+    ["only a closing quote", (key: string) => `${key}"`],
+    ["quotes that do not match", (key: string) => `'${key}"`],
+    ["doubled quotes", (key: string) => `""${key}""`],
+    ["backticks", (key: string) => `\`${key}\``],
+    ["a quote and a space", (key: string) => ` " ${key}`],
+    [
+      "a quote in the middle",
+      (key: string) => `${key.slice(0, 12)}"${key.slice(12)}`,
+    ],
+  ])(
+    "never echoes a key outside the usual shape when OPENAI_API_KEY has %s",
+    (_label, wrap) => {
+      const plain = "minha-chave-azure-0123456789";
+      const message = configErrorMessage({
+        OPENAI_API_KEY: wrap(plain),
+        RETRY_MAX_ATTEMPTS: plain,
+        RATE_LIMIT_MAX_REQUESTS: `'${plain}`,
+        OPENAI_REASONING_EFFORT: wrap(plain),
+      });
+
+      expect(message).toContain("RETRY_MAX_ATTEMPTS");
+      expect(message).toContain("RATE_LIMIT_MAX_REQUESTS");
+      expect(message).toContain("OPENAI_REASONING_EFFORT");
+      expect(message).not.toContain("minha-chave");
+      expect(message).not.toContain("0123456789");
+    },
+  );
+
   it("replaces control characters of the received value by a visible marker", () => {
     const message = configErrorMessage({
       OPENAI_API_KEY: KEY,

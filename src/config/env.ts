@@ -152,15 +152,32 @@ function envFileByteOrderMarkMessage(mangledName: string): string {
   );
 }
 
+// The three quotes that a ".env" accepts around a value.
+const QUOTES = /["'`]+/gu;
+const QUOTES_AND_WHITE_SPACE = /["'`\s]+/u;
+
 /** The forms in which the key may show up inside another value. */
 function keyVariants(source: EnvSource): string[] {
   const raw = source[API_KEY_VARIABLE] ?? "";
   const trimmed = raw.trim();
   const unquoted = /^(["'])(.*)\1$/s.exec(trimmed)?.[2] ?? trimmed;
-  // A key with white space inside is rejected, but its pieces are still part
-  // of a credential.
-  const pieces = trimmed.split(/\s+/u);
-  return [...new Set([raw, trimmed, unquoted, unquoted.trim(), ...pieces])];
+  // Quotes that do not match (only one, two kinds, doubled, in the middle) are
+  // not taken out above: the value without any quote and its pieces between
+  // quotes are forms of the key too. So are the pieces of a key with white
+  // space inside, which is rejected. redact() ignores the pieces that are too
+  // short to be told from ordinary text.
+  const withoutQuotes = trimmed.replace(QUOTES, "").trim();
+  const pieces = trimmed.split(QUOTES_AND_WHITE_SPACE);
+  return [
+    ...new Set([
+      raw,
+      trimmed,
+      unquoted,
+      unquoted.trim(),
+      withoutQuotes,
+      ...pieces,
+    ]),
+  ];
 }
 
 function isIntegerVariable(name: string): name is keyof typeof INTEGER_RULES {
