@@ -33,7 +33,7 @@ O projeto tem três executáveis, todos sobre o mesmo núcleo:
 | Banco de dados | Nenhum | Histórico só em memória (F7); contexto e casos são arquivos versionados | SQLite (persistência está fora do MVP) |
 | Hospedagem | Nenhuma (execução local) | PRD: uso individual e local | Qualquer deploy (fora do MVP) |
 | Autenticação | Nenhuma de usuário; credencial da OpenAI por `OPENAI_API_KEY` | PRD exclui autenticação; a chave nunca entra no repositório (ADR 0007) | Chave em arquivo de configuração versionado (vazamento) |
-| CI | Nenhum pipeline; portão local `npm run check` | O PRD põe "pipeline de CI" explicitamente fora do MVP | GitHub Actions (aumentaria o escopo; ver dúvida ao dono) |
+| CI | GitHub Actions mínimo (`.github/workflows/ci.yml`): `npm ci` + `npm run check` a cada PR e push na `main`, sem a chave da OpenAI | Aprovado pelo dono, embora o PRD deixasse CI fora do MVP; confere o mesmo portão local a cada PR, sem secret e sem chamada à API real. Ver ADR 0001 | Nenhum CI (proposta original); rodar a bateria F12 no CI (exigiria a chave como secret e gastaria crédito) |
 
 Dependências de runtime: `openai`, `zod`. De desenvolvimento: `typescript`, `tsx`, `vitest`, `eslint`, `typescript-eslint`, `prettier`, `@types/node`. Qualquer outra exige justificativa.
 
@@ -133,7 +133,12 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 ├── CLAUDE.md                     # guia para os agentes
 ├── README.md                     # instruções de execução (F15) — issue 18
 ├── .env.example                  # nomes das variáveis, sem valores reais
-├── .gitignore                    # .env, node_modules/, logs/
+├── .gitignore                    # .env, node_modules/, logs/, PDF do enunciado
+├── .gitattributes                # finais de linha em LF
+├── .editorconfig                 # UTF-8, LF, 2 espaços
+├── .nvmrc                        # versão do Node (usada também pelo CI)
+├── .github/workflows/ci.yml      # CI: npm ci + npm run check, sem a chave
+├── CHANGELOG.md                  # histórico de mudanças (Keep a Changelog)
 ├── package.json / package-lock.json
 ├── tsconfig.json / eslint.config.js / .prettierrc / vitest.config.ts
 │

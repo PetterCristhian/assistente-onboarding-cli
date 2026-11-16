@@ -61,20 +61,22 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 ## Issue 1 — Montar o esqueleto do projeto
 
-**Descrição.** Criar o repositório Git e o projeto TypeScript vazio, rodando, com lint, verificação de tipos, um teste de exemplo e a proteção contra commit de credenciais desde o primeiro commit. Sem pipeline de CI (fora do MVP pelo PRD); o portão é o comando local `npm run check`.
+**Descrição.** Criar o projeto TypeScript vazio, rodando, com lint, verificação de tipos e um teste de exemplo. O portão é o comando `npm run check`, rodado localmente e também pelo CI.
+
+**Já feito no arranque (não recriar nem sobrescrever; ajustar só se necessário):** repositório Git, `.gitignore`, `.gitattributes` (finais de linha em LF), `.editorconfig`, `.nvmrc` (Node 24), `.env.example`, `README.md` inicial, `CHANGELOG.md` e o workflow `.github/workflows/ci.yml`. O workflow roda `npm ci` e `npm run check` e pula as verificações enquanto `package.json` e `package-lock.json` não existirem; ele passa a valer de fato com esta issue.
 
 **Critérios de aceite**
 - [ ] Node.js >= 22 instalado e disponível no PATH (não estava em 16/11/2026); `package.json` declara `"engines": { "node": ">=22" }` e `"type": "module"`.
-- [ ] `git init` feito, com `.gitignore` contendo `.env`, `.env.*` (exceto `.env.example`), `node_modules/` e `logs/`, **antes** do primeiro commit.
-- [ ] `.env.example` versionado com todas as variáveis da seção 7 de `docs/ARQUITETURA.md`, e `OPENAI_API_KEY=` sem valor real.
-- [ ] `git check-ignore .env` confirma que `.env` é ignorado.
+- [ ] `.gitignore` continua contendo `.env`, `.env.*` (exceto `.env.example`), `node_modules/` e `logs/`; `git check-ignore .env` confirma que `.env` é ignorado.
+- [ ] `.env.example` continua listando todas as variáveis da seção 7 de `docs/ARQUITETURA.md`, com `OPENAI_API_KEY=` sem valor real.
 - [ ] `tsconfig.json` com `strict: true`; `npm run typecheck` passa.
-- [ ] `npm run lint` e `npm run format` funcionam (ESLint + typescript-eslint + Prettier).
-- [ ] `npm test` roda o Vitest e um teste de exemplo passa.
+- [ ] `npm run lint` e `npm run format` funcionam (ESLint + typescript-eslint + Prettier). O Prettier usa `endOfLine: "lf"` (o padrão), coerente com `.gitattributes` e `.editorconfig`.
+- [ ] `npm test` roda o Vitest uma única vez, sem modo watch (`vitest run`), e um teste de exemplo passa.
 - [ ] `npm run chat` executa `src/cli/main.ts` via `tsx` e imprime uma mensagem provisória.
-- [ ] `npm run check` encadeia lint, typecheck e test, e termina com código 0.
-- [ ] Pastas da seção 6 de `docs/ARQUITETURA.md` criadas; `package-lock.json` versionado.
+- [ ] `npm run check` encadeia lint, typecheck e test, e termina com código 0. Roda sem `OPENAI_API_KEY` e sem rede (é o comando que o CI executa).
+- [ ] Pastas da seção 6 de `docs/ARQUITETURA.md` criadas; `package-lock.json` versionado (o CI instala com `npm ci`, que exige o lockfile).
 - [ ] Dependências instaladas: só as listadas na seção 2 de `docs/ARQUITETURA.md`.
+- [ ] Depois do push, o workflow de CI executa `npm ci` e `npm run check` (não apenas o aviso de "verificações puladas") e termina verde.
 
 **Dependências:** nenhuma.
 

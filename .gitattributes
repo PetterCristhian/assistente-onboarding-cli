@@ -1,0 +1,12 @@
+# Finais de linha: LF no repositório e na cópia de trabalho, em qualquer sistema.
+# Evita a conversão LF -> CRLF no Windows (core.autocrlf) e mantém estáveis os
+# arquivos gerados em outputs/ e a checagem do Prettier (endOfLine: lf).
+* text=auto eol=lf
+
+# Binários: nunca converter
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
