@@ -56,6 +56,80 @@ describe("findSecretsInText", () => {
   });
 });
 
+/** The bytes of a UTF-16 file, seen the way the scan reads them (latin1). */
+function utf16AsLatin1(
+  text: string,
+  options: { bigEndian?: boolean; bom?: boolean } = {},
+): string {
+  const bytes = Buffer.from(
+    `${options.bom === true ? "\ufeff" : ""}${text}`,
+    "utf16le",
+  );
+  if (options.bigEndian === true) {
+    bytes.swap16();
+  }
+  return bytes.toString("latin1");
+}
+
+describe("findSecretsInText with UTF-16 content", () => {
+  const text = `primeira\r\nsegunda\r\nchave: ${KEY}\r\n`;
+
+  it.each([
+    ["UTF-16LE with BOM", { bom: true }],
+    ["UTF-16LE without BOM", {}],
+    ["UTF-16BE with BOM", { bigEndian: true, bom: true }],
+    ["UTF-16BE without BOM", { bigEndian: true }],
+  ])(
+    "finds a key in %s, with line and column in characters",
+    (_label, options) => {
+      expect(findSecretsInText(utf16AsLatin1(text, options))).toEqual([
+        { line: 3, column: 8 },
+      ]);
+    },
+  );
+
+  it.each([
+    ["UTF-16LE", {}],
+    ["UTF-16BE", { bigEndian: true }],
+  ])(
+    "does not count the BOM in the column of the first line (%s)",
+    (_label, options) => {
+      const content = utf16AsLatin1(`x ${KEY}\n`, { ...options, bom: true });
+
+      expect(findSecretsInText(content)).toEqual([{ line: 1, column: 3 }]);
+    },
+  );
+
+  it("reports a key once when the file has NUL bytes around it", () => {
+    const content = `\0\xff\xfe\0${KEY}\0\x01\n\0 ${KEY}`;
+
+    expect(findSecretsInText(content)).toEqual([
+      { line: 1, column: 5 },
+      { line: 2, column: 3 },
+    ]);
+  });
+
+  it("finds nothing in a clean UTF-16 text", () => {
+    const clean = "OPENAI_API_KEY=\r\n# sem valor real\r\n";
+
+    expect(findSecretsInText(utf16AsLatin1(clean, { bom: true }))).toEqual([]);
+  });
+
+  it("finds nothing, quickly, in a large binary content full of NUL bytes", () => {
+    const bytes = Buffer.alloc(4 * 1024 * 1024);
+    for (let index = 0; index < bytes.length; index += 1) {
+      // Every byte value, with a NUL after each one and some line breaks.
+      bytes[index] = index % 2 === 0 ? (index / 2) % 256 : 0;
+    }
+    const startedAt = performance.now();
+
+    const findings = findSecretsInText(bytes.toString("latin1"));
+
+    expect(findings).toEqual([]);
+    expect(performance.now() - startedAt).toBeLessThan(3000);
+  });
+});
+
 describe("scanRepository", () => {
   it("reports the file that holds a key and skips unreadable files", () => {
     const contents: Record<string, string | undefined> = {
@@ -103,6 +177,56 @@ describe("scanRepository", () => {
       { file: "vazado.txt", line: 3, column: 7 },
     ]);
     expect(result.scannedFiles).toBe(4);
+  });
+
+  it.each([
+    ["UTF-16LE with BOM", { bom: true }],
+    ["UTF-16LE without BOM", {}],
+    ["UTF-16BE", { bigEndian: true, bom: true }],
+  ])("finds a key in a real %s file", (_label, options) => {
+    const rootDir = createTemporaryFolder();
+    execFileSync("git", ["init", "--quiet"], { cwd: rootDir, stdio: "ignore" });
+    // What `echo "<key>" > nota.txt` writes in Windows PowerShell 5.1.
+    writeFileSync(
+      join(rootDir, "nota.txt"),
+      Buffer.from(utf16AsLatin1(`${KEY}\r\n`, options), "latin1"),
+    );
+    writeFileSync(
+      join(rootDir, "limpo.txt"),
+      Buffer.from(utf16AsLatin1("sem credencial\r\n", options), "latin1"),
+    );
+
+    const result = scanRepository({ rootDir });
+
+    expect(result.findings).toEqual([{ file: "nota.txt", line: 1, column: 1 }]);
+    expect(result.scannedFiles).toBe(2);
+  });
+
+  it("reports a key in the path of a file, with the path redacted", () => {
+    const result = scanRepository({
+      rootDir: "raiz",
+      listFiles: () => [
+        "limpo.txt",
+        `outputs/${KEY}.txt`,
+        `pasta-${KEY}/vazado.txt`,
+        `apagado-${KEY}.txt`,
+      ],
+      readFile: (absolutePath) => {
+        if (absolutePath.includes("apagado")) {
+          return undefined;
+        }
+        return absolutePath.endsWith("vazado.txt") ? `a\n${KEY}\n` : "x\n";
+      },
+    });
+
+    expect(result.scannedFiles).toBe(3);
+    expect(result.findings).toEqual([
+      { file: "outputs/[REDACTED].txt", line: 0, column: 0, inPath: true },
+      { file: "pasta-[REDACTED]/vazado.txt", line: 0, column: 0, inPath: true },
+      { file: "pasta-[REDACTED]/vazado.txt", line: 2, column: 1 },
+      { file: "apagado-[REDACTED].txt", line: 0, column: 0, inPath: true },
+    ]);
+    expect(JSON.stringify(result)).not.toContain(KEY);
   });
 
   it("skips a file that is in the index but no longer on disk", () => {

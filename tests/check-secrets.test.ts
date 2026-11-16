@@ -110,6 +110,33 @@ describe("scripts/check-secrets.ts", () => {
   );
 
   it(
+    "exits with 1 for a key in a UTF-16 file and for a key in a file name",
+    () => {
+      const folder = createScannedCopy();
+      // What `echo "<key>" > nota.txt` writes in Windows PowerShell 5.1.
+      writeFileSync(
+        join(folder, "nota.txt"),
+        Buffer.from(`\ufeffprimeira\r\n${KEY}\r\n`, "utf16le"),
+      );
+      mkdirSync(join(folder, "outputs"));
+      writeFileSync(join(folder, "outputs", `${KEY}.txt`), "x\n");
+
+      const result = runScript(join(folder, "scripts", "check-secrets.ts"));
+      const output = result.stdout + result.stderr;
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("  - nota.txt:2:1\n");
+      expect(result.stderr).toContain(
+        "  - outputs/[REDACTED].txt (no nome do arquivo)\n",
+      );
+      expect(output).not.toContain(KEY);
+      expect(output).not.toContain(KEY.slice(0, 12));
+      expect(result.stdout).toBe("");
+    },
+    CHILD_TIMEOUT_MS,
+  );
+
+  it(
     "exits with 2, never in silence, when Git cannot list the files",
     () => {
       const folder = mkdtempSync(join(tmpdir(), "eng44-check-secrets-"));

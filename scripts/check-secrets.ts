@@ -35,10 +35,14 @@ function main(): number {
       "check:secrets: possível credencial encontrada (o valor não é exibido):",
     );
     for (const finding of result.findings) {
-      console.error(`  - ${finding.file}:${finding.line}:${finding.column}`);
+      console.error(
+        finding.inPath === true
+          ? `  - ${finding.file} (no nome do arquivo)`
+          : `  - ${finding.file}:${finding.line}:${finding.column}`,
+      );
     }
     console.error(
-      "Remova o valor do arquivo. Se for uma chave real, revogue-a no painel da OpenAI: reescrever o histórico do Git não resolve.",
+      "Remova o valor do arquivo (ou renomeie o arquivo, se o valor estiver no nome). Se for uma chave real, revogue-a no painel da OpenAI: reescrever o histórico do Git não resolve.",
     );
     return 1;
   }

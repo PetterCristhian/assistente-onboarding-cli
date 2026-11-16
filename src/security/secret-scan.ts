@@ -1,25 +1,57 @@
 // Logic of `npm run check:secrets` (docs/adr/0007-protecao-da-credencial.md,
 // decision 6): looks for key-shaped sequences in every file of the working
-// directory that Git does not ignore. Findings never carry the value found.
+// directory that Git does not ignore, and in their paths. Findings never carry
+// the value found.
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createSecretPattern } from "./redact.js";
+import { createSecretPattern, redact } from "./redact.js";
 
 export interface SecretFinding {
+  /** Path relative to the root, redacted: it may hold the pattern itself. */
   file: string;
+  /** 1-based. Zero when the pattern is in the path, not in the content. */
   line: number;
   column: number;
+  /** Present when the pattern is in the path of the file. */
+  inPath?: true;
 }
 
+// The two byte order marks of UTF-16, as they look in a latin1 string.
+const UTF16_BYTE_ORDER_MARK = /^(?:\xff\xfe|\xfe\xff)/;
+
+function findColumns(lineText: string): number[] {
+  return [...lineText.matchAll(createSecretPattern())].map(
+    (match) => match.index + 1,
+  );
+}
+
+/**
+ * Expects the content decoded as latin1 (one character per byte).
+ *
+ * A line with NUL bytes and no key is looked at again without them: in UTF-16
+ * (what `>` writes in Windows PowerShell 5.1) every ASCII character comes
+ * with a NUL byte, which hides the key from the pattern. Taking the NUL bytes
+ * out covers little and big endian, with or without a byte order mark, without
+ * guessing the encoding. The column is then counted in characters, not bytes.
+ */
 export function findSecretsInText(
   text: string,
 ): Array<{ line: number; column: number }> {
   const findings: Array<{ line: number; column: number }> = [];
 
   text.split("\n").forEach((lineText, index) => {
-    for (const match of lineText.matchAll(createSecretPattern())) {
-      findings.push({ line: index + 1, column: match.index + 1 });
+    let columns = findColumns(lineText);
+    if (columns.length === 0 && lineText.includes("\0")) {
+      const withoutNul = lineText.replaceAll("\0", "");
+      columns = findColumns(
+        index === 0
+          ? withoutNul.replace(UTF16_BYTE_ORDER_MARK, "")
+          : withoutNul,
+      );
+    }
+    for (const column of columns) {
+      findings.push({ line: index + 1, column });
     }
   });
   return findings;
@@ -71,13 +103,19 @@ export function scanRepository(deps: SecretScanDeps): {
 
   // No exception list: tests/ and outputs/ are scanned like everything else.
   for (const file of listFiles(deps.rootDir)) {
+    // The name of a file is as public as its content.
+    const shownFile = redact(file);
+    if (shownFile !== file) {
+      findings.push({ file: shownFile, line: 0, column: 0, inPath: true });
+    }
+
     const text = readFile(join(deps.rootDir, file));
     if (text === undefined) {
       continue;
     }
     scannedFiles += 1;
     for (const { line, column } of findSecretsInText(text)) {
-      findings.push({ file, line, column });
+      findings.push({ file: shownFile, line, column });
     }
   }
   return { scannedFiles, findings };
