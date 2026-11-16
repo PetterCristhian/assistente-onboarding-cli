@@ -73,8 +73,10 @@ export interface LlmClient {
  * - interrupted: the answer could not be read to its end (the stream ended
  *   before the final event, the connection dropped, or what arrived is not
  *   what the provider writes);
- * - failed: the provider reported the answer as such, or sent one outside
- *   its own format;
+ * - failed: the provider reported the answer as such, or as one that it did
+ *   not complete (cancelled, queued, in progress);
+ * - malformed: the answer was read, and it is outside the format of the
+ *   provider (a field that is used is missing or has another form);
  * - incomplete: the provider reported the answer as such;
  * - empty: complete, with no text;
  * - refusal: the model refused to answer;
@@ -84,6 +86,7 @@ export interface LlmClient {
 export type LlmResponseErrorKind =
   | "interrupted"
   | "failed"
+  | "malformed"
   | "incomplete"
   | "empty"
   | "refusal"
@@ -140,6 +143,7 @@ const MESSAGES = {
   unreadable: "A resposta do provedor não pôde ser lida até o fim.",
   malformed: "O provedor devolveu uma resposta fora do formato esperado.",
   failed: "O provedor informou que a geração da resposta falhou",
+  notCompleted: "O provedor não concluiu a geração da resposta",
   incomplete: "A resposta do modelo ficou incompleta",
   empty: "O modelo não devolveu nenhum texto.",
   refusal: "O modelo se recusou a responder.",
@@ -215,7 +219,7 @@ const announcedItemSchema = z.object({
 });
 
 function malformedAnswer(model?: string): LlmResponseError {
-  return new LlmResponseError("failed", MESSAGES.malformed, model);
+  return new LlmResponseError("malformed", MESSAGES.malformed, model);
 }
 
 /** The model that answered: a text that is not blank, or nothing. */
@@ -315,6 +319,14 @@ function unusableResponse(
         "motivo",
         response.incomplete_details?.reason,
       ),
+      model,
+    );
+  }
+  if (typeof status === "string" && status !== "completed") {
+    // Cancelled, queued, in progress: not an answer, and not an empty one.
+    return new LlmResponseError(
+      "failed",
+      withDetail(MESSAGES.notCompleted, "status", status),
       model,
     );
   }
@@ -423,11 +435,15 @@ export function createOpenAiLlmClient(
   // applies it after its own authentication headers, so that variable could
   // replace the credential or add an organization or a project. The headers
   // of a call come last and win; `null` removes a header. A header with any
-  // other name cannot be blocked here (ADR 0002, decision 9).
+  // other name cannot be blocked here (ADR 0002, decision 9). `api-key` and
+  // `x-api-key` are names under which a credential travels to compatible
+  // services: this client never sends them.
   const callHeaders = {
     Authorization: `Bearer ${config.openaiApiKey}`,
     "OpenAI-Organization": null,
     "OpenAI-Project": null,
+    "api-key": null,
+    "x-api-key": null,
   };
 
   /**
@@ -657,7 +673,12 @@ export function createOpenAiLlmClient(
     }
 
     const response = readResponse(body);
-    if (response.status === "failed" || response.status === "incomplete") {
+    // As in the SDK, the output is read only of a response with no status
+    // or with `completed`.
+    if (
+      typeof response.status === "string" &&
+      response.status !== "completed"
+    ) {
       throw unusableResponse(response);
     }
     const model = modelOf(response);

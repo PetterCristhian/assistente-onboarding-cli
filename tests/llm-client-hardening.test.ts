@@ -358,7 +358,7 @@ describe("what the provider sends is checked before it is used", () => {
       );
 
       expect(error).toBeInstanceOf(LlmResponseError);
-      expect(error).toMatchObject({ kind: "failed" });
+      expect(error).toMatchObject({ kind: "malformed" });
       expect(received).toEqual(["a"]);
     },
   );
@@ -389,7 +389,7 @@ describe("what the provider sends is checked before it is used", () => {
 
     expect(outcome).toBeInstanceOf(LlmResponseError);
     expect(outcome).not.toBeInstanceOf(TypeError);
-    expect(outcome).toMatchObject({ kind: "failed" });
+    expect(outcome).toMatchObject({ kind: "malformed" });
     expect((outcome as Error).message).toContain("fora do formato esperado");
   });
 
@@ -403,7 +403,7 @@ describe("what the provider sends is checked before it is used", () => {
 
     await expect(client.streamText(REQUEST)).rejects.toMatchObject({
       name: "LlmResponseError",
-      kind: "failed",
+      kind: "malformed",
     });
   });
 
@@ -479,7 +479,7 @@ describe("what the provider sends is checked before it is used", () => {
 
       expect(error).toBeInstanceOf(LlmResponseError);
       expect(error).not.toBeInstanceOf(TypeError);
-      expect(error).toMatchObject({ kind: "failed" });
+      expect(error).toMatchObject({ kind: "malformed" });
       expect((error as Error).message).toContain("fora do formato esperado");
     },
   );
