@@ -1,6 +1,7 @@
 // `npm run contexto`: prints the assembled context, with no key and no network.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -17,10 +18,10 @@ const BLANK_VARIABLES = Object.fromEntries(
   ENV_VARIABLE_NAMES.map((name) => [name, ""]),
 );
 
-function runScript(cwd: string = PROJECT_ROOT) {
+function runScript(cwd: string = PROJECT_ROOT, preload: string[] = []) {
   return spawnSync(
     process.execPath,
-    ["--import", "tsx", join(PROJECT_ROOT, SCRIPT)],
+    [...preload, "--import", "tsx", join(PROJECT_ROOT, SCRIPT)],
     {
       cwd,
       encoding: "utf8",
@@ -77,6 +78,33 @@ describe("scripts/show-context.ts", () => {
       expect(fromTests.status).toBe(0);
       expect(fromTests.stderr).toBe("");
       expect(fromTests.stdout).toBe(fromRoot.stdout);
+    },
+    CHILD_TIMEOUT_MS,
+  );
+
+  it(
+    "reports an unexpected error in one line, with no stack trace and code 2",
+    () => {
+      // The formatter of the weekday is the one step that the loaders do not
+      // wrap: a module loaded before the script makes it fail.
+      const folder = mkdtempSync(join(tmpdir(), "show-context-"));
+      const preload = join(folder, "break-weekday.cjs");
+      writeFileSync(
+        preload,
+        'Intl.DateTimeFormat = function () { throw new TypeError("made-up failure\\nsecond line"); };\n',
+      );
+
+      try {
+        const result = runScript(PROJECT_ROOT, ["--require", preload]);
+
+        expect(result.stderr).toBe(
+          "contexto: erro inesperado: made-up failure second line\n",
+        );
+        expect(result.stdout).toBe("");
+        expect(result.status).toBe(2);
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+      }
     },
     CHILD_TIMEOUT_MS,
   );
