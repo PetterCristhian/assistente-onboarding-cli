@@ -43,6 +43,11 @@ function normalize(text: string): string {
   return text.trim().toLowerCase();
 }
 
+/** Text to be matched literally inside a regular expression. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function contactSection(heading: string): string {
   return sectionBody(readContextFile(CONTACTS), heading);
 }
@@ -53,7 +58,7 @@ function channelRows(heading: string): Channel[] {
     const contact = row.slice(2).join(" | ");
     const emails = extractEmails(contact).map(normalize);
     const withoutEmails = emails.reduce(
-      (text, email) => text.replace(new RegExp(email, "i"), " "),
+      (text, email) => text.replace(new RegExp(escapeRegExp(email), "i"), " "),
       contact,
     );
     return {
@@ -275,9 +280,14 @@ describe("context consistency: data", () => {
   });
 
   it.each(DATA_FILES)("names no automated agent in %s", (path) => {
-    expect(readContextFile(path)).not.toMatch(
-      /(?<!\p{L})(?:robô|bot|IA|prompt|modelo de linguagem|inteligência artificial)(?!\p{L})/u,
+    const content = readContextFile(path);
+
+    expect(content).not.toMatch(
+      /(?<!\p{L})(?:robô|bot|prompt|modelo de linguagem|inteligência artificial)(?!\p{L})/iu,
     );
+    // The abbreviation stays case-sensitive: in lower case it is the ending
+    // of ordinary words and, alone, a verb form.
+    expect(content).not.toMatch(/(?<!\p{L})IA(?!\p{L})/u);
   });
 
   it.each(DATA_FILES)("has no telephone-shaped number in %s", (path) => {
