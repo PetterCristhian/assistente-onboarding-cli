@@ -1008,6 +1008,41 @@ describe("parseConfig: a key that is too short", () => {
     expect(message).not.toContain("Zq9");
   });
 
+  // QA of ENG-44 (O1): the short key was quoted in the message about
+  // another variable that had the same value.
+  it.each([
+    ["the same value", "Zq9!xW7", "Zq9!xW7"],
+    ["the key inside a longer value", "Zq9!xW7", "antes Zq9!xW7 depois"],
+    ["a key of one character", "Z", "muitaZ"],
+    ["a short key between quotes", '"Zq9!x"', "Zq9!x"],
+    ["a short key with spaces around", "  Zq9!xW7  ", "Zq9!xW7"],
+  ])(
+    "does not show another variable that holds the short key: %s",
+    (_label, shortKey, other) => {
+      const message = configErrorMessage({
+        OPENAI_API_KEY: shortKey,
+        RETRY_MAX_ATTEMPTS: other,
+        OPENAI_REASONING_EFFORT: other,
+      });
+
+      expect(message).toContain("RETRY_MAX_ATTEMPTS deve ser um número");
+      expect(message).toContain("OPENAI_REASONING_EFFORT deve ser um destes");
+      expect(message.split('(valor recebido: "[REDACTED]")')).toHaveLength(3);
+      expect(message).not.toContain("Zq9");
+      expect(message).not.toContain("muitaZ");
+      expect(message).not.toContain("antes");
+    },
+  );
+
+  it("still shows another variable that does not hold the short key", () => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: "Zq9!xW7",
+      RETRY_MAX_ATTEMPTS: "muitas",
+    });
+
+    expect(message).toContain('(valor recebido: "muitas")');
+  });
+
   it("accepts a key with exactly the minimum length", () => {
     const key = "k".repeat(MIN_EXACT_SECRET_LENGTH);
 
