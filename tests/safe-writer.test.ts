@@ -700,6 +700,24 @@ describe("createSafeWriter, extraFiles (ENG-57)", () => {
     },
   );
 
+  it("accepts the extra file by overwrite only, never append or JSON", async () => {
+    const extra = withExtra();
+
+    await expect(extra.appendText(EXTRA, "x")).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    await expect(extra.appendJsonLine(EXTRA, { a: 1 })).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    await expect(extra.writeJson(EXTRA, { a: 1 })).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    expect(await readdir(rootDir)).toEqual([]);
+    await extra.writeText(EXTRA, "a\n");
+    await extra.writeText(EXTRA, "b\n");
+    expect(await readFile(join(rootDir, EXTRA), "utf8")).toBe("b\n");
+  });
+
   it("still refuses a key in the name of an extra file", async () => {
     const name = `docs/${KEY}.md`;
     const extra = createSafeWriter({
@@ -719,6 +737,9 @@ describe("createSafeWriter, extraFiles (ENG-57)", () => {
     ["a parent segment", "docs/../x.md"],
     ["a bare file name", "x.md"],
     ["an empty path", ""],
+    ["a git hook", ".git/hooks/x"],
+    ["a workflow", ".github/workflows/ci.yml"],
+    ["the code of the writer", "src/security/safe-writer.ts"],
   ])("refuses to be created with %s as an extra file", (_label, extra) => {
     expect(() =>
       createSafeWriter({

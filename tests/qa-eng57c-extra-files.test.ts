@@ -126,10 +126,28 @@ describe("extraFiles: the writer does not grow", () => {
     const text = await readFile(join(rootDir, EXTRA), "utf8");
     expect(text).not.toContain(KEY);
     expect(text).not.toContain(shaped);
-    // The Markdown escape of a key (underscores) is the caller's problem, but a
-    // key broken by a JSON escape must not survive in a JSON written there.
-    await writer.writeJson(EXTRA, { k: `x\n${KEY}`, [KEY]: 1 });
+    // A key broken by a line break or by a JSON escape must not survive either.
+    await writer.writeText(EXTRA, `x\n${KEY.slice(0, 12)}\n${KEY.slice(12)}`);
     expect(await readFile(join(rootDir, EXTRA), "utf8")).not.toContain(KEY);
+  });
+
+  it("an extra file accepts only overwrite: append and JSON are refused", async () => {
+    const writer = create([EXTRA]);
+
+    await expect(writer.appendText(EXTRA, "x")).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    await expect(writer.appendJsonLine(EXTRA, { a: 1 })).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    await expect(writer.writeJson(EXTRA, { a: 1 })).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    expect(await readdir(rootDir)).toEqual([]);
+
+    await writer.writeText(EXTRA, "um\n");
+    await writer.writeText(EXTRA, "dois\n");
+    expect(await readFile(join(rootDir, EXTRA), "utf8")).toBe("dois\n");
   });
 });
 
@@ -167,10 +185,19 @@ describe("extraFiles: validation when the writer is created", () => {
     expect(() => create([extra])).toThrow("extraFiles");
   });
 
-  it("an extra inside outputs/ or logs/ is accepted and harmless", async () => {
-    const writer = create(["outputs/x/y.md", "logs/a.md"]);
-
-    await writer.writeText("outputs/x/y.md", "x");
-    expect(await readdir(join(rootDir, "outputs"))).toEqual(["x"]);
+  // Only docs/ (exact prefix): the writer cannot be pointed at code, hooks or
+  // the CI workflow, nor at the root.
+  it.each([
+    ["a git hook", ".git/hooks/x"],
+    ["a workflow", ".github/workflows/ci.yml"],
+    ["the code of the writer", "src/security/safe-writer.ts"],
+    ["the root", "README.md"],
+    ["outputs/", "outputs/x/y.md"],
+    ["logs/", "logs/a.md"],
+    ["upper case docs", "DOCS/x.md"],
+    ["docs with a backslash", "docs\\x.md"],
+    ["a folder that only starts with docs", "docs-extra/x.md"],
+  ])("refuses %s as an extra file", (_label, extra) => {
+    expect(() => create([extra])).toThrow("extraFiles");
   });
 });
