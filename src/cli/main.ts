@@ -28,7 +28,7 @@ import { createTerminalOutput, sanitizeForTerminal } from "./renderer.js";
 
 const USAGE_HINT = "Use --help para ver as opções.";
 
-/** The four sources of the context, one line each. Provisional (ENG-53). */
+/** The four sources of the context, one line each. */
 function describeSources(sources: ContextSources): string[] {
   return [
     `[detalhes] instruções globais: ${sources.globalInstructionsFile}`,

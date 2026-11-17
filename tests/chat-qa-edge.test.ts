@@ -58,7 +58,7 @@ describe("chat edge cases", () => {
 
   it("treats '/', '/ SAIR' and '/sair agora' as unknown, without the model", async () => {
     const { input, fake, err, done } = setup([]);
-    input.end("/\n/ SAIR\n/sair agora\n/detalhes\n/SAIR\n");
+    input.end("/\n/ SAIR\n/sair agora\n/detalhes agora\n/SAIR\n");
 
     expect(await done).toBe(0);
     expect(draftCalls(fake)).toHaveLength(0);

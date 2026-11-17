@@ -96,12 +96,12 @@ describe("runChat", () => {
   it("ignores empty lines and warns about unknown commands, without the model", async () => {
     const { input, fake, out, err, done } = setup([]);
     input.write("\n   \n");
-    input.write("/detalhes\n");
+    input.write("/xyz\n");
     input.end("/sair\n");
 
     expect(await done).toBe(0);
     expect(draftCalls(fake)).toHaveLength(0);
-    expect(err()).toContain("Comando desconhecido: /detalhes. Digite /ajuda.");
+    expect(err()).toContain("Comando desconhecido: /xyz. Digite /ajuda.");
     expect(out()).not.toContain("Comando desconhecido");
   });
 
@@ -193,7 +193,9 @@ describe("runChat with verbose (ENG-50)", () => {
     expect(await done).toBe(0);
     expect(err()).toBe(
       "[detalhes] modelo=fake-model trechos=2 tokens=12/34 tempo=250ms\n" +
-        "[detalhes] modelo=fake-model trechos=1 tokens=?/? tempo=0ms\n",
+        "[autoavaliação] aprovada\n" +
+        "[detalhes] modelo=fake-model trechos=1 tokens=?/? tempo=0ms\n" +
+        "[autoavaliação] aprovada\n",
     );
     expect(out()).not.toContain("[detalhes]");
   });
