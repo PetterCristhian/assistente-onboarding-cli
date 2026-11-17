@@ -11,6 +11,7 @@ import { ContextError } from "../context/types.js";
 import { createOpenAiLlmClient } from "../llm/client.js";
 import { createRedactor, type Redactor } from "../security/redact.js";
 import { HELP_TEXT, parseCliArgs, toContextOptions } from "./args.js";
+import { createInterruptHandler } from "./interrupt.js";
 import { guardOutputStreams } from "./output-guard.js";
 import { runChat } from "./chat-loop.js";
 import { createTerminalOutput, sanitizeForTerminal } from "./renderer.js";
@@ -84,7 +85,12 @@ async function main(): Promise<number> {
       redact: redactText,
     });
 
-    const onSigint = (): void => shutdown.abort();
+    // First Ctrl+C: stop in an orderly way (this also ends a wait for a new
+    // try). Second: leave now, with the exit code that a write error set.
+    const onSigint = createInterruptHandler({
+      abort: () => shutdown.abort(),
+      exit: () => process.exit(outputs.exitCode() ?? 0),
+    });
     process.on("SIGINT", onSigint);
     try {
       const code = await runChat({
