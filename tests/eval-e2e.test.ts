@@ -427,7 +427,6 @@ describe("npm run eval in a child process, over a fake API", () => {
     expect(run.stderr).toContain("CT12.");
     expect(existsSync(join(run.root, "outputs"))).toBe(false);
   });
-
 });
 
 describe("scripts/eval.ts itself, only for what writes nothing", () => {

@@ -153,9 +153,7 @@ describe("runBattery: the summary and the report", () => {
     expect(summary.inicio).toBe("2026-11-20T14:31:01.000Z");
     const report = read(ready.root, "RELATORIO.md");
     expect(report).toContain(`# Relatório da bateria ${BATTERY_ID}`);
-    expect(report).toContain(
-      "- F13: atingido (todas as execuções aprovadas)",
-    );
+    expect(report).toContain("- F13: atingido (todas as execuções aprovadas)");
     expect(report).toContain("### CT02 · execução 3 · passou");
     expect(exitCodeFor(result)).toBe(0);
     const printed = ready.printed.join("");
@@ -284,7 +282,11 @@ describe("runBattery: the summary and the report", () => {
     expect(report).toContain("### CT02 · execução 1 · sem execução");
     expect(
       summarySchema.parse(JSON.parse(read(ready.root, "resumo.json"))),
-    ).toMatchObject({ completa: false, f13Mensuravel: false, f13Atingido: false });
+    ).toMatchObject({
+      completa: false,
+      f13Mensuravel: false,
+      f13Atingido: false,
+    });
   });
 
   it("writes nothing when there is no line", async () => {

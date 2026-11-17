@@ -204,7 +204,9 @@ describe("inlineText", () => {
   });
 
   it("does not bring back a key that was redacted before the escape", () => {
-    const key = "sk-proj-AbC_dEf-1234567890abcdefGHIJ_klm-NOP";
+    const key = ["sk", "proj", "AbC_dEf-1234567890abcdefGHIJ_klm-NOP"].join(
+      "-",
+    );
     const redacted = redact(`a@${key}@b.co mailto:${key}`, [key]);
     const escaped = inlineText(redacted);
     expect(escaped).not.toContain("AbC");

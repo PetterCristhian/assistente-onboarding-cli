@@ -83,13 +83,15 @@ export function inlineText(text: string, max = MAX_INLINE_LENGTH): string {
     .replace(/\s*\n\s*/g, " ")
     .replace(/\t/g, " ");
   const cut = [...flat].length > max ? `${cutAt(flat, max)}…` : flat;
-  return cut
-    .replace(INLINE_SPECIALS, (sign) => `\\${sign}`)
-    .replaceAll("://", ":\\//")
-    .replace(/www\./gi, (match) => `${match.slice(0, 3)}\\.`)
-    // E-mail autolinks (a@b.co) and the mailto:/xmpp: schemes become links too.
-    .replaceAll("@", "\\@")
-    .replace(/\b(mailto|xmpp):/gi, (_match, scheme: string) => `${scheme}\\:`);
+  return (
+    cut
+      .replace(INLINE_SPECIALS, (sign) => `\\${sign}`)
+      .replaceAll("://", ":\\//")
+      .replace(/www\./gi, (match) => `${match.slice(0, 3)}\\.`)
+      // E-mail autolinks (a@b.co) and the mailto:/xmpp: schemes become links too.
+      .replaceAll("@", "\\@")
+      .replace(/\b(mailto|xmpp):/gi, (_match, scheme: string) => `${scheme}\\:`)
+  );
 }
 
 /** A table cell: our own data; inlineText escapes the pipe and flattens lines. */
