@@ -4,7 +4,7 @@ import { createInterface } from "node:readline/promises";
 import type { Readable } from "node:stream";
 import type { ChatSession } from "../chat/session.js";
 import { HELP_LINES, parseInput } from "./commands.js";
-import type { TextSink } from "./renderer.js";
+import { sanitizeForTerminal, type TextSink } from "./renderer.js";
 
 const PROMPT = "> ";
 const CLEARED_MESSAGE = "Histórico apagado.";
@@ -27,6 +27,7 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
   const rl = createInterface({ input: deps.input, terminal: false });
   let turn: AbortController | undefined;
   let stopped = false;
+  let leftByCommand = false;
 
   // Idempotent: cancels the running turn and ends the loop.
   const abort = (): void => {
@@ -52,13 +53,16 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
     for await (const line of rl) {
       const parsed = parseInput(line);
       if (parsed.kind === "command" && parsed.name === "sair") {
+        leftByCommand = true;
         break;
       }
       switch (parsed.kind) {
         case "empty":
           break;
         case "unknown":
-          stderr.write(`Comando desconhecido: ${parsed.raw}. Digite /ajuda.\n`);
+          stderr.write(
+            `Comando desconhecido: ${sanitizeForTerminal(parsed.raw)}. Digite /ajuda.\n`,
+          );
           break;
         case "command":
           if (parsed.name === "limpar") {
@@ -84,6 +88,11 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
         break;
       }
       stdout.write(PROMPT);
+    }
+    // End of input: the last prompt has no newline; do not leave the shell's
+    // cursor on that line. After /sair or Ctrl+C there is nothing to finish.
+    if (!leftByCommand && !stopped) {
+      stdout.write("\n");
     }
     return 0;
   } finally {

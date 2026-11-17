@@ -10,6 +10,7 @@ import { loadContextLayers } from "../context/loaders.js";
 import { ContextError } from "../context/types.js";
 import { createOpenAiLlmClient } from "../llm/client.js";
 import { createRedactor } from "../security/redact.js";
+import { guardOutputStreams } from "./output-guard.js";
 import { runChat } from "./chat-loop.js";
 import { createTerminalOutput } from "./renderer.js";
 
@@ -29,8 +30,15 @@ async function main(): Promise<number> {
     const shutdown = new AbortController();
     const onSigint = (): void => shutdown.abort();
     process.on("SIGINT", onSigint);
+    // A closed or broken output ends the chat: EPIPE (the reader went away)
+    // is a normal end, any other write error is a failure; neither prints a
+    // stack trace.
+    const outputs = guardOutputStreams(
+      { stdout: process.stdout, stderr: process.stderr },
+      () => shutdown.abort(),
+    );
     try {
-      return await runChat({
+      const code = await runChat({
         input: process.stdin,
         stdout: process.stdout,
         stderr: process.stderr,
@@ -39,6 +47,7 @@ async function main(): Promise<number> {
         profileName: layers.userProfile.nome,
         shutdown: shutdown.signal,
       });
+      return outputs.exitCode() ?? code;
     } finally {
       process.off("SIGINT", onSigint);
     }
