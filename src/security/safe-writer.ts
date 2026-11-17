@@ -22,6 +22,12 @@ export interface SafeWriterOptions {
   redact: Redactor;
   /** Default: the project root, wherever the cwd is. */
   rootDir?: string;
+  /**
+   * Exact relative paths, outside outputs/ and logs/, that this writer may also
+   * write (a generated document such as docs/CASOS-DE-TESTE.md). Compared as
+   * written: no other spelling of the same file is accepted. Default: none.
+   */
+  extraFiles?: readonly string[];
 }
 
 const ALLOWED_TOP_LEVEL_DIRECTORIES = ["outputs", "logs"];
@@ -92,6 +98,21 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     options.rootDir ?? fileURLToPath(new URL("../../", import.meta.url)),
   );
 
+  const extraFiles = new Set(options.extraFiles ?? []);
+  for (const extra of extraFiles) {
+    const parts = extra.split(/[\\/]/);
+    if (
+      extra === "" ||
+      isAbsolute(extra) ||
+      parts.length < 2 ||
+      parts.some((part) => part === "" || part === "." || part === "..")
+    ) {
+      throw new Error(
+        "extraFiles aceita só caminhos relativos normalizados, com uma pasta e um arquivo.",
+      );
+    }
+  }
+
   // The writer does not trust the redactor it receives: whatever it does (or
   // fails to do), the key-shaped pattern is applied last.
   const applyRedaction: Redactor = (text) =>
@@ -107,6 +128,10 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     }
 
     const absolutePath = resolve(rootDir, relativePath);
+    // An extra file is accepted only when the text is exactly one of them.
+    if (extraFiles.has(relativePath)) {
+      return absolutePath;
+    }
     const segments = relative(rootDir, absolutePath).split(sep);
     const topLevel = segments[0] ?? "";
 
