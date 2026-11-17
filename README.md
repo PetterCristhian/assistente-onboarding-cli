@@ -41,9 +41,16 @@ O chat cumprimenta o perfil carregado, mostra a lista de comandos e responde em 
 | `/sair` | Encerra o chat (código 0). Ctrl+C e o fim da entrada também encerram, sem mensagem de erro |
 | `/limpar` | Apaga o histórico da conversa |
 | `/contexto` | Imprime o contexto montado que o modelo recebe |
+| `/detalhes` | Liga ou desliga, no meio da conversa, as linhas `[detalhes]` e `[autoavaliação]` em stderr após cada resposta (começa desligado, ou ligado com `--verbose`). Não vai ao modelo e não consome vaga do limite de perguntas |
 | `/ajuda` | Lista os comandos |
 
 Linha vazia é ignorada e um comando desconhecido só avisa, sem chamar o modelo. Se uma pergunta falhar, ela não entra no histórico e o chat continua aberto.
+
+### Autoavaliação das respostas (ENG-53)
+
+Toda resposta é verificada contra as políticas P1 a P5 antes de ser guardada no histórico. O rascunho aparece aos poucos; em seguida, uma chamada separada avalia o texto. Se for aprovado, ele é a resposta final. Se for reprovado, o chat avisa em stdout que a resposta acima foi retirada, com a regra violada, e prepara uma única revisão, que só é exibida depois de também ser aprovada. Se a revisão for reprovada, ou se a verificação falhar (erro, saída inválida, recusa), o chat mostra a mensagem segura de `context/fallback.md`. O histórico só guarda texto aprovado ou essa mensagem. Cada turno faz no máximo 4 chamadas ao modelo e consome uma só vaga do limite de perguntas. Os prompts do avaliador e da revisão ficam em `context/avaliador.md` e `context/revisao.md`.
+
+Cada turno enviado ao modelo é registrado em `logs/sessao-<data>.jsonl` (uma linha JSON por turno, com rascunho, parecer, origem da resposta final e regra violada; o escritor único redige as credenciais). A pasta `logs/` é ignorada pelo Git. Uma falha ao gravar o log é avisada uma vez e não interrompe o chat.
 
 ### Opções de inicialização
 
@@ -57,7 +64,7 @@ npm run chat -- [opções]
 | `--perfil <nome\|arquivo>` | Troca a camada 3. Sem `/`, `\`, `:` nem extensão `.json`, é o nome de um perfil de `03-usuario/` (por exemplo `--perfil nome-do-perfil`); caso contrário é o caminho de um arquivo `.json`, a partir da pasta atual. Um nome nunca vira caminho, nem o contrário |
 | `--context-dir <pasta>` | Lê as quatro camadas de outra pasta com a mesma estrutura de `context/` |
 | `--show-context` | Imprime o contexto final, respeitando as outras opções, e sai com código 0. Não chama o modelo, não lê o `.env` e não exige a chave |
-| `--verbose` | Detalhes técnicos em stderr: no início, os caminhos das quatro fontes do contexto; depois de cada resposta, uma linha `[detalhes]` com modelo, trechos, tokens e tempo. Nunca imprime o contexto, a pergunta nem a chave. Formato provisório (a ENG-53 o estende) |
+| `--verbose` | Detalhes técnicos em stderr: no início, os caminhos das quatro fontes do contexto; depois de cada resposta, uma linha `[detalhes]` com modelo, trechos, tokens (soma das chamadas do turno) e tempo, e uma linha `[autoavaliação]` com o resultado (`aprovada`, ou `reprovada: P2 (motivo); origem=revisao; chamadas=4`). Nunca imprime o contexto, a pergunta nem a chave. Equivale a começar com `/detalhes` ligado |
 | `-h`, `--help` | Lista as opções |
 
 A chave da API **não é** uma opção: ela vem só de `OPENAI_API_KEY` (`.env` ou ambiente), para não ficar no histórico do shell. Opção repetida, argumento solto ou opção desconhecida são erro de uso (código 1, com a dica `Use --help`). Arquivo de perfil, de instruções ou de camada que não exista, não seja um arquivo comum ou passe de 64 KiB também encerra com código 1 e uma mensagem que cita o caminho. Um arquivo cujo nome começa com `.env` é recusado como `--system-prompt` e como perfil.
