@@ -96,7 +96,7 @@ sequenceDiagram
     participant A as Modelo (autoavaliação)
 
     U->>S: pergunta
-    S->>S: limite local (F9b). Se excedido: avisa o tempo de espera e encerra o turno
+    S->>S: limite local (F9b), uma vaga por pergunta aceita. Se excedido: avisa os segundos de espera e encerra o turno (a bateria aguarda em vez de recusar)
     S->>G: contexto em 4 camadas + histórico + pergunta (stream)
     G-->>U: rascunho exibido em streaming (F6)
     S->>A: políticas + dados + pergunta + rascunho (saída estruturada)
@@ -176,9 +176,9 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   │   ├── errors.ts             # classifyError(): transitório / rate limit / fatal; textos de falha e de aviso
 │   │   └── retry.ts              # withRetry(): backoff exponencial, jitter, retry-after, onRetry, espera abortável
 │   ├── chat/
-│   │   ├── session.ts            # histórico em memória + pipeline do turno
+│   │   ├── session.ts            # histórico em memória + pipeline do turno (aplica o limite local)
 │   │   ├── critique.ts           # autoavaliação com saída estruturada
-│   │   └── rate-limiter.ts       # janela deslizante local
+│   │   └── rate-limiter.ts       # janela deslizante local: relógio e espera injetados; recusa ou aguarda; sem I/O
 │   ├── security/
 │   │   ├── redact.ts             # remove credenciais de qualquer texto gravado
 │   │   ├── safe-writer.ts        # escritor único de outputs/ e logs/ (aplica redact)
@@ -234,8 +234,8 @@ Variáveis de ambiente (todas documentadas em `.env.example`; só `OPENAI_API_KE
 | `REQUEST_TIMEOUT_MS` | `60000` | Tempo limite por chamada |
 | `RETRY_MAX_ATTEMPTS` | `3` | Novas tentativas após a primeira falha |
 | `RETRY_BASE_DELAY_MS` | `1000` | Base do backoff exponencial |
-| `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas permitidas por janela (limite local) |
-| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local |
+| `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas permitidas por janela (limite local; inteiro >= 1, sem teto superior) |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local (inteiro >= 1, sem teto superior) |
 
 Opções de linha de comando do chat (`src/cli/args.ts`, o único arquivo que usa `parseArgs`; `src/cli/main.ts` é o único que lê `process.argv`): `--system-prompt <arquivo>` (substitui só a camada 1; `.md` ou `.txt`), `--perfil <nome|arquivo>` (escolhe a camada 3: nome de `03-usuario/` ou caminho de um `.json`), `--context-dir <pasta>` (troca o domínio), `--verbose` (detalhes técnicos em stderr; provisório até a ENG-53), `--show-context` (imprime o contexto montado e sai antes de ler a configuração: sem chave, sem `.env`, sem rede) e `-h`/`--help`. A chave da API não é opção, e um teste confere que o parser não declara nenhuma. Opção repetida e argumento posicional são erro de uso. Códigos de saída: 0 normal, ajuda e `--show-context`; 1 uso inválido, configuração ou contexto; 2 erro inesperado. Todo arquivo de camada tem no máximo 64 KiB e precisa ser um arquivo comum.
 
