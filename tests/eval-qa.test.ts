@@ -107,6 +107,19 @@ function setup(
     runs,
     batteryId: ID,
     llm,
+    // A judge that always approves: the runner and the verdict are what is tested.
+    judge: () =>
+      Promise.resolve({
+        situacao: "ok",
+        passou: true,
+        justificativa: "ok",
+        modelo: "modelo-juiz",
+        novasTentativas: 0,
+      }),
+    fingerprints: {
+      hashContexto: `sha256:${"1".repeat(64)}`,
+      hashCasos: `sha256:${"2".repeat(64)}`,
+    },
     contexts: new Map(
       cases.map((c): [string, BatteryContext] => [c.perfil, CONTEXT]),
     ),
@@ -307,12 +320,18 @@ describe("buildVerdict: every combination", () => {
     for (const evaluationFailed of [false, true]) {
       for (const text of [good, bad, ""]) {
         it(`origin=${origin} evalFailed=${evaluationFailed} text=${JSON.stringify(text)}`, () => {
-          const verdict = buildVerdict(caso, {
-            kind: "answered",
-            text,
-            origin,
-            evaluationFailed,
-          });
+          const judged = {
+            situacao: "ok",
+            passou: true,
+            justificativa: "ok",
+            modelo: "modelo-juiz",
+            novasTentativas: 0,
+          } as const;
+          const verdict = buildVerdict(
+            caso,
+            { kind: "answered", text, origin, evaluationFailed },
+            judged,
+          );
           if (evaluationFailed) {
             expect(verdict.resultado).toBe("erro");
             expect(verdict.motivo).toBe(EVALUATION_UNAVAILABLE);
@@ -329,7 +348,10 @@ describe("buildVerdict: every combination", () => {
           } else {
             expect(verdict.resultado).toBe("falhou");
           }
-          expect(verdict.juiz).toBeNull();
+          // The judge is only recorded when it was needed.
+          expect(verdict.juiz).toEqual(
+            evaluationFailed || origin === "fallback" ? null : judged,
+          );
         });
       }
     }

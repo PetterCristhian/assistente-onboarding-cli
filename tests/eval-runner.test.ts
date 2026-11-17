@@ -18,7 +18,12 @@ import {
 import { createStreamRedactor } from "../src/security/stream-redact.js";
 import type { BatteryContext } from "../evals/contexts.js";
 import { loadBatteryContexts } from "../evals/contexts.js";
-import { execucaoSchema, type ExecutionLine } from "../evals/record.js";
+import { createJudge, type Judge, type JudgeInput } from "../evals/judge.js";
+import {
+  execucaoSchema,
+  type ExecutionLine,
+  type JudgeResult,
+} from "../evals/record.js";
 import {
   exitCodeFor,
   planExecutions,
@@ -81,6 +86,27 @@ const CONTEXT: BatteryContext = {
   critique: makeCritiqueDeps(),
 };
 
+const HASH_CONTEXT = `sha256:${"1".repeat(64)}`;
+const HASH_CASES = `sha256:${"2".repeat(64)}`;
+
+const JUDGE_PASSED: JudgeResult = {
+  situacao: "ok",
+  passou: true,
+  justificativa: "cumpre a rubrica",
+  modelo: "modelo-juiz",
+  novasTentativas: 0,
+};
+
+/** A judge that does not touch the client: it answers and records its inputs. */
+function stubJudge(result: JudgeResult = JUDGE_PASSED) {
+  const inputs: JudgeInput[] = [];
+  const judge: Judge = (input) => {
+    inputs.push(input);
+    return Promise.resolve(result);
+  };
+  return { judge, inputs };
+}
+
 /** A draft that the evaluator approves. */
 function approvedTurn(text: string): FakeLlmStep[] {
   return [{ text }, approvedStep()];
@@ -99,7 +125,7 @@ function makeClocks() {
 interface Setup {
   readonly root: string;
   readonly printed: string[];
-  readonly deps: BatteryDeps;
+  deps: BatteryDeps;
 }
 
 function setup(
@@ -116,6 +142,8 @@ function setup(
     runs,
     batteryId: BATTERY_ID,
     llm,
+    judge: stubJudge().judge,
+    fingerprints: { hashContexto: HASH_CONTEXT, hashCasos: HASH_CASES },
     contexts: new Map(
       cases.map((caso): [string, BatteryContext] => [caso.perfil, CONTEXT]),
     ),
@@ -263,10 +291,10 @@ describe("runBattery: 2 cases x 2 executions", () => {
 
     expect(text).toContain("[1/4] CT01 execução 1/2 ...\n");
     expect(text).toContain(
-      "[1/4] CT01 execução 1/2 ... passou | origem rascunho | ",
+      "[1/4] CT01 execução 1/2 ... passou | juiz: passou | origem rascunho | ",
     );
     expect(text).toContain(
-      "[4/4] CT02 execução 2/2 ... falhou | origem rascunho | ",
+      "[4/4] CT02 execução 2/2 ... falhou | juiz: passou | origem rascunho | ",
     );
     expect(text).toContain(
       "Resumo: 4 de 4 execuções gravadas | passou 2 | falhou 2 | erro 0",
@@ -634,6 +662,335 @@ describe("runBattery: the local limit", () => {
     expect(
       firstOf(lines.slice(1)).turnos[0]?.avisos.map((notice) => notice.texto),
     ).toContainEqual(expect.stringContaining("Aguardando 1 s"));
+  });
+});
+
+const JUDGE_MODEL = "modelo-do-juiz";
+
+/** A draft that the evaluator approves, followed by the answer of the judge. */
+function judgedTurn(text: string, passou = true): FakeLlmStep[] {
+  return [
+    ...approvedTurn(text),
+    { value: { justificativa: "decisão do juiz", passou }, model: JUDGE_MODEL },
+  ];
+}
+
+function judgeCalls(fake: FakeLlmClient) {
+  return fake.calls.filter(
+    (call) =>
+      call.kind === "generateStructured" && call.request.schemaName === "juiz",
+  );
+}
+
+/** The real judge over the same client as the chatbot, as the entry point wires it. */
+function realJudge(llm: LlmClient): Judge {
+  return createJudge({
+    llm,
+    model: JUDGE_MODEL,
+    prompt: "PROMPT-DO-JUIZ",
+    redact: createRedactor([KEY]),
+  });
+}
+
+describe("runBattery: the judge", () => {
+  const cases = [
+    makeCase("CT01", {
+      comportamentoEsperado: "Esperado do primeiro.",
+      criterios: {
+        deveConter: [["alfa"]],
+        naoDeveConter: [],
+        rubrica: "Rubrica do primeiro.",
+      },
+    }),
+    makeCase("CT02", {
+      perfil: "egon-pires",
+      comportamentoEsperado: "Esperado do segundo.",
+      criterios: {
+        deveConter: [["beta"]],
+        naoDeveConter: [],
+        rubrica: "Rubrica do segundo.",
+      },
+    }),
+  ];
+  const first = firstOf(cases);
+
+  async function runTwoByTwo() {
+    const fake = createFakeLlmClient([
+      ...judgedTurn("alfa um"),
+      ...judgedTurn("beta um"),
+      ...judgedTurn("alfa dois", false),
+      ...judgedTurn("beta dois"),
+    ]);
+    const ready = setup(fake, cases, {}, 2);
+    ready.deps = { ...ready.deps, judge: realJudge(fake) };
+    const result = await runBattery(ready.deps);
+    return { fake, ready, result };
+  }
+
+  it("asks the judge once per execution, with the model of the judge, and records it in every line", async () => {
+    const { fake, ready, result } = await runTwoByTwo();
+    const lines = readLines(ready.root);
+
+    expect(lines).toHaveLength(4);
+    expect(judgeCalls(fake)).toHaveLength(4);
+    for (const call of judgeCalls(fake)) {
+      expect(call.request.model).toBe(JUDGE_MODEL);
+    }
+    expect(lines.map((line) => line.veredito.juiz?.situacao)).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+    ]);
+    // CT02 fails its own check ("beta" is only in the answer of CT02).
+    expect(lines.map((line) => line.veredito.resultado)).toEqual([
+      "passou",
+      "passou",
+      "falhou",
+      "passou",
+    ]);
+    expect(firstOf(lines).veredito.juiz).toEqual({
+      situacao: "ok",
+      passou: true,
+      justificativa: "decisão do juiz",
+      modelo: JUDGE_MODEL,
+      novasTentativas: 0,
+    });
+    expect(result.counts).toEqual({ passou: 3, falhou: 1, erro: 0 });
+    for (const line of lines) {
+      expect(line.esquema).toBe(1);
+      expect(line.hashContexto).toBe(HASH_CONTEXT);
+      expect(line.hashCasos).toBe(HASH_CASES);
+    }
+  });
+
+  it("gives the judge the gabarito of the case in memory and the answer of each run", async () => {
+    const { fake } = await runTwoByTwo();
+    const sent = judgeCalls(fake).map(
+      (call) => call.request.input[0]?.content ?? "",
+    );
+
+    expect(sent[0]).toContain("Esperado do primeiro.");
+    expect(sent[0]).toContain("Rubrica do primeiro.");
+    expect(sent[0]).toContain("alfa um");
+    expect(sent[1]).toContain("Rubrica do segundo.");
+    expect(sent[1]).toContain("beta um");
+    expect(sent[2]).toContain("alfa dois");
+  });
+
+  it("shows the result of the judge next to the result of the execution", async () => {
+    const { ready } = await runTwoByTwo();
+    const text = ready.printed.join("");
+
+    expect(text).toContain("... passou | juiz: passou | origem rascunho | ");
+    expect(text).toContain("... falhou | juiz: falhou | origem rascunho | ");
+  });
+
+  it("sends every turn of a case with several turns, the last one judged", async () => {
+    const fake = createFakeLlmClient([
+      ...approvedTurn("resposta um"),
+      ...judgedTurn("resposta dois"),
+    ]);
+    const caso = makeCase("CT03", {
+      categoria: "acompanhamento",
+      turnos: ["Primeira?", "Segunda?"],
+    });
+    const ready = setup(fake, [caso]);
+    ready.deps = { ...ready.deps, judge: realJudge(fake) };
+
+    await runBattery(ready.deps);
+    const sent = judgeCalls(fake)[0]?.request.input[0]?.content ?? "";
+
+    expect(sent).toContain("Primeira?");
+    expect(sent).toContain("resposta um");
+    expect(sent).toContain('<turno avaliado="sim">\n<pergunta>\nSegunda?');
+  });
+
+  it("does not call the judge for the safe message, nor for an error", async () => {
+    const fake = createFakeLlmClient([
+      // Execution 1: the safe message.
+      { text: "rascunho" },
+      rejectedStep("P1"),
+      { text: "revisão" },
+      rejectedStep("P1"),
+      // Execution 2: the provider fails.
+      { error: Object.assign(new Error("indisponível"), { status: 503 }) },
+      // Execution 3: the self-evaluation is unavailable.
+      { text: "rascunho" },
+      { error: new Error("sem avaliação") },
+    ]);
+    const judge = stubJudge();
+    const ready = setup(fake, [makeCase("CT01")], { judge: judge.judge }, 3);
+
+    await runBattery(ready.deps);
+    const lines = readLines(ready.root);
+
+    expect(judge.inputs).toHaveLength(0);
+    expect(lines.map((line) => line.veredito.resultado)).toEqual([
+      "falhou",
+      "erro",
+      "erro",
+    ]);
+    for (const line of lines) {
+      expect(line.veredito.juiz).toBeNull();
+    }
+    expect(ready.printed.join("")).not.toContain("juiz:");
+  });
+
+  it("takes a slot of the same limiter and waits for it", async () => {
+    let time = 0;
+    const sleeps: number[] = [];
+    let acquires = 0;
+    const real = createRateLimiter({
+      maxRequests: 1,
+      windowSeconds: 1,
+      now: () => time,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        time += ms;
+        return Promise.resolve();
+      },
+    });
+    const limiter: RateLimiter = {
+      ...real,
+      acquire: (options) => {
+        acquires += 1;
+        return real.acquire(options);
+      },
+    };
+    const fake = createFakeLlmClient(judgedTurn("alfa"));
+    const ready = setup(fake, [makeCase("CT01")], { limiter });
+    ready.deps = { ...ready.deps, judge: realJudge(fake) };
+
+    const result = await runBattery(ready.deps);
+
+    // One slot for the question, one for the judge, which had to wait.
+    expect(acquires).toBe(2);
+    expect(sleeps.length).toBeGreaterThanOrEqual(1);
+    expect(ready.printed.join("")).toContain(
+      "  aguardando 1 s (limite local)\n",
+    );
+    expect(result.counts.passou).toBe(1);
+  });
+
+  it("does not write the execution when the battery is stopped during the judge", async () => {
+    const controller = new AbortController();
+    const fake = createFakeLlmClient(approvedTurn("alfa"));
+    const judge: Judge = () => {
+      controller.abort();
+      return Promise.resolve(JUDGE_PASSED);
+    };
+    const ready = setup(fake, [makeCase("CT01"), makeCase("CT02")], {
+      judge,
+      signal: controller.signal,
+    });
+
+    const result = await runBattery(ready.deps);
+
+    expect(result.interrupted).toBe(true);
+    expect(result.lines).toEqual([]);
+    expect(exitCodeFor(result)).toBe(130);
+    expect(() => readFileSync(join(ready.root, FILE))).toThrow();
+  });
+
+  it("does not write the execution when the battery is stopped while the judge waits for the limit", async () => {
+    const controller = new AbortController();
+    let taken = 0;
+    const limiter: RateLimiter = {
+      maxRequests: 10,
+      windowSeconds: 60,
+      tryAcquire: () => ({ allowed: true }),
+      acquire: (options) => {
+        taken += 1;
+        if (taken === 1) {
+          return Promise.resolve({ allowed: true });
+        }
+        controller.abort();
+        options?.signal?.throwIfAborted();
+        return Promise.resolve({ allowed: true });
+      },
+    };
+    const fake = createFakeLlmClient(approvedTurn("alfa"));
+    const judge = stubJudge();
+    const ready = setup(fake, [makeCase("CT01")], {
+      limiter,
+      judge: judge.judge,
+      signal: controller.signal,
+    });
+
+    const result = await runBattery(ready.deps);
+
+    expect(taken).toBe(2);
+    expect(result.interrupted).toBe(true);
+    expect(result.lines).toEqual([]);
+    expect(judge.inputs).toHaveLength(0);
+  });
+
+  it("records an unavailable judge as an error when the checks hold, and as a failure when they do not", async () => {
+    const fake = createFakeLlmClient([
+      ...approvedTurn("alfa"),
+      { error: new Error("o juiz caiu") },
+      ...approvedTurn("sem o termo"),
+      { error: new Error("o juiz caiu") },
+    ]);
+    const ready = setup(fake, [first], {}, 2);
+    ready.deps = { ...ready.deps, judge: realJudge(fake) };
+
+    const result = await runBattery(ready.deps);
+    const lines = readLines(ready.root);
+
+    expect(lines.map((line) => line.veredito.resultado)).toEqual([
+      "erro",
+      "falhou",
+    ]);
+    expect(lines[0]?.veredito.motivo).toBe("juiz indisponível");
+    expect(lines.map((line) => line.veredito.juiz?.situacao)).toEqual([
+      "erro",
+      "erro",
+    ]);
+    expect(result.counts).toEqual({ passou: 0, falhou: 1, erro: 1 });
+    expect(exitCodeFor(result)).toBe(1);
+    expect(ready.printed.join("")).toContain(
+      "erro | juiz: erro | juiz indisponível",
+    );
+  });
+
+  it("keeps a key that the judge quotes out of the file", async () => {
+    const fake = createFakeLlmClient([
+      ...approvedTurn("alfa"),
+      { value: { justificativa: `citou ${KEY}`, passou: true } },
+    ]);
+    const ready = setup(fake, [first]);
+    ready.deps = { ...ready.deps, judge: realJudge(fake) };
+
+    await runBattery(ready.deps);
+    const content = readFileSync(join(ready.root, FILE), "utf8");
+
+    expect(content).not.toContain(KEY);
+    expect(content).toContain("[REDACTED");
+  });
+
+  it("keeps a key out of the file even when the judge hands it over unredacted", async () => {
+    const fake = createFakeLlmClient(approvedTurn("alfa"));
+    const judge = stubJudge({
+      ...JUDGE_PASSED,
+      justificativa: `citou ${KEY}`,
+    });
+    const ready = setup(fake, [first], { judge: judge.judge });
+
+    await runBattery(ready.deps);
+
+    expect(readFileSync(join(ready.root, FILE), "utf8")).not.toContain(KEY);
+  });
+
+  it("refuses to write a line that breaks its own schema, as an unexpected error", async () => {
+    const fake = createFakeLlmClient(approvedTurn("alfa"));
+    const ready = setup(fake, [first], {
+      judge: stubJudge({ ...JUDGE_PASSED, novasTentativas: -1 }).judge,
+    });
+
+    await expect(runBattery(ready.deps)).rejects.toThrow();
+    expect(() => readFileSync(join(ready.root, FILE))).toThrow();
   });
 });
 

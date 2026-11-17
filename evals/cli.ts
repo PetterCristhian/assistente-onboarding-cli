@@ -4,8 +4,9 @@
 //
 // The order is on purpose, so that nothing costs money before it is right:
 // arguments, the cases, the selection of the case, the context of every
-// profile (all BEFORE the key is read), the configuration, and only then the
-// client, the limiter and the folder.
+// profile, the prompt of the judge and the fingerprints (all BEFORE the key is
+// read), the configuration, and only then the client, the limiter and the
+// folder.
 //
 // Exit codes: 0 = every execution passed; 1 = one failed or erred; 2 = the
 // battery did not run (invalid use, configuration, context, an unexpected
@@ -13,6 +14,7 @@
 import { createRateLimiter } from "../src/chat/rate-limiter.js";
 import { sanitizeForTerminal, type TextSink } from "../src/cli/renderer.js";
 import { ConfigError, type AppConfig } from "../src/config/env.js";
+import { loadJudgePrompt, readContextTree } from "../src/context/loaders.js";
 import { ContextError } from "../src/context/types.js";
 import type { LlmClient } from "../src/llm/client.js";
 import { summarizeError } from "../src/security/error-summary.js";
@@ -24,7 +26,9 @@ import {
 import { createStreamRedactor } from "../src/security/stream-redact.js";
 import { EVAL_HELP_TEXT, parseEvalArgs } from "./args.js";
 import { uniqueBatteryId } from "./battery-id.js";
+import { hashContextFiles, hashText } from "./context-hash.js";
 import { loadBatteryContexts } from "./contexts.js";
+import { createJudge } from "./judge.js";
 import { exitCodeFor, runBattery } from "./runner.js";
 import { parseCases, type Caso } from "./schema.js";
 
@@ -93,7 +97,8 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
     }
     const { options } = parsed;
 
-    const cases = parseCases(deps.readCases());
+    const rawCases = deps.readCases();
+    const cases = parseCases(rawCases);
     const choice = selectCases(cases, options.caseId);
     if ("unknown" in choice) {
       printError(
@@ -109,6 +114,13 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
       contextDir: deps.contextDir,
       now: deps.now,
     });
+
+    const judgePrompt = loadJudgePrompt(deps.contextDir);
+    // The fingerprints of what is about to run, taken before the key is read.
+    const fingerprints = {
+      hashContexto: hashContextFiles(readContextTree(deps.contextDir)),
+      hashCasos: hashText(rawCases),
+    };
 
     const config = deps.loadConfig();
     redactText = createRedactor([config.openaiApiKey]);
@@ -140,11 +152,20 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
     };
 
     const batteryId = uniqueBatteryId(deps.now(), deps.folderExists);
+    // One client for the chatbot and for the judge: one path to the provider.
+    const llm = deps.createClient(config);
     const result = await runBattery({
       cases: selected,
       runs: options.runs,
       batteryId,
-      llm: deps.createClient(config),
+      llm,
+      judge: createJudge({
+        llm,
+        model: config.evalJudgeModel,
+        prompt: judgePrompt,
+        redact: redactText,
+      }),
+      fingerprints,
       contexts,
       redact: redactText,
       redactStream,
