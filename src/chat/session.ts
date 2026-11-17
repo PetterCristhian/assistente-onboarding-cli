@@ -8,6 +8,7 @@ import {
   type LlmClient,
   type LlmMessage,
   type LlmTextResult,
+  type LlmUsage,
 } from "../llm/client.js";
 import {
   summarizeError,
@@ -35,7 +36,14 @@ export interface ChatSessionDeps {
 }
 
 export type TurnResult =
-  | { status: "answered"; text: string; model: string; chunks: number }
+  | {
+      status: "answered";
+      text: string;
+      model: string;
+      chunks: number;
+      /** As reported by the provider; absent when it reported none. */
+      usage?: LlmUsage;
+    }
   | { status: "cancelled" }
   | { status: "failed"; summary: ErrorSummary };
 
@@ -119,6 +127,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
         text: result.text,
         model: result.model,
         chunks: result.chunks,
+        ...(result.usage === undefined ? {} : { usage: result.usage }),
       };
     } catch (error) {
       if (streamed) {

@@ -205,3 +205,28 @@ describe("createChatSession", () => {
     expect((await session.ask("P3")).status).toBe("answered");
   });
 });
+
+describe("createChatSession usage (ENG-50)", () => {
+  const USAGE = { inputTokens: 5, outputTokens: 7, totalTokens: 12 };
+
+  it("hands on the usage that the provider reported", async () => {
+    const { session } = setup([{ text: "R", usage: USAGE }]);
+
+    expect(await session.ask("P")).toEqual({
+      status: "answered",
+      text: "R",
+      model: "fake-model",
+      chunks: 1,
+      usage: USAGE,
+    });
+  });
+
+  it("leaves the usage out when the provider reported none", async () => {
+    const { session } = setup([{ text: "R" }]);
+
+    const result = await session.ask("P");
+
+    expect(result).toMatchObject({ status: "answered" });
+    expect(result).not.toHaveProperty("usage");
+  });
+});

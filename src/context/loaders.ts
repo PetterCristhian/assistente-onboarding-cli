@@ -1,8 +1,8 @@
 // One loader per context layer (docs/adr/0003-contexto-em-quatro-camadas.md).
 // Each one reads only its own source. The disk and the clock are received as
 // parameters; nothing here reads the environment, the arguments or the time.
-import { readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { basename, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { z } from "zod";
 import {
@@ -22,8 +22,30 @@ export interface ContextFileReader {
   listFiles(directory: string): string[];
 }
 
+/** Largest file of any layer: far above the real ones, far below a mistake. */
+export const MAX_LAYER_FILE_BYTES = 64 * 1024;
+
+/** Not a regular file (a folder, a device, a pipe). */
+const NOT_REGULAR_CODE = "ENOTREG";
+/** Larger than MAX_LAYER_FILE_BYTES. */
+const TOO_BIG_CODE = "EFBIG";
+
+function codedError(code: string): Error {
+  return Object.assign(new Error(code), { code });
+}
+
 export const nodeFileReader: ContextFileReader = {
-  readText: (path) => readFileSync(path, "utf8"),
+  readText: (path) => {
+    // Checked before reading: a device or a huge file is never read.
+    const stats = statSync(path);
+    if (!stats.isFile()) {
+      throw codedError(NOT_REGULAR_CODE);
+    }
+    if (stats.size > MAX_LAYER_FILE_BYTES) {
+      throw codedError(TOO_BIG_CODE);
+    }
+    return readFileSync(path, "utf8");
+  },
   listFiles: (directory) =>
     readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile())
@@ -41,6 +63,10 @@ const USER_PROFILE_DIR = "03-usuario";
 const COMPANY_DATA_DIR = "04-empresa";
 const PROFILE_EXTENSION = ".json";
 const COMPANY_DATA_EXTENSION = ".md";
+// Files that the user picks must look like what the layer holds.
+const GLOBAL_INSTRUCTIONS_EXTENSIONS: readonly string[] = [".md", ".txt"];
+const PROFILE_FILE_EXTENSIONS: readonly string[] = [PROFILE_EXTENSION];
+const ENV_FILE_PREFIX = ".env";
 
 // Names of the layers in the error messages.
 const GLOBAL_INSTRUCTIONS_LAYER = "instruções globais";
@@ -64,6 +90,8 @@ export interface ContextOptions {
   readonly contextDir?: string;
   /** Name of a profile, without folder and without extension. */
   readonly profile?: string;
+  /** Path of a profile file; excludes `profile`. */
+  readonly profileFile?: string;
   /** Another file for the first layer; the other three do not change. */
   readonly globalInstructionsFile?: string;
 }
@@ -106,9 +134,20 @@ function readLayerFile(
   try {
     raw = reader.readText(path);
   } catch (error) {
-    if (readErrorCode(error) === "ENOENT") {
+    const code = readErrorCode(error);
+    if (code === "ENOENT") {
       throw new ContextError(
         `Arquivo da camada "${layer}" não encontrado. Caminho esperado: ${path}.`,
+      );
+    }
+    if (code === NOT_REGULAR_CODE) {
+      throw new ContextError(
+        `O caminho da camada "${layer}" não é um arquivo comum: ${path}.`,
+      );
+    }
+    if (code === TOO_BIG_CODE) {
+      throw new ContextError(
+        `O arquivo da camada "${layer}" excede ${MAX_LAYER_FILE_BYTES / 1024} KiB: ${path}.`,
       );
     }
     throw unreadable(path, error);
@@ -186,12 +225,56 @@ function isPlainProfileName(profile: string): boolean {
   );
 }
 
-/** Where each layer is read from. Lists the profiles; reads no file. */
+/** A file picked by the user: never an env file, and an expected extension. */
+function refuseUnsuitableFile(
+  file: string,
+  extensions: readonly string[],
+  what: string,
+): void {
+  const path = resolve(file);
+  if (basename(path).toLowerCase().startsWith(ENV_FILE_PREFIX)) {
+    throw new ContextError(
+      `${what} não pode ser um arquivo de ambiente (.env): ${path}.`,
+    );
+  }
+  if (!extensions.includes(extname(path).toLowerCase())) {
+    throw new ContextError(
+      `${what} deve ter a extensão ${extensions.join(" ou ")}: ${path}.`,
+    );
+  }
+}
+
+/** The context folder must exist and be readable as a folder. */
+function requireContextDir(
+  contextDir: string,
+  reader: ContextFileReader,
+): void {
+  try {
+    reader.listFiles(contextDir);
+  } catch (error) {
+    if (readErrorCode(error) === "ENOENT") {
+      throw new ContextError(
+        `Pasta de contexto não encontrada. Caminho esperado: ${contextDir}.`,
+      );
+    }
+    throw unreadable(contextDir, error);
+  }
+}
+
+/**
+ * Where each layer is read from. Lists the profiles (or, with a profile file,
+ * only checks the context folder); reads no file.
+ */
 export function resolveContextSources(
   options: ContextOptions = {},
   reader: ContextFileReader = nodeFileReader,
 ): ContextSources {
-  const { profile } = options;
+  const { profile, profileFile } = options;
+  if (profile !== undefined && profileFile !== undefined) {
+    throw new ContextError(
+      "Informe o perfil por nome ou por arquivo, não os dois.",
+    );
+  }
   if (profile !== undefined && !isPlainProfileName(profile)) {
     throw new ContextError(
       `Perfil "${profile}" inválido: informe apenas o nome do perfil, sem pasta nem extensão.`,
@@ -206,18 +289,47 @@ export function resolveContextSources(
     );
   }
 
+  if (profileFile?.trim() === "") {
+    throw new ContextError(
+      "O arquivo de perfil informado está vazio: informe o caminho de um arquivo.",
+    );
+  }
+  if (globalInstructionsFile !== undefined) {
+    refuseUnsuitableFile(
+      globalInstructionsFile,
+      GLOBAL_INSTRUCTIONS_EXTENSIONS,
+      "O arquivo de instruções globais",
+    );
+  }
+  if (profileFile !== undefined) {
+    refuseUnsuitableFile(
+      profileFile,
+      PROFILE_FILE_EXTENSIONS,
+      "O arquivo de perfil",
+    );
+  }
+
   refuseEmptyContextDir(options.contextDir ?? DEFAULT_CONTEXT_DIR);
   const contextDir = resolve(options.contextDir ?? DEFAULT_CONTEXT_DIR);
-  const profileDir = join(contextDir, USER_PROFILE_DIR);
-  const profiles = listProfiles(contextDir, reader);
-  // listProfiles never returns an empty list.
-  const chosen = profile ?? profiles[0] ?? "";
-  const userProfileFile = join(profileDir, `${chosen}${PROFILE_EXTENSION}`);
 
-  if (!profiles.includes(chosen)) {
-    throw new ContextError(
-      `Perfil "${chosen}" não encontrado. Caminho esperado: ${userProfileFile}. Perfis disponíveis: ${profiles.join(", ")}.`,
+  let userProfileFile: string;
+  if (profileFile === undefined) {
+    const profiles = listProfiles(contextDir, reader);
+    // listProfiles never returns an empty list.
+    const chosen = profile ?? profiles[0] ?? "";
+    userProfileFile = join(
+      contextDir,
+      USER_PROFILE_DIR,
+      `${chosen}${PROFILE_EXTENSION}`,
     );
+    if (!profiles.includes(chosen)) {
+      throw new ContextError(
+        `Perfil "${chosen}" não encontrado. Caminho esperado: ${userProfileFile}. Perfis disponíveis: ${profiles.join(", ")}.`,
+      );
+    }
+  } else {
+    requireContextDir(contextDir, reader);
+    userProfileFile = resolve(profileFile);
   }
 
   return {
@@ -378,14 +490,15 @@ export interface LoadContextDeps {
   readonly now: () => Date;
 }
 
-export function loadContextLayers(
+/** The layers and where each one came from. */
+export function loadContext(
   options: ContextOptions,
   deps: LoadContextDeps,
-): ContextLayers {
+): { layers: ContextLayers; sources: ContextSources } {
   const reader = deps.reader ?? nodeFileReader;
   const sources = resolveContextSources(options, reader);
 
-  return {
+  const layers: ContextLayers = {
     globalInstructions: loadGlobalInstructions(
       sources.globalInstructionsFile,
       reader,
@@ -395,4 +508,12 @@ export function loadContextLayers(
     companyData: loadCompanyData(sources.companyDataDir, reader),
     currentDate: formatCurrentDate(deps.now()),
   };
+  return { layers, sources };
+}
+
+export function loadContextLayers(
+  options: ContextOptions,
+  deps: LoadContextDeps,
+): ContextLayers {
+  return loadContext(options, deps).layers;
 }

@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { HELP_TEXT, parseCliArgs } from "../src/cli/args.js";
 import { userProfileSchema } from "../src/context/types.js";
 import {
   emailDomain,
@@ -153,16 +154,36 @@ describe("architecture rules", () => {
     expect(readers.every((file) => file.startsWith("src/cli/"))).toBe(true);
   });
 
-  // The key is not accepted through a command-line argument. For now no file
-  // of src/ reads the arguments at all. Issue 8 replaces this check by "the
-  // parser declares no option for the key" and by the test of --help.
-  it("does not read command-line arguments in src/", () => {
-    const readers = filesMatching(
-      listTypeScriptFiles("src"),
-      /process\s*\.\s*argv\b|parseArgs/,
-    );
+  // The key is not accepted through a command-line argument: one file parses
+  // the arguments, one file reads them, and the parser has no option for it.
+  it("reads the arguments only in src/cli/main.ts and parses them only in src/cli/args.ts", () => {
+    const files = listTypeScriptFiles("src");
 
-    expect(readers).toEqual([]);
+    expect(filesMatching(files, /process\s*\.\s*argv\b/)).toEqual([
+      "src/cli/main.ts",
+    ]);
+    expect(filesMatching(files, /parseArgs/)).toEqual(["src/cli/args.ts"]);
+  });
+
+  it("declares no option for the key in the parser", () => {
+    const source = readSource("src/cli/args.ts");
+    const block = /OPTION_DEFINITIONS\s*=\s*\{([\s\S]*?)\}\s*as const/.exec(
+      source,
+    );
+    const names = [
+      ...(block?.[1] ?? "").matchAll(/^\s*"?([\w-]+)"?\s*:\s*\{/gm),
+    ].map((match) => match[1] ?? "");
+
+    expect(names).toEqual(
+      expect.arrayContaining(["system-prompt", "perfil", "context-dir"]),
+    );
+    for (const name of names) {
+      expect(name).not.toMatch(
+        /key|chave|token|secret|senha|password|credential/i,
+      );
+    }
+    expect(parseCliArgs(["--api-key", "x"]).kind).toBe("error");
+    expect(HELP_TEXT).not.toMatch(/--api-key|--chave|--key/);
   });
 
   // Architecture rule 1: the domain exists only in context/ and in the cases.

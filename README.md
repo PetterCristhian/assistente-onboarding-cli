@@ -2,7 +2,7 @@
 
 Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboarding de uma empresa fictícia obedecendo a um conjunto de políticas (P1–P5), com o contexto organizado em quatro camadas separadas e evidências de teste versionadas. Trabalho de pós-graduação (Engenharia de Contexto em IA).
 
-> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto (issue 1) e a configuração por ambiente (issue 2) implementados, já funcionam `npm test`, `npm run check` (que agora inclui a varredura de segredos, `npm run check:secrets`) e `npm run chat`. Com os carregadores e o montador de contexto (issue 5), funciona também `npm run contexto`, que não precisa da chave. Com o cliente da OpenAI (issue 6), existe o teste de fumaça `npm run smoke:llm`, que usa a chave e gasta crédito. O `npm run chat` exige `OPENAI_API_KEY` no `.env` ou no ambiente: sem ela, encerra com uma orientação de correção; com ela, por enquanto imprime só uma mensagem provisória. Os demais comandos chegam nas issues seguintes.
+> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto (issue 1) e a configuração por ambiente (issue 2) implementados, já funcionam `npm test`, `npm run check` (que agora inclui a varredura de segredos, `npm run check:secrets`) e `npm run chat`. Com os carregadores e o montador de contexto (issue 5), funciona também `npm run contexto`, que não precisa da chave. Com o cliente da OpenAI (issue 6), existe o teste de fumaça `npm run smoke:llm`, que usa a chave e gasta crédito. Com o chat (ENG-49) e as opções de inicialização (ENG-50), o `npm run chat` aceita `--system-prompt`, `--perfil`, `--context-dir`, `--show-context` e `--verbose`. O `npm run chat` exige `OPENAI_API_KEY` no `.env` ou no ambiente, exceto com `--help` e `--show-context`, que não precisam da chave. Os demais comandos chegam nas issues seguintes.
 
 ## Requisitos
 
@@ -43,7 +43,26 @@ O chat cumprimenta o perfil carregado, mostra a lista de comandos e responde em 
 | `/contexto` | Imprime o contexto montado que o modelo recebe |
 | `/ajuda` | Lista os comandos |
 
-Linha vazia é ignorada e um comando desconhecido só avisa, sem chamar o modelo. Por enquanto o chat não aceita opções de linha de comando (perfil e pasta de contexto padrão); se uma pergunta falhar, ela não entra no histórico e o chat continua aberto.
+Linha vazia é ignorada e um comando desconhecido só avisa, sem chamar o modelo. Se uma pergunta falhar, ela não entra no histórico e o chat continua aberto.
+
+### Opções de inicialização
+
+```bash
+npm run chat -- [opções]
+```
+
+| Opção | O que faz |
+|---|---|
+| `--system-prompt <arquivo>` | Substitui só a camada 1 (instruções globais) pelo arquivo `.md` ou `.txt`. As políticas e a cláusula de precedência continuam no contexto. **O conteúdo do arquivo é enviado ao provedor**, como qualquer instrução: não aponte para um arquivo com segredos |
+| `--perfil <nome\|arquivo>` | Troca a camada 3. Sem `/`, `\`, `:` nem extensão `.json`, é o nome de um perfil de `03-usuario/` (por exemplo `--perfil nome-do-perfil`); caso contrário é o caminho de um arquivo `.json`, a partir da pasta atual. Um nome nunca vira caminho, nem o contrário |
+| `--context-dir <pasta>` | Lê as quatro camadas de outra pasta com a mesma estrutura de `context/` |
+| `--show-context` | Imprime o contexto final, respeitando as outras opções, e sai com código 0. Não chama o modelo, não lê o `.env` e não exige a chave |
+| `--verbose` | Detalhes técnicos em stderr: no início, os caminhos das quatro fontes do contexto; depois de cada resposta, uma linha `[detalhes]` com modelo, trechos, tokens e tempo. Nunca imprime o contexto, a pergunta nem a chave. Formato provisório (a ENG-53 o estende) |
+| `-h`, `--help` | Lista as opções |
+
+A chave da API **não é** uma opção: ela vem só de `OPENAI_API_KEY` (`.env` ou ambiente), para não ficar no histórico do shell. Opção repetida, argumento solto ou opção desconhecida são erro de uso (código 1, com a dica `Use --help`). Arquivo de perfil, de instruções ou de camada que não exista, não seja um arquivo comum ou passe de 64 KiB também encerra com código 1 e uma mensagem que cita o caminho. Um arquivo cujo nome começa com `.env` é recusado como `--system-prompt` e como perfil.
+
+Com `npm run chat --`, tudo o que vem depois do `--` é repassado ao programa.
 
 Para ver o contexto que o modelo recebe, sem a chave e sem acesso à rede:
 
@@ -51,7 +70,7 @@ Para ver o contexto que o modelo recebe, sem a chave e sem acesso à rede:
 npm run contexto
 ```
 
-O comando imprime as quatro camadas de `context/`, cada uma entre os seus marcadores e sempre na mesma ordem: `<instrucoes_globais>`, `<politicas>`, `<dados_do_usuario>` e `<dados_da_empresa>`. Por enquanto ele não aceita opções e usa o perfil padrão, que é o primeiro de `context/03-usuario/` em ordem alfabética; a escolha do perfil e da pasta de contexto chega com as opções do chat. Se um arquivo de camada estiver ausente, vazio ou inválido, o comando encerra com código 1 e uma mensagem que cita o caminho esperado.
+O comando imprime as quatro camadas de `context/`, cada uma entre os seus marcadores e sempre na mesma ordem: `<instrucoes_globais>`, `<politicas>`, `<dados_do_usuario>` e `<dados_da_empresa>`. Ele não aceita opções e usa o perfil padrão, que é o primeiro de `context/03-usuario/` em ordem alfabética. Para escolher o perfil, as instruções ou a pasta de contexto, use `npm run chat -- --show-context` com as opções acima, por exemplo `npm run chat -- --show-context --perfil nome-do-perfil`. Se um arquivo de camada estiver ausente, vazio ou inválido, o comando encerra com código 1 e uma mensagem que cita o caminho esperado.
 
 As demais variáveis são opcionais e estão descritas em `.env.example` e na seção 7 de [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
 
@@ -61,6 +80,7 @@ As demais variáveis são opcionais e estão descritas em `.env.example` e na se
 |---|---|---|
 | `npm test` | Testes unitários (Vitest), sem rede | Não |
 | `npm run contexto` | Imprime o contexto montado (as quatro camadas) do perfil padrão | Não |
+| `npm run chat -- --show-context` | Imprime o contexto montado respeitando `--perfil`, `--system-prompt` e `--context-dir`, sem chamar o modelo | Não |
 | `npm run check` | Portão de qualidade: lint + typecheck + testes unitários + varredura de segredos | Não |
 | `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real (streaming e saída estruturada) | **Sim, e consome crédito** |

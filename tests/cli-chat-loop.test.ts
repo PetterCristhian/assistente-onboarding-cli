@@ -22,7 +22,15 @@ function collect(stream: PassThrough): () => string {
   return () => text;
 }
 
-function setup(script: readonly FakeLlmStep[], shutdown?: AbortSignal) {
+function setup(
+  script: readonly FakeLlmStep[],
+  shutdown?: AbortSignal,
+  extra: {
+    verbose?: boolean;
+    now?: () => number;
+    contextText?: string;
+  } = {},
+) {
   const input = new PassThrough();
   const stdout = new PassThrough();
   const stderr = new PassThrough();
@@ -42,6 +50,7 @@ function setup(script: readonly FakeLlmStep[], shutdown?: AbortSignal) {
     session,
     contextText: context.text,
     profileName: layers.userProfile.nome,
+    ...extra,
     ...(shutdown === undefined ? {} : { shutdown }),
   });
   return { input, fake, out, err, done };
@@ -157,5 +166,91 @@ describe("runChat", () => {
 
     expect(await done).toBe(0);
     expect(fake.calls).toHaveLength(0);
+  });
+});
+
+describe("runChat with verbose (ENG-50)", () => {
+  const USAGE = { inputTokens: 12, outputTokens: 34, totalTokens: 46 };
+
+  function fakeClock(...values: number[]): () => number {
+    let index = 0;
+    return () => values[Math.min(index++, values.length - 1)] ?? 0;
+  }
+
+  it("prints one technical line per answered turn to stderr", async () => {
+    const { input, out, err, done } = setup(
+      [{ text: "R1", chunks: ["R", "1"], usage: USAGE }, { text: "R2" }],
+      undefined,
+      { verbose: true, now: fakeClock(100, 350, 400, 400) },
+    );
+    input.write("P1\n");
+    input.write("P2\n");
+    input.end("/sair\n");
+
+    expect(await done).toBe(0);
+    expect(err()).toBe(
+      "[detalhes] modelo=fake-model trechos=2 tokens=12/34 tempo=250ms\n" +
+        "[detalhes] modelo=fake-model trechos=1 tokens=?/? tempo=0ms\n",
+    );
+    expect(out()).not.toContain("[detalhes]");
+  });
+
+  it("never prints the question, the answer or the context", async () => {
+    const { input, err, done } = setup(
+      [{ text: "RESPOSTA-SECRETA" }],
+      undefined,
+      {
+        verbose: true,
+      },
+    );
+    input.write("PERGUNTA-SECRETA\n");
+    input.end("/sair\n");
+
+    await done;
+
+    expect(err()).not.toContain("PERGUNTA-SECRETA");
+    expect(err()).not.toContain("RESPOSTA-SECRETA");
+    expect(err()).not.toContain(layers.policies.slice(0, 40));
+  });
+
+  it("prints nothing extra when verbose is false or absent", async () => {
+    for (const extra of [{ verbose: false }, {}]) {
+      const { input, err, done } = setup([{ text: "R" }], undefined, extra);
+      input.write("P\n");
+      input.end("/sair\n");
+
+      await done;
+
+      expect(err()).toBe("");
+    }
+  });
+
+  it("prints no line for a turn that failed", async () => {
+    const { input, err, done } = setup(
+      [{ error: new Error("falha inventada") }],
+      undefined,
+      { verbose: true },
+    );
+    input.write("P\n");
+    input.end("/sair\n");
+
+    await done;
+
+    expect(err()).not.toContain("[detalhes]");
+  });
+});
+
+describe("runChat /contexto (ENG-50)", () => {
+  it("prints the context as inert text, without terminal controls", async () => {
+    const { input, out, done } = setup([], undefined, {
+      contextText: "linha\u001b[31m vermelha",
+    });
+    input.write("/contexto\n");
+    input.end("/sair\n");
+
+    await done;
+
+    expect(out()).not.toContain("\u001b");
+    expect(out()).toContain("linha");
   });
 });

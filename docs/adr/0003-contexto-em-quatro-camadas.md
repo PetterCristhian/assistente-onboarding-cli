@@ -75,6 +75,8 @@ Ela não mora no arquivo da camada 1, portanto continua valendo quando o usuári
 ### Reutilização em outro domínio
 
 - `--context-dir <pasta>` (padrão `context/`) aponta para outro conjunto de camadas com a mesma estrutura.
+- `--system-prompt <arquivo>` substitui só a camada 1; `--perfil <nome|arquivo>` troca a camada 3. Nome ou caminho: o valor é um caminho se contém `/` ou `\`, termina em `.json` (sem diferenciar maiúsculas) ou contém `:`; caso contrário é o nome de um perfil de `<context-dir>/03-usuario/`. Nunca há fallback de um para o outro, para que um erro de digitação não leia um arquivo inesperado.
+- `--show-context` imprime o contexto final e sai, sem chave e sem rede.
 - `src/` não contém texto de domínio. Um teste unitário falha se o nome da empresa fictícia aparecer em `src/`.
 - `docs/REUSO.md` descreve o passo a passo: copiar a pasta, reescrever políticas e dados, ajustar o perfil, apontar `--context-dir`.
 
