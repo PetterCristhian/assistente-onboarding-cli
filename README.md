@@ -2,7 +2,7 @@
 
 Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboarding de uma empresa fictícia obedecendo a um conjunto de políticas (P1–P5), com o contexto organizado em quatro camadas separadas e evidências de teste versionadas. Trabalho de pós-graduação (Engenharia de Contexto em IA).
 
-> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto (issue 1) e a configuração por ambiente (issue 2) implementados, já funcionam `npm test`, `npm run check` (que agora inclui a varredura de segredos, `npm run check:secrets`) e `npm run chat`. Com os carregadores e o montador de contexto (issue 5), funciona também `npm run contexto`, que não precisa da chave. Com o cliente da OpenAI (issue 6), existe o teste de fumaça `npm run smoke:llm`, que usa a chave e gasta crédito. Com o chat (ENG-49) e as opções de inicialização (ENG-50), o `npm run chat` aceita `--system-prompt`, `--perfil`, `--context-dir`, `--show-context` e `--verbose`. O `npm run chat` exige `OPENAI_API_KEY` no `.env` ou no ambiente, exceto com `--help` e `--show-context`, que não precisam da chave. Os demais comandos chegam nas issues seguintes.
+> **Estado:** projeto em construção. Este README é o inicial; o guia completo de uso, com roteiro de demonstração, é a issue 18 de [`docs/BACKLOG.md`](docs/BACKLOG.md). Com o esqueleto (issue 1) e a configuração por ambiente (issue 2) implementados, já funcionam `npm test`, `npm run check` (que agora inclui a varredura de segredos, `npm run check:secrets`) e `npm run chat`. Com os carregadores e o montador de contexto (issue 5), funciona também `npm run contexto`, que não precisa da chave. Com o cliente da OpenAI (issue 6), existe o teste de fumaça `npm run smoke:llm`, que usa a chave e gasta crédito. Com o chat (ENG-49) e as opções de inicialização (ENG-50), o `npm run chat` aceita `--system-prompt`, `--perfil`, `--context-dir`, `--show-context` e `--verbose`. O `npm run chat` exige `OPENAI_API_KEY` no `.env` ou no ambiente, exceto com `--help` e `--show-context`, que não precisam da chave. Com a demonstração de falhas (ENG-54), `npm run demo:falhas` funciona sem chave e sem rede. Os demais comandos chegam nas issues seguintes.
 
 ## Requisitos
 
@@ -102,7 +102,7 @@ O limite local conta **perguntas do usuário**, numa janela deslizante: ao ating
 | `npm run contexto` | Imprime o contexto montado (as quatro camadas) do perfil padrão | Não |
 | `npm run chat -- --show-context` | Imprime o contexto montado respeitando `--perfil`, `--system-prompt` e `--context-dir`, sem chamar o modelo | Não |
 | `npm run check` | Portão de qualidade: lint + typecheck + testes unitários + varredura de segredos | Não |
-| `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local (planejado, ENG-54; ainda não existe) | Não |
+| `npm run demo:falhas` | Demonstração de retry e rate limit contra um servidor local simulado; regrava `outputs/evidencias/retry-rate-limit.txt` | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real (streaming e saída estruturada) | **Sim, e consome crédito** |
 | `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real | **Sim, e consome crédito** |
 
@@ -112,9 +112,17 @@ Confirma, contra a API real, que o modelo configurado, o `reasoning.effort` e a 
 
 O comando imprime o modelo pedido e o devolvido, o número de trechos recebidos, o tamanho do texto, o tempo até o primeiro trecho e o total, os tokens, um resumo do objeto estruturado (nomes dos campos, valor do campo enumerado e tamanho do texto livre, nunca o texto) e uma linha por checagem, terminando em `Resultado: APROVADO` ou `Resultado: REPROVADO`. Nada é gravado em disco e tudo o que é impresso passa pela redação de segredos; em caso de falha, aparece só o resumo do erro (status, código, tipo e mensagem), com os identificadores de organização (`org-…`) e de projeto (`proj_…`) mascarados. Mesmo assim, **revise a saída antes de colar em um PR ou issue**: o repositório é público e a mensagem de erro é texto escrito pelo provedor. Código de saída: 0 quando o texto chega em mais de um trecho e o objeto é válido; 1 quando alguma checagem falha ou a chave não está configurada; 2 em erro inesperado.
 
+### Demonstração de falhas (`npm run demo:falhas`)
+
+Mostra, em poucos segundos (menos de 10 no Windows, e o limite é de 60), o tratamento de falhas do provedor pelo **mesmo cliente do chat** (`LlmClient` com `withRetry`, sem cópia da lógica). Um servidor HTTP local, preso a `127.0.0.1` numa porta livre e encerrado ao final, faz o papel da API; o cliente real fala com ele pela `baseURL`, com uma chave falsa. **Não precisa de chave, de `.env` nem de internet**, e nenhuma requisição sai da máquina.
+
+Cinco cenários, cada um identificado na saída: (1) 429 com `Retry-After` e depois sucesso; (2) 429 sem cabeçalho e depois sucesso; (3) 500 repetido até esgotar as tentativas; (4) 401, sem nova tentativa; (5) conexão recusada até esgotar. Para cada um, a saída traz o roteiro do servidor, os avisos de nova tentativa (as mesmas linhas do chat), a espera planejada e a sua origem, o desfecho e uma lista de checagens `[ok]` com esperado x obtido. O resumo final tem uma linha por cenário (`CONFERE` ou `DIVERGE`). O código de saída é 0 só se todos conferem; com Ctrl+C o código é 130 e nada é gravado.
+
+Os cenários usam `maxRetries: 3`, base de 100 ms e `Retry-After: 1`, sem jitter, para que a saída seja sempre a mesma. A transcrição é gravada, pelo escritor único, em [`outputs/evidencias/retry-rate-limit.txt`](outputs/evidencias/retry-rate-limit.txt), **somente se todos os cenários conferem**. O texto gravado não tem data, porta, tempo medido nem caminho; a duração total e o caminho do arquivo aparecem só no terminal. **Atenção: o comando reescreve esse arquivo, que é versionado.** Como o conteúdo é determinístico, rodar de novo não deve gerar diferença no `git diff`; se gerar, algo mudou no comportamento do cliente.
+
 ### Roteiro manual: falhas do provedor
 
-Sem gastar crédito além de uma pergunta e sem alterar o código. Se preferir não usar a rede real, a demonstração com servidor local (`npm run demo:falhas`) chega na ENG-54.
+Sem gastar crédito além de uma pergunta e sem alterar o código. Se preferir não usar a rede real, use a demonstração com servidor local, descrita na seção anterior (`npm run demo:falhas`).
 
 - **(a) Rede desconectada.** Com o chat aberto (`npm run chat`), desligue a rede (Wi-Fi ou cabo) e faça uma pergunta. Aparecem linhas como `Falha de conexão com o provedor. Nova tentativa 1 de 3, em 1 s.`, depois 2 s e 4 s, e por fim a mensagem de que não foi possível obter a resposta depois de 4 tentativas. O chat continua aberto: religue a rede e pergunte de novo. Para ver o fim mais depressa, use `RETRY_MAX_ATTEMPTS=1` no `.env`.
 - **(b) Chave inválida.** Troque o valor de `OPENAI_API_KEY` no `.env` por um texto qualquer com o formato de chave, abra o chat e faça uma pergunta. A resposta é uma única mensagem orientando a conferir `OPENAI_API_KEY` e gerar uma chave nova no painel, sem nova tentativa e sem repetir a chave. Restaure o `.env` depois.
