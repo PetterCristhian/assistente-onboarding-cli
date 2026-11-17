@@ -196,6 +196,8 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │
 ├── evals/
 │   ├── casos.json                # os 12 casos (F11), fonte única
+│   ├── schema.ts                 # esquema zod dos casos e parseCases (ENG-55)
+│   ├── normalize.ts              # normalizeForMatch: comparação sem maiúsculas e acentos
 │   ├── runner.ts                 # entrada de `npm run eval`
 │   ├── verdict.ts                # checagens determinísticas + juiz
 │   └── report.ts                 # RELATORIO.md, resumo.json, docs/CASOS-DE-TESTE.md
