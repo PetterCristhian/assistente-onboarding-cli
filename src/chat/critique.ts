@@ -108,9 +108,14 @@ export function buildEvaluatorContext(sections: ContextSections): string {
 // A tag of the delimiters, opening or closing, inside the text under audit.
 const DELIMITER_TAG = /<(\s*\/?\s*(?:pergunta|rascunho)\b)/gi;
 
-/** The text cannot close (or open) the delimiter that holds it. */
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
+
+/**
+ * The text cannot close (or open) the delimiter that holds it. Format
+ * characters are taken out first: `<` + U+200B + `/rascunho` would escape.
+ */
 function neutralizeDelimiters(text: string): string {
-  return text.replace(DELIMITER_TAG, "&lt;$1");
+  return text.replace(FORMAT_CHARACTERS, "").replace(DELIMITER_TAG, "&lt;$1");
 }
 
 export interface EvaluationInput {
