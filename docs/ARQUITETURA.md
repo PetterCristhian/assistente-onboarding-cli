@@ -159,6 +159,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 ├── src/
 │   ├── cli/
 │   │   ├── main.ts               # entrada do chat: argumentos, laço readline
+│   │   ├── chat-loop.ts          # laço readline: lê linhas, executa comandos, encerra com Ctrl+C
 │   │   ├── commands.ts           # /sair /limpar /contexto /detalhes /ajuda
 │   │   └── renderer.ts           # escrita no terminal (stream, avisos, modo detalhado)
 │   ├── config/

@@ -34,6 +34,17 @@ Depois:
 npm run chat
 ```
 
+O chat cumprimenta o perfil carregado, mostra a lista de comandos e responde em sequência, com a resposta aparecendo aos poucos. Uma pergunta de acompanhamento considera os turnos anteriores; o histórico fica só na memória e some ao sair. Comandos dentro do chat:
+
+| Comando | O que faz |
+|---|---|
+| `/sair` | Encerra o chat (código 0). Ctrl+C e o fim da entrada também encerram, sem mensagem de erro |
+| `/limpar` | Apaga o histórico da conversa |
+| `/contexto` | Imprime o contexto montado que o modelo recebe |
+| `/ajuda` | Lista os comandos |
+
+Linha vazia é ignorada e um comando desconhecido só avisa, sem chamar o modelo. Por enquanto o chat não aceita opções de linha de comando (perfil e pasta de contexto padrão); se uma pergunta falhar, ela não entra no histórico e o chat continua aberto.
+
 Para ver o contexto que o modelo recebe, sem a chave e sem acesso à rede:
 
 ```bash
