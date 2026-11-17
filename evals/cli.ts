@@ -124,6 +124,8 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
 
     const config = deps.loadConfig();
     redactText = createRedactor([config.openaiApiKey]);
+    const reportFailure = (path: string, error: unknown): string =>
+      `Não foi possível gravar o resumo da bateria em ${path}: ${summarizeError(error, redactText).message} As execuções já gravadas em execucoes.jsonl ficam na pasta.`;
     const redactStream = () => createStreamRedactor([config.openaiApiKey]);
 
     // One limiter for the whole battery, and it waits (the chat refuses).
@@ -149,6 +151,20 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
           );
         }
       },
+      writeJson: async (path, value) => {
+        try {
+          return await realWriter.writeJson(path, value);
+        } catch (error) {
+          throw new EvidenceWriteError(reportFailure(path, error));
+        }
+      },
+      writeText: async (path, content) => {
+        try {
+          return await realWriter.writeText(path, content);
+        } catch (error) {
+          throw new EvidenceWriteError(reportFailure(path, error));
+        }
+      },
     };
 
     const batteryId = uniqueBatteryId(deps.now(), deps.folderExists);
@@ -166,6 +182,7 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
         redact: redactText,
       }),
       fingerprints,
+      catalogSize: cases.length,
       contexts,
       redact: redactText,
       redactStream,

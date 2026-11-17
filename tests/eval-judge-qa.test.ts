@@ -4,6 +4,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -29,6 +30,7 @@ import {
 import {
   execucaoSchema,
   parseExecutionLine,
+  type ExecutionLine,
   type JudgeResult,
 } from "../evals/record.js";
 import { buildVerdict, type Outcome } from "../evals/verdict.js";
@@ -300,6 +302,39 @@ describe("line schema: forged lines", () => {
     }
   });
 
+  it("rejects a falhou with no reason in the line, and an erro that would be a falhou", () => {
+    const forged = [
+      // falhou: checks all ok and the judge approved (it was a pass)
+      { resultado: "falhou", checagens: [check(true)], juiz: judgeOk(true) },
+      // falhou: checks all ok and the judge did not answer (it was an erro)
+      { resultado: "falhou", checagens: [check(true)], juiz: judgeErr },
+      // erro with a judge: a failed check makes it a falhou
+      { resultado: "erro", checagens: [check(false)], juiz: judgeErr },
+      // erro with a judge: no checks at all
+      { resultado: "erro", checagens: [], juiz: judgeErr },
+      // erro with no judge and no reason
+      { resultado: "erro", checagens: [], juiz: null },
+    ];
+    for (const veredito of forged) {
+      expect(execucaoSchema.safeParse(line(veredito)).success).toBe(false);
+    }
+  });
+
+  it("accepts every combination that the verdict builds", () => {
+    const valid = [
+      { resultado: "falhou", checagens: [check(true)], juiz: null },
+      { resultado: "falhou", checagens: [], juiz: null, motivo: "m" },
+      { resultado: "falhou", checagens: [check(false)], juiz: judgeErr },
+      { resultado: "falhou", checagens: [check(false)], juiz: judgeOk(true) },
+      { resultado: "falhou", checagens: [check(true)], juiz: judgeOk(false) },
+      { resultado: "erro", checagens: [check(true)], juiz: judgeErr },
+      { resultado: "erro", checagens: [], juiz: null, motivo: "m" },
+    ];
+    for (const veredito of valid) {
+      expect(execucaoSchema.safeParse(line(veredito)).success).toBe(true);
+    }
+  });
+
   it("refuses an old line, another version and malformed hashes", () => {
     const good = line({
       resultado: "passou",
@@ -470,15 +505,14 @@ describe("batteryIdFrom limits", () => {
 });
 
 describe("runBattery with a judge that throws", () => {
-  it("stops the battery with the error, keeps the lines already written and never writes a passed line for it", async () => {
+  it("records the failure as an erro line for the judge, goes on, and never writes a pass for it", async () => {
     const { createRateLimiter } = await import("../src/chat/rate-limiter.js");
     const { createSafeWriter } = await import("../src/security/safe-writer.js");
     const { createStreamRedactor } =
       await import("../src/security/stream-redact.js");
-    const { runBattery } = await import("../evals/runner.js");
+    const { exitCodeFor, runBattery } = await import("../evals/runner.js");
     const { approvedStep, makeCritiqueDeps } =
       await import("./helpers/critique-fixtures.js");
-    const { readFileSync } = await import("node:fs");
     const key = fakeOpenAiKey();
     const redact = createRedactor([key]);
     const root = tmp();
@@ -500,7 +534,7 @@ describe("runBattery with a judge that throws", () => {
       approvedStep(),
     ]);
     let tick = 0;
-    const run = runBattery({
+    const result = await runBattery({
       cases: [caso],
       runs: 2,
       batteryId: "2026-11-20T14-30-00Z",
@@ -538,14 +572,37 @@ describe("runBattery with a judge that throws", () => {
       nowMs: () => (tick += 1),
       print: () => undefined,
     });
-    await expect(run).rejects.toThrow("sync judge failure");
     const written = readFileSync(
       join(root, "outputs/2026-11-20T14-30-00Z/execucoes.jsonl"),
       "utf8",
     )
       .split("\n")
       .filter(Boolean);
-    expect(written).toHaveLength(1);
+    expect(written).toHaveLength(2);
     expect(calls).toBe(2);
+    expect(result.counts).toEqual({ passou: 1, falhou: 0, erro: 1 });
+    const second = JSON.parse(written[1] ?? "{}") as ExecutionLine;
+    expect(second.veredito).toMatchObject({
+      resultado: "erro",
+      motivo: "juiz indisponível",
+      juiz: {
+        situacao: "erro",
+        resumo: { mensagem: "sync judge failure" },
+        novasTentativas: 0,
+      },
+    });
+    expect(exitCodeFor(result)).toBe(1);
+  });
+});
+
+describe("the judge prompt", () => {
+  it("names the three escapes that the judge input uses, in both copies", () => {
+    const read = (path: string): string =>
+      readFileSync(new URL(path, import.meta.url), "utf8");
+    const real = read("../context/juiz.md");
+    expect(read("./fixtures/minimal-context/juiz.md")).toBe(real);
+    for (const escape of ["&amp;", "&lt;", "&gt;"]) {
+      expect(real).toContain(`\`${escape}\``);
+    }
   });
 });

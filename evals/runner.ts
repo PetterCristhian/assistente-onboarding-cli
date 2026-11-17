@@ -2,7 +2,8 @@
 // of the chat (`createChatSession`, architecture rule 6), in a new session per
 // execution, applies the deterministic checks, asks the judge (ENG-57) and
 // writes one line per execution to outputs/<id>/execucoes.jsonl through the
-// single safe writer. It has no pipeline of its own: the session does the
+// single safe writer and, at the end, the summary (resumo.json) and the report
+// (RELATORIO.md) of the battery, once. It has no pipeline of its own: the session does the
 // draft, the evaluation, the revision, the retry and the wait for the local
 // limit, and the judge takes a slot of that same limiter.
 //
@@ -23,24 +24,34 @@ import {
 import type { Redactor } from "../src/security/redact.js";
 import type { SafeWriter } from "../src/security/safe-writer.js";
 import type { StreamRedactor } from "../src/security/stream-redact.js";
+import {
+  aggregateBattery,
+  summarySchema,
+  type BatterySummary,
+} from "./aggregate.js";
 import { createCollectingOutput } from "./collector.js";
 import type { BatteryContext } from "./contexts.js";
 import type { Judge, JudgeInput } from "./judge.js";
 import {
   answeredTurnLine,
   buildExecutionLine,
+  describeErrorSummary,
   execucaoSchema,
   failedTurnLine,
   type ExecutionLine,
   type JudgeResult,
   type TurnLine,
 } from "./record.js";
+import { redactLines } from "./redact-lines.js";
+import { describeConsistencyLines, renderReport } from "./report.js";
 import { createRetryCounter } from "./retry-count.js";
 import type { Caso } from "./schema.js";
 import { buildVerdict, needsJudge, type Outcome } from "./verdict.js";
 
 export const OUTPUTS_FOLDER = "outputs";
 export const EXECUTIONS_FILE = "execucoes.jsonl";
+export const SUMMARY_FILE = "resumo.json";
+export const REPORT_FILE = "RELATORIO.md";
 
 export interface PlannedExecution {
   readonly caso: Caso;
@@ -89,6 +100,8 @@ export interface BatteryDeps {
   readonly nowMs: () => number;
   /** Receives whole lines, line break included. */
   readonly print: (text: string) => void;
+  /** How many cases evals/casos.json has (F13 needs all of them). Default: `cases`. */
+  readonly catalogSize?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -108,6 +121,8 @@ export interface BatteryResult {
   readonly expected: number;
   readonly interrupted: boolean;
   readonly counts: BatteryCounts;
+  /** What went to resumo.json; `null` when no line was written. */
+  readonly summary: BatterySummary | null;
 }
 
 /** 0 = every execution passed; 1 = one failed or erred; 130 = interrupted. */
@@ -280,7 +295,11 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
     };
   }
 
-  /** The judge takes a slot of the same limiter as the questions. */
+  /**
+   * The judge takes a slot of the same limiter as the questions. It never
+   * throws: a judge that throws (or a slot that is denied) is a judge that did
+   * not answer, like a failed turn, and never a pass. A cut is not an error.
+   */
   async function runJudge(
     caso: Caso,
     played: Played,
@@ -293,14 +312,18 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
       if (!slot.allowed) {
         throw new Error("limite local atingido durante a espera (inesperado)");
       }
+      const juiz = await deps.judge(judgeInputOf(caso, played), deps.signal);
+      return deps.signal?.aborted === true ? "cancelled" : juiz;
     } catch (error) {
       if (deps.signal?.aborted === true) {
         return "cancelled";
       }
-      throw error;
+      return {
+        situacao: "erro",
+        resumo: describeErrorSummary(summarizeError(error, deps.redact)),
+        novasTentativas: 0,
+      };
     }
-    const juiz = await deps.judge(judgeInputOf(caso, played), deps.signal);
-    return deps.signal?.aborted === true ? "cancelled" : juiz;
   }
 
   for (const [index, { caso, execucao }] of planned.entries()) {
@@ -370,9 +393,34 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
   if (interrupted) {
     show("Bateria interrompida antes do fim.");
   }
-  show(
-    lines.length === 0 ? "Nenhuma execução foi gravada." : `Pasta: ${folder}/`,
-  );
+  let summary: BatterySummary | null = null;
+  if (lines.length === 0) {
+    // Nothing to report: the folder is born with the first line.
+    show("Nenhuma execução foi gravada.");
+  } else {
+    // Written once, at the end, and never regenerated (rule 7). The lines are
+    // redacted first: the Markdown escapes would hide a key from the writer.
+    const safeLines = redactLines(lines, deps.redact);
+    summary = summarySchema.parse(
+      aggregateBattery({
+        lines: safeLines,
+        plan: { runs: deps.runs, casos: deps.cases },
+        batteryId: deps.batteryId,
+        catalogSize: deps.catalogSize ?? deps.cases.length,
+      }),
+    );
+    for (const text of describeConsistencyLines(summary)) {
+      show(text);
+    }
+    // Not caught: a battery that cannot write its report ends with an error.
+    await deps.writer.writeJson(`${folder}/${SUMMARY_FILE}`, summary);
+    await deps.writer.writeText(
+      `${folder}/${REPORT_FILE}`,
+      renderReport(summary, safeLines),
+    );
+    show(`Pasta: ${folder}/`);
+    show(`Relatório: ${folder}/${REPORT_FILE}`);
+  }
 
-  return { folder, file, lines, expected: total, interrupted, counts };
+  return { folder, file, lines, expected: total, interrupted, counts, summary };
 }
