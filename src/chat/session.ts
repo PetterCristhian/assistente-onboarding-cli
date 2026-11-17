@@ -132,6 +132,8 @@ type Phase = "draft" | "evaluate" | "revise" | "reevaluate" | "commit";
 type RetryCounters = Record<Phase, { retries: number; maxRetries: number }>;
 
 const EVALUATION_LABEL = "[autoavaliação]";
+const UNVERIFIED_RETRACTION =
+  "A resposta acima foi retirada porque não pôde ser verificada.";
 const REVISION_LABEL = "[revisão]";
 const NO_RETRIES = { retries: 0, maxRetries: 0 };
 
@@ -341,6 +343,12 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
           "warning",
           `${EVALUATION_LABEL} ${describeError(error, counters[forPhase])} ${failureConsequence}`,
         );
+        if (forPhase === "evaluate") {
+          // The draft is on the screen: the withdrawal goes to the same
+          // stream (stdout), with no message of the SDK. The revision was
+          // never shown, so only the first evaluation needs it.
+          deps.output.retraction(UNVERIFIED_RETRACTION);
+        }
         return {
           status: "error",
           summary: summarizeError(error, deps.redact),
@@ -424,7 +432,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       const first = await evaluateText(
         "evaluate",
         draft,
-        "A resposta acima foi retirada porque não pôde ser verificada.",
+        UNVERIFIED_RETRACTION,
       );
       if (first.status === "error") {
         return fallback(first, []);
