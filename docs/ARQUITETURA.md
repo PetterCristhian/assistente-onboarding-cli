@@ -51,7 +51,7 @@ flowchart TD
 
     CLI["cli/ (readline, comandos, renderização)"]
     EVAL["evals/ (runner, veredito, relatório)"]
-    DEMO["scripts/demo-falhas.ts (stub HTTP local)"]
+    DEMO["scripts/demo-falhas/ (stub HTTP local + cenários)"]
 
     SESSION["chat/session (histórico + pipeline do turno)"]
     CTX["context/ (loaders + builder)"]
@@ -114,6 +114,8 @@ sequenceDiagram
         end
     end
 ```
+
+Demonstração de falhas (ENG-54): `scripts/demo-falhas/run.ts` cria o mesmo `LlmClient` do chat (o `withRetry` está dentro dele) com `baseURL` apontando para um servidor `node:http` local em `127.0.0.1` e um `fetch` com guarda que só aceita esse endereço. Só a espera é trocada por uma que mede a duração real, sobre o `defaultSleep` do chat; o jitter é desligado para a transcrição ser determinística. Não há mudança em `src/`. A transcrição vai a `outputs/evidencias/retry-rate-limit.txt` pelo escritor único, só se todos os cenários conferem. Decisões 23 a 29 do ADR 0005.
 
 Retry (ENG-51): cada chamada do `LlmClient` passa por `withRetry` (em `runCall`, dentro de `src/llm/client.ts`). Antes de cada nova tentativa, o cliente chama o `onRetry` da própria requisição, e a sessão mostra uma linha com o motivo, a tentativa e a espera; só depois a espera começa (abortável). Se já havia texto parcial na tela, a sessão fecha a linha, avisa que o texto acima será descartado e deixa a nova geração começar logo abaixo; o parcial nunca entra no histórico. `REQUEST_TIMEOUT_MS` vale por tentativa. Detalhes: `docs/adr/0005-retry-rate-limit-e-evidencias.md`.
 
@@ -199,7 +201,15 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   └── report.ts                 # RELATORIO.md, resumo.json, docs/CASOS-DE-TESTE.md
 │
 ├── scripts/
-│   ├── demo-falhas.ts            # stub HTTP local + cenários de falha
+│   ├── demo-falhas.ts            # entrada de `npm run demo:falhas`: só liga as peças
+│   ├── demo-falhas/              # a demonstração de falhas (ENG-54)
+│   │   ├── config.ts             # chave falsa, tempos e configuração do cliente (parseConfig, sem ambiente)
+│   │   ├── stub-server.ts        # servidor node:http em 127.0.0.1, roteiro por caminho
+│   │   ├── loopback-fetch.ts     # fetch que só aceita http://127.0.0.1 e conta as chamadas
+│   │   ├── scenarios.ts          # os 5 cenários e o esperado de cada um
+│   │   ├── observe.ts            # roda um cenário com o cliente real e registra o resultado
+│   │   ├── report.ts             # comparação esperado x obtido e texto da transcrição
+│   │   └── run.ts                # runDemo: único arquivo que cria o cliente real da demo
 │   ├── show-context.ts           # imprime o contexto montado
 │   ├── smoke-llm.ts              # teste de fumaça manual contra a API real (gasta crédito)
 │   └── check-secrets.ts          # varredura de credenciais nos arquivos do repositório
