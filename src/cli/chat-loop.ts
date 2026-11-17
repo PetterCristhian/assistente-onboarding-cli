@@ -48,16 +48,24 @@ function turnDetails(result: Answered, elapsedMs: number): string {
   )}\n`;
 }
 
-/** Why the evaluation has no verdict, in a few words. */
+/**
+ * Why the evaluation has no verdict: fixed text plus status, code and type.
+ * The `message` of the summary is never shown (it is the raw text of the SDK
+ * for an API error, and the one of a 401 quotes the key, masked); it stays in
+ * the log only.
+ */
 function describeEvaluationError(
   outcome: Extract<EvaluationOutcome, { status: "error" }>,
 ): string {
-  const { status, code, message } = outcome.summary;
+  const { status, code, type } = outcome.summary;
   const extras = [
     status === undefined ? undefined : `status ${status}`,
     code === undefined ? undefined : `código ${code}`,
+    type === undefined ? undefined : `tipo ${type}`,
   ].filter((extra) => extra !== undefined);
-  return extras.length === 0 ? message : `${message} (${extras.join(", ")})`;
+  return extras.length === 0
+    ? "falha na avaliação"
+    : `falha na avaliação (${extras.join(", ")})`;
 }
 
 /**

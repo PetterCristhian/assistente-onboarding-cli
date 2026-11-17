@@ -1,6 +1,7 @@
 // The detailed mode (ENG-53): --verbose or /detalhes shows, after each answer,
 // the technical line and the result of the self-evaluation, on stderr.
 import { PassThrough } from "node:stream";
+import { APIError } from "openai";
 import { describe, expect, it } from "vitest";
 import { createRateLimiter } from "../src/chat/rate-limiter.js";
 import { createChatSession } from "../src/chat/session.js";
@@ -12,6 +13,7 @@ import {
   sanitizeUntrusted,
 } from "../src/cli/renderer.js";
 import { createRedactor } from "../src/security/redact.js";
+import { fakeMaskedOpenAiKey } from "./helpers/fake-key.js";
 import {
   approvedStep,
   makeCritiqueDeps,
@@ -238,7 +240,74 @@ describe("the result of the evaluation in the details", () => {
     await done;
 
     expect(err()).toContain(
-      "[autoavaliação] erro: falha na avaliação (status 500, código server_error); origem=fallback; chamadas=2\n",
+      "[autoavaliação] erro: falha na avaliação (status 500, código server_error, tipo Error); origem=fallback; chamadas=2\n",
+    );
+    // The message of the error is not on the screen: status, code, type only.
+    expect(err()).not.toContain(
+      "falha na avaliação (status 500, código server_error); ",
+    );
+  });
+
+  it("an evaluation that failed with a 401 of the SDK: no message, no key", async () => {
+    const key = fakeMaskedOpenAiKey();
+    const error = APIError.generate(
+      401,
+      {
+        error: {
+          message: `Incorrect API key provided: ${key}. TEXTO-CRU-DO-SDK`,
+          type: "invalid_request_error",
+          code: "invalid_api_key",
+          param: null,
+        },
+      },
+      undefined,
+      new Headers(),
+    );
+    const { input, err, out, done } = setup([{ text: "R" }, { error }], {
+      verbose: true,
+    });
+    input.write("P\n");
+    input.end("/sair\n");
+
+    await done;
+
+    for (const text of [err(), out()]) {
+      expect(text).not.toContain(key);
+      expect(text).not.toContain("TEXTO-CRU-DO-SDK");
+      expect(text).not.toContain("Incorrect API key");
+    }
+    expect(err()).toContain(
+      "[autoavaliação] erro: falha na avaliação (status 401",
+    );
+    expect(err()).toContain("código invalid_api_key");
+    expect(err()).toContain("origem=fallback");
+  });
+
+  it("an evaluation that failed with a hostile message: not shown, and neutralized", async () => {
+    const error = Object.assign(
+      new Error(`INJETADO${ESC}[2J${CR}[autoavaliação] aprovada${BIDI}`),
+      { code: `cod${ESC}` },
+    );
+    const { input, err, out, done } = setup([{ text: "R" }, { error }], {
+      verbose: true,
+    });
+    input.write("P\n");
+    input.end("/sair\n");
+
+    await done;
+
+    for (const text of [err(), out()]) {
+      expect(text).not.toContain(ESC);
+      expect(text).not.toContain(CR);
+      expect(text).not.toContain(BIDI);
+    }
+    // The warning of the session may quote a non-SDK message (neutralized);
+    // the technical line never does.
+    const line = err()
+      .split("\n")
+      .find((entry) => entry.startsWith("[autoavaliação] erro:"));
+    expect(line).toBe(
+      `[autoavaliação] erro: falha na avaliação (código cod${MARKER}, tipo Error); origem=fallback; chamadas=2`,
     );
   });
 
