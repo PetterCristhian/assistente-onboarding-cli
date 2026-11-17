@@ -44,7 +44,7 @@ const STATUS_NAMES = {
 } as const;
 
 /** The keys of the files that we write are in Portuguese. */
-function describeOutcome(outcome: EvaluationOutcome): object {
+export function describeOutcome(outcome: EvaluationOutcome): object {
   if (outcome.status === "error") {
     return { situacao: "erro", resumo: describeSummary(outcome.summary) };
   }
@@ -58,7 +58,7 @@ function describeOutcome(outcome: EvaluationOutcome): object {
   };
 }
 
-function describeSummary(summary: ErrorSummary): object {
+export function describeSummary(summary: ErrorSummary): object {
   return {
     ...(summary.status === undefined ? {} : { status: summary.status }),
     ...(summary.code === undefined ? {} : { codigo: summary.code }),

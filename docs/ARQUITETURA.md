@@ -117,6 +117,8 @@ sequenceDiagram
 
 Demonstração de falhas (ENG-54): `scripts/demo-falhas/run.ts` cria o mesmo `LlmClient` do chat (o `withRetry` está dentro dele) com `baseURL` apontando para um servidor `node:http` local em `127.0.0.1` e um `fetch` com guarda que só aceita esse endereço. Só a espera é trocada por uma que mede a duração real, sobre o `defaultSleep` do chat; o jitter é desligado para a transcrição ser determinística. Não há mudança em `src/`. A transcrição vai a `outputs/evidencias/retry-rate-limit.txt` pelo escritor único, só se todos os cenários conferem. Decisões 23 a 29 do ADR 0005.
 
+Bateria (ENG-56): `scripts/eval.ts` liga o cliente real, os relógios e o terminal a `evals/cli.ts`, que valida tudo antes da primeira chamada (argumentos, casos, contexto de todos os perfis, configuração) e entrega a `evals/runner.ts`. O runner cria uma `createChatSession` nova por execução, com o mesmo pipeline do chat (rascunho, autoavaliação, revisão, retry) e um coletor no lugar do terminal, envia os turnos do caso em ordem, aplica as checagens de `evals/verdict.ts` ao texto final do último turno e grava uma linha em `outputs/<AAAA-MM-DDTHH-mm-ssZ>/execucoes.jsonl` pelo escritor único assim que a execução termina. Um limitador único por bateria, em modo de espera, respeita o limite local. Erro de infraestrutura é `erro`, mensagem segura como resposta final é `falhou`; o terminal mostra o progresso. Código de saída 0 só se tudo passou. Detalhes e desvios do formato: nota de implementação do ADR 0006.
+
 Retry (ENG-51): cada chamada do `LlmClient` passa por `withRetry` (em `runCall`, dentro de `src/llm/client.ts`). Antes de cada nova tentativa, o cliente chama o `onRetry` da própria requisição, e a sessão mostra uma linha com o motivo, a tentativa e a espera; só depois a espera começa (abortável). Se já havia texto parcial na tela, a sessão fecha a linha, avisa que o texto acima será descartado e deixa a nova geração começar logo abaixo; o parcial nunca entra no histórico. `REQUEST_TIMEOUT_MS` vale por tentativa. Detalhes: `docs/adr/0005-retry-rate-limit-e-evidencias.md`.
 
 Autoavaliação (ENG-53): `src/chat/session.ts` executa as quatro fases (rascunho em streaming, avaliação, revisão sem exibição, avaliação da revisão) e cai na mensagem segura em qualquer falha (fail-closed). `src/chat/critique.ts` é puro: o schema estrito da avaliação, a normalização do parecer e a montagem das requisições do avaliador (camadas 2, 3 e 4, as 6 últimas mensagens do histórico, pergunta e rascunho delimitados) e da revisão (contexto completo). Os prompts do avaliador e da revisão ficam em `context/avaliador.md` e `context/revisao.md`, fora das quatro camadas. `src/security/stream-redact.ts` redige o rascunho enquanto ele chega, e `src/logging/session-log.ts` grava uma linha por turno em `logs/`, pelo escritor único. O terminal mostra o aviso de retirada em stdout e, no modo detalhado (`--verbose` ou `/detalhes`), o parecer em stderr. Decisões e divergências: `docs/adr/0004-streaming-e-self-critique.md` (nota de implementação).
@@ -198,11 +200,19 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   ├── casos.json                # os 12 casos (F11), fonte única
 │   ├── schema.ts                 # esquema zod dos casos e parseCases (ENG-55)
 │   ├── normalize.ts              # normalizeForMatch: comparação sem maiúsculas e acentos
-│   ├── runner.ts                 # entrada de `npm run eval`
-│   ├── verdict.ts                # checagens determinísticas + juiz
-│   └── report.ts                 # RELATORIO.md, resumo.json, docs/CASOS-DE-TESTE.md
+│   ├── args.ts                   # --runs e --case (ENG-56)
+│   ├── cli.ts                    # runEvalCli: ordem de validação, limitador, escritor (tudo injetado)
+│   ├── contexts.ts               # um contexto por perfil, carregado antes da chave
+│   ├── runner.ts                 # runBattery: sessão nova por execução, uma linha jsonl por execução
+│   ├── collector.ts              # ChatOutput que não escreve no terminal
+│   ├── retry-count.ts            # decorador do LlmClient que conta novas tentativas por turno
+│   ├── record.ts                 # esquema zod da linha de execucoes.jsonl
+│   ├── battery-id.ts             # nome da pasta de cada bateria
+│   ├── verdict.ts                # checagens determinísticas (o juiz é da ENG-57)
+│   └── report.ts                 # (ENG-57) RELATORIO.md, resumo.json, docs/CASOS-DE-TESTE.md
 │
 ├── scripts/
+│   ├── eval.ts                   # entrada de `npm run eval`: só liga as peças reais a evals/cli.ts
 │   ├── demo-falhas.ts            # entrada de `npm run demo:falhas`: só liga as peças
 │   ├── demo-falhas/              # a demonstração de falhas (ENG-54)
 │   │   ├── config.ts             # chave falsa, tempos e configuração do cliente (parseConfig, sem ambiente)

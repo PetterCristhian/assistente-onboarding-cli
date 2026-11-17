@@ -46,10 +46,19 @@ describe("normalizeForMatch, Unicode", () => {
     expect(normalizeForMatch("def f(x):")).toContain(normalizeForMatch("def "));
   });
 
-  it("documents the known limits: zero-width, fullwidth and sharp s are not folded", () => {
-    expect(normalizeForMatch("Car\u200bla")).not.toContain("carla");
-    expect(normalizeForMatch("ＣＰＦ")).not.toContain("cpf");
-    expect(normalizeForMatch("STRAßE")).not.toContain("strasse");
+  it("folds zero-width characters, fullwidth letters and the sharp s", () => {
+    expect(normalizeForMatch("Car\u200bla")).toContain("carla");
+    expect(normalizeForMatch("a\u00adb\u2060c\ufeffd")).toBe("abcd");
+    expect(normalizeForMatch("ＣＰＦ")).toContain("cpf");
+    expect(normalizeForMatch("STRAßE")).toContain("strasse");
+    expect(normalizeForMatch("Straße ẞ ſ")).toBe("strasse ss s");
+  });
+
+  it("keeps the trailing space after dropping an invisible character", () => {
+    expect(normalizeForMatch("def\u200b ")).toBe("def ");
+    expect(normalizeForMatch("undef\u200b")).not.toContain(
+      normalizeForMatch("def "),
+    );
   });
 });
 
