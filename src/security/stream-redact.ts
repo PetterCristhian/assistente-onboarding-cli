@@ -23,6 +23,9 @@ export interface StreamRedactor {
   flush(): string;
 }
 
+// How much of the released text is kept as context: more than the longest
+// look-behind of redact() (an escape sequence before a key prefix).
+const MIN_CONTEXT_LENGTH = 32;
 const KEY_PREFIX = "sk-";
 // The characters of a key, with the asterisks of a masked one.
 const KEY_RUN_CHARACTER = /[A-Za-z0-9_*-]/;
@@ -109,33 +112,69 @@ export function createStreamRedactor(
   const exactSecrets = secrets.filter(
     (secret) => secret.trim().length >= MIN_EXACT_SECRET_LENGTH,
   );
-  let raw = "";
-  let released = 0;
+  // Only the end of the text is kept: `context` is the last stretch that was
+  // already released, as it came (it is what redact() needs to see before a
+  // sequence: the character before a prefix, an escape sequence), and
+  // `pending` is what is not released yet. Every push works on the window
+  // `context + pending`, so its cost grows with the piece and with what is
+  // held back, never with the whole text.
+  const contextLength = Math.max(
+    MIN_CONTEXT_LENGTH,
+    ...exactSecrets.map((secret) => secret.length),
+  );
+  let context = "";
+  let pending = "";
 
-  function releaseUpTo(end: number): string {
-    // Redacted from the start every time: the context before a sequence is
-    // part of what decides whether it is one. Texts of an answer are small.
-    const safe = redact(raw.slice(0, end), exactSecrets);
-    const ready = safe.slice(released);
-    released = safe.length;
-    return ready;
+  /**
+   * The redacted form of `window.slice(0, end)` that is new. The context goes
+   * through redact() on its own, to know how much of the result was already
+   * released. If redact() changes it differently inside the window (a case
+   * that the holds are meant to rule out), nothing is released: the text stays
+   * pending and the next call tries again, never a leak.
+   */
+  function release(window: string, end: number): string | undefined {
+    const out = redact(window.slice(0, end), exactSecrets);
+    const contextOut = redact(context, exactSecrets);
+    return out.startsWith(contextOut)
+      ? out.slice(contextOut.length)
+      : undefined;
   }
 
   return {
     push(chunk) {
-      raw += chunk;
+      pending += chunk;
+      const window = context + pending;
       const holds = [
-        openKeyStart(raw),
-        openSecretStart(raw, exactSecrets),
-        openBearerStart(raw),
+        openKeyStart(window),
+        openSecretStart(window, exactSecrets),
+        openBearerStart(window),
       ].filter((start) => start !== -1);
-      const end = holds.length === 0 ? raw.length : Math.min(...holds);
-      return releaseUpTo(end);
+      const end = Math.max(
+        context.length,
+        holds.length === 0 ? window.length : Math.min(...holds),
+      );
+      if (end === context.length) {
+        return "";
+      }
+      const ready = release(window, end);
+      if (ready === undefined) {
+        return "";
+      }
+      context = window.slice(Math.max(0, end - contextLength), end);
+      pending = window.slice(end);
+      return ready;
     },
     flush() {
-      const rest = releaseUpTo(raw.length);
-      raw = "";
-      released = 0;
+      const window = context + pending;
+      const out = redact(window, exactSecrets);
+      const contextOut = redact(context, exactSecrets);
+      // If the context was changed, the whole window is shown: the few
+      // characters that may repeat are better than a key that passes.
+      const rest = out.startsWith(contextOut)
+        ? out.slice(contextOut.length)
+        : out;
+      context = "";
+      pending = "";
       return rest;
     },
   };
