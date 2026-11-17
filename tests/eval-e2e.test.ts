@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ENV_VARIABLE_NAMES } from "../src/config/env.js";
+import { summarySchema } from "../evals/aggregate.js";
 import { execucaoSchema, type ExecutionLine } from "../evals/record.js";
 import { FAKE_FETCH_BLOCK_MESSAGE } from "./helpers/fake-fetch-constants.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
@@ -261,6 +262,37 @@ describe("npm run eval in a child process, over a fake API", () => {
     );
     expect(file).not.toContain(KEY);
     expect(file).toContain("[REDACTED]");
+
+    // The battery folder: the lines, the summary and the report.
+    const folder = readdirSync(join(run.root, "outputs"))[0] ?? "";
+    expect(readdirSync(join(run.root, "outputs", folder)).sort()).toEqual([
+      "RELATORIO.md",
+      "execucoes.jsonl",
+      "resumo.json",
+    ]);
+    const summary = summarySchema.parse(
+      JSON.parse(
+        readFileSync(join(run.root, "outputs", folder, "resumo.json"), "utf8"),
+      ),
+    );
+    // --case and --runs 2: partial, so F13 is not met, but it all passed.
+    expect(summary).toMatchObject({
+      parcial: true,
+      f13Atendido: false,
+      completa: true,
+      execucoesGravadas: 2,
+    });
+    expect(summary.porCaso.map((caso) => caso.consistencia)).toEqual(["2/2"]);
+    const report = readFileSync(
+      join(run.root, "outputs", folder, "RELATORIO.md"),
+      "utf8",
+    );
+    expect(report).toContain("F13: não validado (parcial)");
+    expect(report).toContain("| CT06 |");
+    expect(report).toContain("### CT06 · execução 2 · passou");
+    expect(report).not.toContain(KEY);
+    expect(run.stdout).toContain("  CT06  2/2  ");
+    expect(run.stdout).toContain(`Relatório: outputs/${folder}/RELATORIO.md`);
   });
 
   it("exits with 1 when an execution fails", () => {
@@ -296,6 +328,14 @@ describe("npm run eval in a child process, over a fake API", () => {
     expect(run.stdout).toContain(
       "... falhou | juiz: falhou | origem rascunho |",
     );
+    const folder = readdirSync(join(run.root, "outputs"))[0] ?? "";
+    const report = readFileSync(
+      join(run.root, "outputs", folder, "RELATORIO.md"),
+      "utf8",
+    );
+    expect(report).toContain("### CT06 · execução 1 · falhou");
+    expect(report).toContain("- Juiz: reprovou (modelo ");
+    expect(report).toContain("decisão do juiz");
   });
 
   it("sends the judge to the model of EVAL_JUDGE_MODEL, apart from the model of the chatbot", () => {

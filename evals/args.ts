@@ -38,8 +38,11 @@ export const EVAL_HELP_TEXT = [
   "  --case <id>  roda só um caso, por exemplo CT03",
   "  -h, --help   mostra esta ajuda",
   "",
-  "Chama o modelo real: usa a chave de OPENAI_API_KEY (.env ou ambiente) e consome crédito.",
-  "A chave nunca é argumento. O resultado vai para outputs/<data-hora>/execucoes.jsonl.",
+  "Chama o modelo real (o chatbot e o juiz): usa a chave de OPENAI_API_KEY (.env ou ambiente) e consome crédito.",
+  "A chave nunca é argumento. O resultado vai para outputs/<data-hora>/: execucoes.jsonl (uma linha por",
+  "execução), resumo.json (os números) e RELATORIO.md (consistência n/N por caso e por regra e a",
+  "transcrição). Os dois últimos são gravados uma vez, no fim, e valem F13 só com 3 execuções ou mais,",
+  'todos os casos e a bateria completa; com --case ou --runs menor que 3 o relatório diz "parcial".',
 ].join("\n");
 
 function usageError(message: string): ParsedEvalArgs {

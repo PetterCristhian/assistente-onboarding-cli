@@ -42,6 +42,18 @@ export function describeF13(summary: BatterySummary): string {
     : "F13: não validado (incompleta)";
 }
 
+/** What the terminal shows at the end: n/N per case, the general rate, F13. */
+export function describeConsistencyLines(summary: BatterySummary): string[] {
+  return [
+    "Consistência por caso:",
+    ...summary.porCaso.map(
+      (caso) => `  ${caso.id}  ${caso.consistencia}  ${caso.titulo}`,
+    ),
+    `Consistência geral: ${describeGeneralConsistency(summary)}`,
+    describeF13(summary),
+  ];
+}
+
 function shortHash(hash: string): string {
   return hash.slice(0, HASH_PREFIX.length + SHORT_HASH_LENGTH);
 }

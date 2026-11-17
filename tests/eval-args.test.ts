@@ -128,5 +128,8 @@ describe("parseEvalArgs", () => {
     expect(EVAL_HELP_TEXT).toContain("--runs <n>");
     expect(EVAL_HELP_TEXT).toContain("--case <id>");
     expect(EVAL_HELP_TEXT).toContain("consome crédito");
+    expect(EVAL_HELP_TEXT).toContain("juiz");
+    expect(EVAL_HELP_TEXT).toContain("RELATORIO.md");
+    expect(EVAL_HELP_TEXT).toContain("resumo.json");
   });
 });

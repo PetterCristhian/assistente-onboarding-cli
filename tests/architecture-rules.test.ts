@@ -240,6 +240,7 @@ describe("architecture rules", () => {
     it("is made of the pieces that the plan names", () => {
       expect(files).toEqual(
         expect.arrayContaining([
+          "evals/aggregate.ts",
           "evals/args.ts",
           "evals/battery-id.ts",
           "evals/cli.ts",
@@ -247,7 +248,10 @@ describe("architecture rules", () => {
           "evals/context-hash.ts",
           "evals/contexts.ts",
           "evals/judge.ts",
+          "evals/markdown.ts",
           "evals/record.ts",
+          "evals/redact-lines.ts",
+          "evals/report.ts",
           "evals/retry-count.ts",
           "evals/runner.ts",
           "evals/verdict.ts",
@@ -312,6 +316,29 @@ describe("architecture rules", () => {
       expect(readSource("evals/runner.ts")).toMatch(
         /\bOUTPUTS_FOLDER = "outputs"/,
       );
+    });
+
+    // ENG-57 part 2: the summary and the report are written once, by the
+    // runner, through the writer (the CLI only wraps its failures). The
+    // aggregator, the renderer and the sanitizers are pure: they hold no writer.
+    it("writes the summary and the report only in the runner, and keeps the pure pieces pure", () => {
+      expect(filesMatching(files, /\.\s*(?:writeJson|writeText)\(/)).toEqual([
+        "evals/cli.ts",
+        "evals/runner.ts",
+      ]);
+      const pure = [
+        "evals/aggregate.ts",
+        "evals/markdown.ts",
+        "evals/redact-lines.ts",
+        "evals/report.ts",
+      ];
+      for (const file of pure) {
+        const source = readSource(file);
+        expect(source, file).not.toMatch(/safe-writer|SafeWriter|node:/);
+        expect(source, file).not.toMatch(/\bsleep\b|Math\.random/);
+      }
+      // No regeneration: nothing reads the files back to render them again.
+      expect(filesMatching(files, /readFile|readdir|existsSync/)).toEqual([]);
     });
 
     it("keeps the entry point to wiring: no logic, no process.exit, Ctrl+C by AbortController", () => {

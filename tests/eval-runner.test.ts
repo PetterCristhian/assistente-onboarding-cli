@@ -1109,6 +1109,7 @@ describe("exitCodeFor", () => {
       expected: 0,
       interrupted: false,
       counts: { passou: 0, falhou: 0, erro: 0 },
+      summary: null,
       ...overrides,
     };
   }
