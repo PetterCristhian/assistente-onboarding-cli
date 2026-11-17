@@ -12,11 +12,13 @@ describe("parseInput", () => {
     [" /limpar ", "limpar"],
     ["/Contexto", "contexto"],
     ["/ajuda", "ajuda"],
+    ["/detalhes", "detalhes"],
+    ["/DETALHES", "detalhes"],
   ])("reads %j as a command", (line, name) => {
     expect(parseInput(line)).toEqual({ kind: "command", name });
   });
 
-  it.each(["/xyz", "/detalhes", "/", "/sair agora", "/limpar tudo"])(
+  it.each(["/xyz", "/detalhes agora", "/", "/sair agora", "/limpar tudo"])(
     "reads %j as unknown",
     (line) => {
       expect(parseInput(line)).toEqual({ kind: "unknown", raw: line.trim() });
@@ -33,9 +35,14 @@ describe("parseInput", () => {
 
   it("lists every command in the help", () => {
     const help = HELP_LINES.join("\n");
-    for (const name of ["/sair", "/limpar", "/contexto", "/ajuda"]) {
+    for (const name of [
+      "/sair",
+      "/limpar",
+      "/contexto",
+      "/detalhes",
+      "/ajuda",
+    ]) {
       expect(help).toContain(name);
     }
-    expect(help).not.toContain("/detalhes");
   });
 });

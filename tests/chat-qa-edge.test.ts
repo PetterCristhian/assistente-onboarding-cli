@@ -7,6 +7,11 @@ import { LlmResponseError } from "../src/llm/client.js";
 import { createRedactor } from "../src/security/redact.js";
 import { createFakeLlmClient } from "./helpers/fake-llm-client.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
+import {
+  createApprovingFakeClient,
+  draftCalls,
+  makeCritiqueDeps,
+} from "./helpers/critique-fixtures.js";
 
 // Edge cases of the interactive chat (ENG-49), added by QA.
 const KEY = fakeOpenAiKey();
@@ -19,10 +24,11 @@ function setup(script: Parameters<typeof createFakeLlmClient>[0]) {
   let err = "";
   stdout.on("data", (d: Buffer) => void (out += d.toString("utf8")));
   stderr.on("data", (d: Buffer) => void (err += d.toString("utf8")));
-  const fake = createFakeLlmClient(script);
+  const fake = createApprovingFakeClient(script);
   const session = createChatSession({
     llm: fake,
     instructions: "CTX",
+    critique: makeCritiqueDeps(),
     output: createTerminalOutput(stdout, stderr),
     redact: createRedactor([KEY]),
   });
@@ -45,17 +51,17 @@ describe("chat edge cases", () => {
     input.end("/sair\r\nnunca\r\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(2);
-    expect(fake.calls[0]?.request.input[0]?.content).toBe(big);
-    expect(fake.calls[1]?.request.input).toHaveLength(3);
+    expect(draftCalls(fake)).toHaveLength(2);
+    expect(draftCalls(fake)[0]?.request.input[0]?.content).toBe(big);
+    expect(draftCalls(fake)[1]?.request.input).toHaveLength(3);
   });
 
   it("treats '/', '/ SAIR' and '/sair agora' as unknown, without the model", async () => {
     const { input, fake, err, done } = setup([]);
-    input.end("/\n/ SAIR\n/sair agora\n/detalhes\n/SAIR\n");
+    input.end("/\n/ SAIR\n/sair agora\n/detalhes agora\n/SAIR\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(0);
+    expect(draftCalls(fake)).toHaveLength(0);
     expect(err().match(/Comando desconhecido/g)).toHaveLength(4);
   });
 
@@ -71,7 +77,7 @@ describe("chat edge cases", () => {
     expect(out() + err()).not.toContain(KEY);
     expect(err()).not.toMatch(/^\s+at /m);
     expect(err()).not.toMatch(/authorization|bearer/i);
-    expect(fake.calls[1]?.request.input).toHaveLength(1);
+    expect(draftCalls(fake)[1]?.request.input).toHaveLength(1);
     expect(session.history).toHaveLength(2);
   });
 
@@ -80,7 +86,9 @@ describe("chat edge cases", () => {
     input.end("olá 🎉 日本語\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls[0]?.request.input[0]?.content).toBe("olá 🎉 日本語");
+    expect(draftCalls(fake)[0]?.request.input[0]?.content).toBe(
+      "olá 🎉 日本語",
+    );
   });
 
   it("is cancelled, without chunks, when the signal is already aborted, and the session recovers", async () => {
@@ -93,6 +101,6 @@ describe("chat edge cases", () => {
     });
     expect(session.history).toHaveLength(0);
     expect((await session.ask("P2")).status).toBe("answered");
-    expect(fake.calls.at(-1)?.request.input).toHaveLength(1);
+    expect(draftCalls(fake).at(-1)?.request.input).toHaveLength(1);
   });
 });

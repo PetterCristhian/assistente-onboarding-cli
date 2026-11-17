@@ -28,6 +28,7 @@ import {
   createFakeOpenAiFetch,
   type FakeFetchStep,
 } from "./helpers/fake-openai-fetch.js";
+import { makeCritiqueDeps } from "./helpers/critique-fixtures.js";
 
 const KEY = fakeOpenAiKey();
 
@@ -329,11 +330,13 @@ describe("session with the real client and a hostile provider", () => {
     const output: ChatOutput = {
       chunk: (t) => void events.push(`chunk:${t}`),
       endAnswer: () => void events.push("end"),
+      retraction: (text) => void events.push(`retraction:${text}`),
       notice: (l, t) => void events.push(`${l}:${t}`),
     };
     const session = createChatSession({
       llm: client,
       instructions: "i",
+      critique: makeCritiqueDeps(),
       output,
       redact: createRedactor([KEY]),
     });
@@ -401,9 +404,11 @@ describe("non-API errors with the key in the message", () => {
           generateStructured: () => Promise.reject(new Error(message)),
         },
         instructions: "i",
+        critique: makeCritiqueDeps(),
         output: {
           chunk: () => undefined,
           endAnswer: () => undefined,
+          retraction: () => undefined,
           notice: (l, t) => void events.push(`${l}:${t}`),
         },
         redact: createRedactor([KEY]),

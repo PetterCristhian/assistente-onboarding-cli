@@ -117,6 +117,8 @@ sequenceDiagram
 
 Retry (ENG-51): cada chamada do `LlmClient` passa por `withRetry` (em `runCall`, dentro de `src/llm/client.ts`). Antes de cada nova tentativa, o cliente chama o `onRetry` da própria requisição, e a sessão mostra uma linha com o motivo, a tentativa e a espera; só depois a espera começa (abortável). Se já havia texto parcial na tela, a sessão fecha a linha, avisa que o texto acima será descartado e deixa a nova geração começar logo abaixo; o parcial nunca entra no histórico. `REQUEST_TIMEOUT_MS` vale por tentativa. Detalhes: `docs/adr/0005-retry-rate-limit-e-evidencias.md`.
 
+Autoavaliação (ENG-53): `src/chat/session.ts` executa as quatro fases (rascunho em streaming, avaliação, revisão sem exibição, avaliação da revisão) e cai na mensagem segura em qualquer falha (fail-closed). `src/chat/critique.ts` é puro: o schema estrito da avaliação, a normalização do parecer e a montagem das requisições do avaliador (camadas 2, 3 e 4, as 6 últimas mensagens do histórico, pergunta e rascunho delimitados) e da revisão (contexto completo). Os prompts do avaliador e da revisão ficam em `context/avaliador.md` e `context/revisao.md`, fora das quatro camadas. `src/security/stream-redact.ts` redige o rascunho enquanto ele chega, e `src/logging/session-log.ts` grava uma linha por turno em `logs/`, pelo escritor único. O terminal mostra o aviso de retirada em stdout e, no modo detalhado (`--verbose` ou `/detalhes`), o parecer em stderr. Decisões e divergências: `docs/adr/0004-streaming-e-self-critique.md` (nota de implementação).
+
 Invariante do sistema: **só entra no histórico e só é rotulado como resposta final um texto aprovado pela autoavaliação ou a mensagem segura fixa.** Detalhes e alternativas em `docs/adr/0004-streaming-e-self-critique.md`.
 
 ## 5. Como os quatro pontos em aberto do PRD foram resolvidos
@@ -156,6 +158,8 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   │   ├── processos.md          # reembolso, acesso, ponto
 │   │   ├── ferramentas.md
 │   │   └── contatos.md           # quem procurar + canais de P4
+│   ├── avaliador.md              # prompt do avaliador (não é camada; texto genérico)
+│   ├── revisao.md                # prompt da revisão (não é camada; marcador {{violacoes}})
 │   └── fallback.md               # mensagem segura fixa (não é camada; nunca vai ao modelo)
 │
 ├── src/
@@ -177,10 +181,11 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   │   └── retry.ts              # withRetry(): backoff exponencial, jitter, retry-after, onRetry, espera abortável
 │   ├── chat/
 │   │   ├── session.ts            # histórico em memória + pipeline do turno (aplica o limite local)
-│   │   ├── critique.ts           # autoavaliação com saída estruturada
+│   │   ├── critique.ts           # autoavaliação: schema, parecer normalizado, requisições do avaliador e da revisão (puro)
 │   │   └── rate-limiter.ts       # janela deslizante local: relógio e espera injetados; recusa ou aguarda; sem I/O
 │   ├── security/
 │   │   ├── redact.ts             # remove credenciais de qualquer texto gravado
+│   │   ├── stream-redact.ts      # redige o rascunho enquanto chega (retém a cauda que ainda pode virar segredo)
 │   │   ├── safe-writer.ts        # escritor único de outputs/ e logs/ (aplica redact)
 │   │   ├── error-summary.ts      # resume um erro: status, código, tipo, mensagem
 │   │   └── secret-scan.ts        # lógica da varredura usada por check-secrets.ts
@@ -237,7 +242,7 @@ Variáveis de ambiente (todas documentadas em `.env.example`; só `OPENAI_API_KE
 | `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas permitidas por janela (limite local; inteiro >= 1, sem teto superior) |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local (inteiro >= 1, sem teto superior) |
 
-Opções de linha de comando do chat (`src/cli/args.ts`, o único arquivo que usa `parseArgs`; `src/cli/main.ts` é o único que lê `process.argv`): `--system-prompt <arquivo>` (substitui só a camada 1; `.md` ou `.txt`), `--perfil <nome|arquivo>` (escolhe a camada 3: nome de `03-usuario/` ou caminho de um `.json`), `--context-dir <pasta>` (troca o domínio), `--verbose` (detalhes técnicos em stderr; provisório até a ENG-53), `--show-context` (imprime o contexto montado e sai antes de ler a configuração: sem chave, sem `.env`, sem rede) e `-h`/`--help`. A chave da API não é opção, e um teste confere que o parser não declara nenhuma. Opção repetida e argumento posicional são erro de uso. Códigos de saída: 0 normal, ajuda e `--show-context`; 1 uso inválido, configuração ou contexto; 2 erro inesperado. Todo arquivo de camada tem no máximo 64 KiB e precisa ser um arquivo comum.
+Opções de linha de comando do chat (`src/cli/args.ts`, o único arquivo que usa `parseArgs`; `src/cli/main.ts` é o único que lê `process.argv`): `--system-prompt <arquivo>` (substitui só a camada 1; `.md` ou `.txt`), `--perfil <nome|arquivo>` (escolhe a camada 3: nome de `03-usuario/` ou caminho de um `.json`), `--context-dir <pasta>` (troca o domínio), `--verbose` (detalhes técnicos e resultado da autoavaliação em stderr, a cada resposta; o mesmo que começar com `/detalhes` ligado), `--show-context` (imprime o contexto montado e sai antes de ler a configuração: sem chave, sem `.env`, sem rede) e `-h`/`--help`. A chave da API não é opção, e um teste confere que o parser não declara nenhuma. Opção repetida e argumento posicional são erro de uso. Códigos de saída: 0 normal, ajuda e `--show-context`; 1 uso inválido, configuração ou contexto; 2 erro inesperado. Todo arquivo de camada tem no máximo 64 KiB e precisa ser um arquivo comum.
 
 Comandos dentro do chat: `/sair`, `/limpar`, `/contexto`, `/detalhes`, `/ajuda`.
 
@@ -255,7 +260,7 @@ Contexto fixo estimado em 4 a 6 mil tokens. Cada execução da bateria faz gera�
 ### Limites conhecidos do chat interativo (ENG-49)
 
 - O renderer neutraliza caracteres de controle (ESC, C0, DEL, C1) só na exibição; o histórico e o que vai ao modelo não mudam. Um erro de escrita em stdout/stderr encerra o chat sem stack (EPIPE: código 0; outro erro: uma linha e código 1).
-- O texto do modelo é exibido e guardado no histórico sem redação de chave: se o modelo repetir a chave, ela pode ser impressa. A chave só chega ao modelo se estiver no contexto, o que as regras proíbem. A defesa é a autoavaliação e a redação de saída da ENG-53.
+- O texto do modelo passa por redação de chave antes de aparecer na tela e de entrar no histórico (ENG-53: `stream-redact.ts` e `redact.ts`). A chave só chega ao modelo se estiver no contexto, o que as regras proíbem. Uma chave com menos de 20 caracteres depois do prefixo, cortada no fim do texto, não é reconhecida como chave.
 - O histórico não tem limite: o custo e o tamanho da entrada crescem a cada turno (use `/limpar`).
 - Ctrl+C em um terminal real (TTY) não foi verificado à mão; os testes cobrem o sinal e o cancelamento do turno, não o terminal.
 - O primeiro Ctrl+C cancela o turno (inclusive durante a espera de uma nova tentativa) e encerra o chat; o segundo encerra o programa na hora (`process.exit` com o código de saída de um erro de escrita, ou 0). Mantém-se o código 0.

@@ -21,10 +21,16 @@ import {
 // the files and for the text that the builder assembles from them.
 const CHARACTER_BUDGET = 24_000;
 
+// Files of context/ that are no layer: the safe message and the two prompts of
+// the self-critique (ENG-53). They never go into the assembled context.
+const NON_LAYER_FILES = ["fallback.md", "avaliador.md", "revisao.md"];
+
 // Layers that hold no company data (docs/adr/0003-contexto-em-quatro-camadas.md).
 const FILES_WITHOUT_COMPANY_DATA = [
   "01-instrucoes-globais.md",
   "02-politicas.md",
+  "avaliador.md",
+  "revisao.md",
 ];
 
 // Written as code points: an invisible character in the source is easy to lose.
@@ -108,10 +114,10 @@ describe("context files", () => {
   });
 
   it("stays within the character budget", () => {
-    const total = readContextFiles(FILES).reduce(
-      (sum, file) => sum + file.content.length,
-      0,
-    );
+    // The two prompts are sent in calls of their own, not in the context.
+    const total = readContextFiles(
+      FILES.filter((path) => !["avaliador.md", "revisao.md"].includes(path)),
+    ).reduce((sum, file) => sum + file.content.length, 0);
 
     expect(total).toBeLessThan(CHARACTER_BUDGET);
   });
@@ -190,7 +196,7 @@ describe("assembled context", () => {
   it.each(PROFILES)("holds every layer file of %s whole", (profile) => {
     const text = assemble(profile, WEEK[0] ?? new Date(0));
     const layerFiles = FILES.filter(
-      (path) => path.endsWith(".md") && path !== "fallback.md",
+      (path) => path.endsWith(".md") && !NON_LAYER_FILES.includes(path),
     );
 
     expect(layerFiles.length).toBeGreaterThanOrEqual(3);

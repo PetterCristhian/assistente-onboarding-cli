@@ -183,6 +183,45 @@ function replaceKeyShapedSequences(text: string): string {
   return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
 }
 
+// The token of an authorization header (ENG-53): "Bearer", blanks and a long
+// run of token characters (RFC 6750 plus the base64 and URL-safe ones). It is
+// applied by redact() only. It does not belong to findSecretSpans, which is
+// the scanner of the repository: documents may quote the word "Bearer".
+// Sixteen characters keep ordinary prose ("Bearer tokens") out of it.
+export const BEARER_KEYWORD = "bearer";
+export const BEARER_MAX_BLANKS = 64;
+const BEARER_MIN_TOKEN_LENGTH = 16;
+const BEARER_TOKEN_CHARACTERS = "A-Za-z0-9._~+/=-";
+const BEARER_TOKEN_CHARACTER = new RegExp(`[${BEARER_TOKEN_CHARACTERS}]`);
+// Only the start is a regular expression, with bounded quantifiers; the end of
+// the token is walked, as in findSecretSpans.
+const BEARER_START_SOURCE = `\\b${BEARER_KEYWORD}\\s{1,${BEARER_MAX_BLANKS}}(?=[${BEARER_TOKEN_CHARACTERS}]{${BEARER_MIN_TOKEN_LENGTH}})`;
+
+/** True for a character that can be part of the token after "Bearer". */
+export function isBearerTokenCharacter(character: string): boolean {
+  return BEARER_TOKEN_CHARACTER.test(character);
+}
+
+function replaceBearerTokens(text: string): string {
+  const start = new RegExp(BEARER_START_SOURCE, "gi");
+  let result = "";
+  let copiedUpTo = 0;
+  for (let match = start.exec(text); match !== null; match = start.exec(text)) {
+    const tokenStart = match.index + match[0].length;
+    let tokenEnd = tokenStart;
+    while (
+      tokenEnd < text.length &&
+      isBearerTokenCharacter(text.charAt(tokenEnd))
+    ) {
+      tokenEnd += 1;
+    }
+    result += text.slice(copiedUpTo, tokenStart) + REDACTED;
+    copiedUpTo = tokenEnd;
+    start.lastIndex = tokenEnd;
+  }
+  return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
+}
+
 export type Redactor = (text: string) => string;
 
 /**
@@ -195,8 +234,8 @@ export const MIN_EXACT_SECRET_LENGTH = 8;
 
 /**
  * Replaces by `[REDACTED]` every exact occurrence of the given secrets (the
- * ones with at least MIN_EXACT_SECRET_LENGTH characters) and every sequence
- * shaped like a key.
+ * ones with at least MIN_EXACT_SECRET_LENGTH characters), every sequence
+ * shaped like a key and the token that follows "Bearer".
  */
 export function redact(text: string, secrets: readonly string[] = []): string {
   // An empty secret would make split("") tear the text apart, and a very
@@ -209,7 +248,7 @@ export function redact(text: string, secrets: readonly string[] = []): string {
   for (const secret of exactSecrets) {
     result = result.split(secret).join(REDACTED);
   }
-  return replaceKeyShapedSequences(result);
+  return replaceBearerTokens(replaceKeyShapedSequences(result));
 }
 
 export function createRedactor(secrets: readonly string[]): Redactor {

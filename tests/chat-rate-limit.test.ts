@@ -11,10 +11,12 @@ import { runChat } from "../src/cli/chat-loop.js";
 import { createTerminalOutput } from "../src/cli/renderer.js";
 import { LlmResponseError, type LlmClient } from "../src/llm/client.js";
 import { createRedactor } from "../src/security/redact.js";
+import { type FakeLlmStep } from "./helpers/fake-llm-client.js";
 import {
-  createFakeLlmClient,
-  type FakeLlmStep,
-} from "./helpers/fake-llm-client.js";
+  createApprovingFakeClient,
+  draftCalls,
+  makeCritiqueDeps,
+} from "./helpers/critique-fixtures.js";
 
 const layers = loadContextLayers({}, { now: () => new Date(2025, 0, 6) });
 const context = buildContext(layers);
@@ -29,6 +31,7 @@ function recorder(): Recorder {
     events,
     chunk: (text) => void events.push(`chunk:${text}`),
     endAnswer: () => void events.push("end"),
+    retraction: (text) => void events.push(`retraction:${text}`),
     notice: (level, text) => void events.push(`${level}:${text}`),
   };
 }
@@ -70,11 +73,12 @@ function setup(
       now: time.now,
       sleep: time.sleep,
     });
-  const fake = createFakeLlmClient(script);
+  const fake = createApprovingFakeClient(script);
   const output = recorder();
   const session = createChatSession({
     llm: options.llm ?? fake,
     instructions: context.text,
+    critique: makeCritiqueDeps(),
     output,
     redact: createRedactor([]),
     rateLimit: { limiter, mode: options.mode ?? "refuse" },
@@ -99,7 +103,7 @@ describe("chat session with the local rate limit: refuse", () => {
 
     // The oldest slot (taken at 1 s) frees at 61 s: 38 s from now.
     expect(result).toEqual({ status: "rate_limited", waitSeconds: 38 });
-    expect(fake.calls).toHaveLength(2);
+    expect(draftCalls(fake)).toHaveLength(2);
     expect(output.events.slice(eventsBefore)).toEqual([
       "warning:Limite de perguntas atingido (2 perguntas a cada 60 s). Aguarde 38 segundos e envie de novo.",
     ]);
@@ -148,7 +152,7 @@ describe("chat session with the local rate limit: refuse", () => {
     const result = await session.ask("P2");
 
     expect(result).toMatchObject({ status: "answered", text: "R2" });
-    expect(fake.calls).toHaveLength(2);
+    expect(draftCalls(fake)).toHaveLength(2);
     expect(session.history.map((turn) => turn.content)).toEqual([
       "P1",
       "R1",
@@ -167,7 +171,7 @@ describe("chat session with the local rate limit: refuse", () => {
     time.set(10_000);
     await session.ask("P3");
 
-    const last = fake.calls.at(-1);
+    const last = draftCalls(fake).at(-1);
     expect(JSON.stringify(last?.request.input)).not.toContain("recusada");
   });
 
@@ -229,7 +233,11 @@ describe("chat session with the local rate limit: refuse", () => {
         request.onChunk?.("R");
         return Promise.resolve({ text: "R", model: "m", chunks: 1 });
       },
-      generateStructured: () => Promise.reject(new Error("not used")),
+      generateStructured: (request) =>
+        Promise.resolve({
+          value: request.schema.parse({ aprovada: true, violacoes: [] }),
+          model: "m",
+        }),
     };
     const { session } = setup([], { limiter, llm });
 
@@ -257,7 +265,7 @@ describe("chat session with the local rate limit: refuse", () => {
   });
 
   it("behaves as before without a limiter", async () => {
-    const fake = createFakeLlmClient([
+    const fake = createApprovingFakeClient([
       { text: "R1" },
       { text: "R2" },
       { text: "R3" },
@@ -266,6 +274,7 @@ describe("chat session with the local rate limit: refuse", () => {
     const session = createChatSession({
       llm: fake,
       instructions: context.text,
+      critique: makeCritiqueDeps(),
       output,
       redact: createRedactor([]),
     });
@@ -274,7 +283,7 @@ describe("chat session with the local rate limit: refuse", () => {
       expect((await session.ask(question)).status).toBe("answered");
     }
 
-    expect(fake.calls).toHaveLength(3);
+    expect(draftCalls(fake)).toHaveLength(3);
     expect(output.events.some((event) => event.startsWith("warning:"))).toBe(
       false,
     );
@@ -293,7 +302,7 @@ describe("chat session with the local rate limit: wait", () => {
     const result = await session.ask("P3");
 
     expect(result).toMatchObject({ status: "answered", text: "R3" });
-    expect(fake.calls).toHaveLength(3);
+    expect(draftCalls(fake)).toHaveLength(3);
     expect(time.sleeps).toEqual([60_000]);
     expect(output.events).toContain(
       "info:Aguardando 60 s para respeitar o limite de perguntas.",
@@ -334,7 +343,7 @@ describe("chat session with the local rate limit: wait", () => {
     const result = await session.ask("P1", { signal: controller.signal });
 
     expect(result).toEqual({ status: "cancelled" });
-    expect(fake.calls).toHaveLength(0);
+    expect(draftCalls(fake)).toHaveLength(0);
     expect(session.history).toEqual([]);
   });
 
@@ -346,7 +355,7 @@ describe("chat session with the local rate limit: wait", () => {
     const result = await session.ask("P1", { signal: controller.signal });
 
     expect(result).toEqual({ status: "cancelled" });
-    expect(fake.calls).toHaveLength(0);
+    expect(draftCalls(fake)).toHaveLength(0);
     expect(limiter.tryAcquire()).toEqual({ allowed: true });
   });
 });
@@ -366,10 +375,11 @@ function setupLoop(script: readonly FakeLlmStep[], max: number) {
   const stderr = new PassThrough();
   const out = collect(stdout);
   const err = collect(stderr);
-  const fake = createFakeLlmClient(script);
+  const fake = createApprovingFakeClient(script);
   const session = createChatSession({
     llm: fake,
     instructions: context.text,
+    critique: makeCritiqueDeps(),
     output: createTerminalOutput(stdout, stderr),
     redact: createRedactor([]),
     rateLimit: {
@@ -406,7 +416,7 @@ describe("chat loop with the local rate limit", () => {
     input.end("/sair\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(1);
+    expect(draftCalls(fake)).toHaveLength(1);
     expect(out()).toContain("R1\n");
     expect(err()).not.toContain("Limite de perguntas");
   });
@@ -420,7 +430,7 @@ describe("chat loop with the local rate limit", () => {
     input.end();
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(2);
+    expect(draftCalls(fake)).toHaveLength(2);
     expect(out()).toContain("R1\n");
     expect(out()).toContain("R2\n");
     expect(err().match(/Limite de perguntas atingido/g)).toHaveLength(2);
@@ -435,7 +445,7 @@ describe("chat loop with the local rate limit", () => {
     input.end("/sair\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(1);
+    expect(draftCalls(fake)).toHaveLength(1);
     expect(err()).toContain("Limite de perguntas atingido");
   });
 });

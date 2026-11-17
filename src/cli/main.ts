@@ -3,24 +3,38 @@
 // The key is never an argument: only src/config/env.ts reads the environment.
 // Exit codes: 0 = normal end (also --help and --show-context), 1 = invalid
 // use, configuration or context problem, 2 = unexpected error.
+import { buildEvaluatorContext, type CritiqueDeps } from "../chat/critique.js";
 import { createRateLimiter } from "../chat/rate-limiter.js";
 import { createChatSession } from "../chat/session.js";
 import { ConfigError, loadConfig } from "../config/env.js";
 import { buildContext } from "../context/builder.js";
-import { loadContext, type ContextSources } from "../context/loaders.js";
+import {
+  DEFAULT_CONTEXT_DIR,
+  loadContext,
+  loadCritiquePrompts,
+  loadFallbackMessage,
+  type ContextSources,
+} from "../context/loaders.js";
 import { ContextError } from "../context/types.js";
 import { createOpenAiLlmClient } from "../llm/client.js";
 import { defaultSleep } from "../llm/retry.js";
+import { createSessionLog } from "../logging/session-log.js";
 import { createRedactor, type Redactor } from "../security/redact.js";
+import { createSafeWriter } from "../security/safe-writer.js";
+import { createStreamRedactor } from "../security/stream-redact.js";
 import { HELP_TEXT, parseCliArgs, toContextOptions } from "./args.js";
 import { createInterruptHandler } from "./interrupt.js";
 import { guardOutputStreams } from "./output-guard.js";
 import { runChat } from "./chat-loop.js";
-import { createTerminalOutput, sanitizeForTerminal } from "./renderer.js";
+import {
+  createTerminalOutput,
+  sanitizeForTerminal,
+  sanitizeUntrusted,
+} from "./renderer.js";
 
 const USAGE_HINT = "Use --help para ver as opções.";
 
-/** The four sources of the context, one line each. Provisional (ENG-53). */
+/** The four sources of the context, one line each. */
 function describeSources(sources: ContextSources): string[] {
   return [
     `[detalhes] instruções globais: ${sources.globalInstructionsFile}`,
@@ -77,6 +91,17 @@ async function main(): Promise<number> {
       return outputs.exitCode() ?? 0;
     }
 
+    // Also before the configuration: a missing safe message or prompt is a
+    // problem of the context, and the chat does not start without them.
+    const contextDir = options.contextDir ?? DEFAULT_CONTEXT_DIR;
+    const prompts = loadCritiquePrompts(contextDir);
+    const critique: CritiqueDeps = {
+      evaluatorContext: buildEvaluatorContext(context.sections),
+      evaluatorPrompt: prompts.evaluator,
+      revisionPrompt: prompts.revision,
+      fallbackMessage: loadFallbackMessage(contextDir),
+    };
+
     const config = loadConfig();
     redactText = createRedactor([config.openaiApiKey]);
 
@@ -90,11 +115,27 @@ async function main(): Promise<number> {
       sleep: defaultSleep,
     });
 
+    // One line per turn in logs/, through the single safe writer. A failure
+    // to write is told once and never stops the chat.
+    const sessionLog = createSessionLog({
+      writer: createSafeWriter({ redact: redactText }),
+      now: () => new Date(),
+      profile: layers.userProfile.nome,
+      redact: redactText,
+      warn: (text) => {
+        process.stderr.write(`${sanitizeUntrusted(redactText(text))}\n`);
+      },
+    });
+
     const session = createChatSession({
       llm: createOpenAiLlmClient(config),
       instructions: context.text,
+      critique,
       output: createTerminalOutput(process.stdout, process.stderr),
       redact: redactText,
+      redactStream: () => createStreamRedactor([config.openaiApiKey]),
+      now: () => new Date(),
+      onTurn: (record) => sessionLog.append(record),
       rateLimit: { limiter, mode: "refuse" },
     });
 

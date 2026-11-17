@@ -47,7 +47,7 @@ export const HELP_TEXT = [
   "  --perfil <nome|arquivo>    perfil: nome de 03-usuario/ ou caminho de um arquivo .json",
   "  --context-dir <pasta>      lê as quatro camadas de outra pasta, no lugar de context/",
   "  --show-context             imprime o contexto montado e sai; não chama o modelo nem exige chave",
-  "  --verbose                  detalhes técnicos por turno, em stderr",
+  "  --verbose                  detalhes técnicos e resultado da autoavaliação por turno, em stderr",
   "  -h, --help                 mostra esta ajuda",
   "",
   "A chave vem de OPENAI_API_KEY (.env ou ambiente); nunca é argumento.",

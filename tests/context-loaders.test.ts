@@ -15,6 +15,8 @@ import {
   loadCompanyData,
   loadContext,
   loadContextLayers,
+  loadCritiquePrompts,
+  loadFallbackMessage,
   loadGlobalInstructions,
   loadPolicies,
   loadUserProfile,
@@ -23,7 +25,11 @@ import {
   type ContextFileReader,
   type ContextSources,
 } from "../src/context/loaders.js";
-import { ContextError, userProfileSchema } from "../src/context/types.js";
+import {
+  ContextError,
+  REVISION_VIOLATIONS_MARKER,
+  userProfileSchema,
+} from "../src/context/types.js";
 import {
   CONTEXT_ROOT,
   listContextFiles,
@@ -111,6 +117,8 @@ function madeUpFiles(): Record<string, string> {
     [join(COMPANY_DIR, "b-segundo.md")]: "# Segundo\n\nTexto do segundo.\n",
     [join(COMPANY_DIR, "a-primeiro.md")]: "# Primeiro\n\nTexto do primeiro.\n",
     [join(ROOT, "fallback.md")]: "Mensagem fixa que nunca vai ao modelo.\n",
+    [join(ROOT, "avaliador.md")]: "# Avaliador\n\nApenas audite.\n",
+    [join(ROOT, "revisao.md")]: `Corrija: ${REVISION_VIOLATIONS_MARKER}\n`,
   };
 }
 
@@ -1388,5 +1396,93 @@ describe("the minimal context fixture (ENG-50)", () => {
     expect(text).not.toContain(real.userProfile.gestor);
     expect(text).not.toContain(real.policies.slice(0, 80));
     expect(text).not.toContain(real.globalInstructions.slice(0, 80));
+  });
+});
+
+describe("the safe message and the critique prompts (ENG-53)", () => {
+  it("loads the safe message trimmed", () => {
+    const reader = fakeReader(madeUpFiles());
+
+    expect(loadFallbackMessage(ROOT, reader)).toBe(
+      "Mensagem fixa que nunca vai ao modelo.",
+    );
+  });
+
+  it("loads both prompts, with the marker kept in the revision one", () => {
+    const reader = fakeReader(madeUpFiles());
+
+    expect(loadCritiquePrompts(ROOT, reader)).toEqual({
+      evaluator: "# Avaliador\n\nApenas audite.",
+      revision: `Corrija: ${REVISION_VIOLATIONS_MARKER}`,
+    });
+  });
+
+  it.each([
+    ["loadFallbackMessage", loadFallbackMessage, "fallback.md"],
+    ["loadCritiquePrompts", loadCritiquePrompts, "avaliador.md"],
+    ["loadCritiquePrompts", loadCritiquePrompts, "revisao.md"],
+  ] as const)("%s refuses a missing %s", (_name, load, file) => {
+    const files = madeUpFiles();
+    delete files[join(ROOT, file)];
+
+    expect(contextErrorMessage(() => load(ROOT, fakeReader(files)))).toContain(
+      join(ROOT, file),
+    );
+  });
+
+  it.each([
+    ["loadFallbackMessage", loadFallbackMessage, "fallback.md"],
+    ["loadCritiquePrompts", loadCritiquePrompts, "avaliador.md"],
+    ["loadCritiquePrompts", loadCritiquePrompts, "revisao.md"],
+  ] as const)("%s refuses an empty %s", (_name, load, file) => {
+    const files = { ...madeUpFiles(), [join(ROOT, file)]: "  \n" };
+
+    expect(contextErrorMessage(() => load(ROOT, fakeReader(files)))).toContain(
+      "vazio",
+    );
+  });
+
+  it("refuses a revision prompt without the marker", () => {
+    const files = {
+      ...madeUpFiles(),
+      [join(ROOT, "revisao.md")]: "Reescreva a resposta.\n",
+    };
+
+    expect(
+      contextErrorMessage(() => loadCritiquePrompts(ROOT, fakeReader(files))),
+    ).toContain(REVISION_VIOLATIONS_MARKER);
+  });
+
+  it("refuses an empty context folder path", () => {
+    expect(contextErrorMessage(() => loadFallbackMessage(" "))).toContain(
+      "vazia",
+    );
+    expect(contextErrorMessage(() => loadCritiquePrompts(""))).toContain(
+      "vazia",
+    );
+  });
+
+  it("loads the real files of context/ and of the fixture", () => {
+    const fixture = fileURLToPath(
+      new URL("./fixtures/minimal-context", import.meta.url),
+    );
+
+    for (const dir of [DEFAULT_CONTEXT_DIR, fixture]) {
+      expect(loadFallbackMessage(dir)).not.toBe("");
+      const prompts = loadCritiquePrompts(dir);
+
+      expect(prompts.evaluator).not.toBe("");
+      expect(prompts.revision).toContain(REVISION_VIOLATIONS_MARKER);
+    }
+  });
+
+  it("keeps the prompts out of the assembled context", () => {
+    const { text } = buildContext(
+      loadContextLayers({}, { now: () => new Date() }),
+    );
+    const prompts = loadCritiquePrompts(DEFAULT_CONTEXT_DIR);
+
+    expect(text).not.toContain(prompts.evaluator);
+    expect(text).not.toContain(prompts.revision);
   });
 });

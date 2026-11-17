@@ -1,5 +1,11 @@
 // Reads one line typed by the user. Pure: no input or output.
-export const COMMAND_NAMES = ["sair", "limpar", "contexto", "ajuda"] as const;
+export const COMMAND_NAMES = [
+  "sair",
+  "limpar",
+  "contexto",
+  "detalhes",
+  "ajuda",
+] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
 export type ParsedInput =
@@ -13,6 +19,7 @@ export const HELP_LINES: readonly string[] = [
   "  /sair      encerra o chat",
   "  /limpar    apaga o histórico da conversa",
   "  /contexto  mostra o contexto enviado ao modelo",
+  "  /detalhes  liga ou desliga o resultado da autoavaliação após cada resposta",
   "  /ajuda     mostra esta lista",
 ];
 

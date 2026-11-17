@@ -201,13 +201,77 @@ describe("architecture rules", () => {
 
     expect(files).toContain("src/chat/session.ts");
     expect(files).toContain("src/chat/rate-limiter.ts");
-    expect(filesMatching(files, /readline|process|console|node:/)).toEqual([]);
+    expect(
+      filesMatching(files, /readline|\bprocess\b|\bconsole\b|node:/),
+    ).toEqual([]);
     expect(
       filesMatching(
         ["src/chat/session.ts"],
         /writeFile|appendFile|createWriteStream/,
       ),
     ).toEqual([]);
+  });
+
+  // Architecture rule 5: one writer of the history, and it runs once per turn.
+  it("writes to the history in one place of the session, once", () => {
+    const session = readSource("src/chat/session.ts");
+
+    expect(session.match(/\bhistory\s*\.\s*push\(/g)).toHaveLength(1);
+    expect(session.match(/\bcommitTurn\(/g)).toHaveLength(2);
+    expect(
+      filesMatching(
+        listTypeScriptFiles("src").filter(
+          (file) => file !== "src/chat/session.ts",
+        ),
+        /\bhistory\s*\.\s*push\(/,
+      ),
+    ).toEqual([]);
+  });
+
+  // The slot of the limit is taken once per question, by the session; the
+  // evaluation and the revision are part of the same question.
+  it("takes the slot of the rate limit once in the session and never in the critique", () => {
+    const session = readSource("src/chat/session.ts");
+    const critique = readSource("src/chat/critique.ts");
+
+    expect(session.match(/\bawait\s+takeRateLimitSlot\(/g)).toHaveLength(1);
+    expect(critique).not.toMatch(/rate-limiter|RateLimiter|\bacquire\b/);
+  });
+
+  it("keeps the critique pure: no disk, no clock, no environment", () => {
+    const critique = readSource("src/chat/critique.ts");
+    const imported = [...critique.matchAll(/\bfrom\s+"([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+
+    expect(imported).toEqual([
+      "zod",
+      "../context/types.js",
+      "../llm/client.js",
+      "../security/error-summary.js",
+      "../security/redact.js",
+    ]);
+    expect(critique).not.toMatch(/\bDate\b|Math\s*\.\s*random|\bawait\b/);
+  });
+
+  // The log is written by the single safe writer; this folder has no disk and
+  // no clock of its own.
+  it("keeps src/logging/ free of the disk and of the clock", () => {
+    const files = listTypeScriptFiles("src").filter((file) =>
+      file.startsWith("src/logging/"),
+    );
+
+    expect(files).toContain("src/logging/session-log.ts");
+    expect(
+      filesMatching(
+        files,
+        /node:fs|from\s+["']fs["']|writeFile|appendFile|createWriteStream|new\s+Date\s*\(|Date\s*\.\s*now|performance\s*\.\s*now/,
+      ),
+    ).toEqual([]);
+    expect(filesMatching(files, /\bprocess\b|\bconsole\b/)).toEqual([]);
+    expect(readSource("src/logging/session-log.ts")).toMatch(
+      /\bwriter\s*\.\s*appendJsonLine\(/,
+    );
   });
 
   // The limiter has no clock, no timer and no import: all of it is a parameter.
