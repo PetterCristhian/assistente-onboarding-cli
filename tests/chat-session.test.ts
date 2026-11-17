@@ -206,6 +206,51 @@ describe("createChatSession", () => {
   });
 });
 
+describe("createChatSession turn state (ENG-51)", () => {
+  it("refuses clear() while a turn runs, and keeps the history", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { session } = setup([{ text: "R1" }, { text: "R2", wait: held }]);
+    await session.ask("P1");
+
+    const pending = session.ask("P2");
+    expect(() => session.clear()).toThrow("turno em andamento");
+    release();
+    await pending;
+
+    expect(session.history).toHaveLength(4);
+    session.clear();
+    expect(session.history).toEqual([]);
+  });
+
+  it("does not keep the turn when closing the line fails, and closes it only once", async () => {
+    let ends = 0;
+    const events: string[] = [];
+    const session = createChatSession({
+      llm: createFakeLlmClient([{ text: "R" }, { text: "R2" }]),
+      instructions: context.text,
+      output: {
+        chunk: (text) => void events.push(`chunk:${text}`),
+        endAnswer: () => {
+          ends += 1;
+          throw new Error("closed pipe");
+        },
+        notice: (level, text) => void events.push(`${level}:${text}`),
+      },
+      redact: createRedactor([KEY]),
+    });
+
+    const result = await session.ask("P");
+
+    expect(result.status).toBe("failed");
+    expect(session.history).toEqual([]);
+    expect(ends).toBe(1);
+    expect(events.at(-1)).toMatch(/^error:/);
+  });
+});
+
 describe("createChatSession usage (ENG-50)", () => {
   const USAGE = { inputTokens: 5, outputTokens: 7, totalTokens: 12 };
 

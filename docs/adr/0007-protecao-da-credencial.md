@@ -22,6 +22,11 @@ A entrega é um repositório Git público. O projeto usa a chave de API paga do 
 
 O arquivo indicado em `--system-prompt` vira a camada 1 e, como todo o contexto, é enviado ao provedor a cada chamada. O projeto não o inspeciona em busca de segredos. Por isso a opção recusa um arquivo cujo nome começa com `.env`, só aceita `.md` ou `.txt`, só lê arquivo comum de até 64 KiB, e o README avisa que o conteúdo sai da máquina. O mesmo vale para o arquivo de perfil. A chave continua fora de qualquer argumento de linha de comando: o parser não declara essa opção e nunca repete na mensagem de erro o texto de um argumento que não reconhece.
 
+## Adendo (ENG-51): `OPENAI_CUSTOM_HEADERS` e mensagens ao usuário
+
+- `OPENAI_CUSTOM_HEADERS` é recusada em `loadConfig` (erro de configuração, sem repetir o valor): o SDK a lê por conta própria e a aplica depois dos cabeçalhos de autenticação (ADR 0002, decisão 9). A mitigação por cabeçalhos próprios em `src/llm/client.ts` continua como segunda barreira.
+- As mensagens mostradas ao usuário sobre falhas do provedor são textos fixos mais o status e um código curto (identificador de até 40 caracteres). **Nunca o `error.message` do SDK**: o de um 401 cita a chave mascarada. Cabeçalhos de resposta são lidos só para o `retry-after` e nunca saem do módulo de classificação (`src/llm/errors.ts`). O texto final ainda passa por `redact()` na sessão, e um erro que não é do SDK mantém a própria mensagem, já redigida.
+
 ## Alternativas descartadas
 
 - Confiar só no `.gitignore`: não protege outputs nem logs.

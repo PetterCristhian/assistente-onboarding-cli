@@ -50,8 +50,13 @@ export function summarizeError(error: unknown, redact: Redactor): ErrorSummary {
     summary.status = status;
   }
 
+  // The SDK wraps the failure of `fetch` (a TypeError) whose own cause holds
+  // the system code (ECONNREFUSED): up to two levels down.
+  const cause = pick(error, "cause");
   const code =
-    pickString(error, "code") ?? pickString(pick(error, "cause"), "code");
+    pickString(error, "code") ??
+    pickString(cause, "code") ??
+    pickString(pick(cause, "cause"), "code");
   if (code !== undefined) {
     summary.code = redact(code).slice(0, MAX_FIELD_LENGTH);
   }

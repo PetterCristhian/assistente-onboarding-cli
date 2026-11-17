@@ -35,7 +35,10 @@ async function main(): Promise<number> {
 
   const redactKey = createRedactor([config.openaiApiKey]);
   try {
-    const report = await runLlmSmoke(createOpenAiLlmClient(config), {
+    // The smoke test never retries, on purpose (ADR 0002, decision 11): a
+    // wrong premise must show up as a failure, and no credit is spent twice.
+    const client = createOpenAiLlmClient({ ...config, retryMaxAttempts: 0 });
+    const report = await runLlmSmoke(client, {
       requestedModel: config.openaiModel,
       now: () => performance.now(),
       redact: redactKey,

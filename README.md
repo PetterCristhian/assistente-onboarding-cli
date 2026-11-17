@@ -72,7 +72,16 @@ npm run contexto
 
 O comando imprime as quatro camadas de `context/`, cada uma entre os seus marcadores e sempre na mesma ordem: `<instrucoes_globais>`, `<politicas>`, `<dados_do_usuario>` e `<dados_da_empresa>`. Ele não aceita opções e usa o perfil padrão, que é o primeiro de `context/03-usuario/` em ordem alfabética. Para escolher o perfil, as instruções ou a pasta de contexto, use `npm run chat -- --show-context` com as opções acima, por exemplo `npm run chat -- --show-context --perfil nome-do-perfil`. Se um arquivo de camada estiver ausente, vazio ou inválido, o comando encerra com código 1 e uma mensagem que cita o caminho esperado.
 
-As demais variáveis são opcionais e estão descritas em `.env.example` e na seção 7 de [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
+As demais variáveis são opcionais e estão descritas em `.env.example` e na seção 7 de [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md). As que governam falhas do provedor:
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `REQUEST_TIMEOUT_MS` | `60000` | Prazo de **cada tentativa**, não da pergunta inteira |
+| `RETRY_MAX_ATTEMPTS` | `3` | Novas tentativas após a primeira falha (0 desliga o retry) |
+| `RETRY_BASE_DELAY_MS` | `1000` | Base da espera exponencial (cerca de 1 s, 2 s, 4 s, com até 20% de variação; no máximo 30 s) |
+| `OPENAI_CUSTOM_HEADERS` | — | **Recusada**: se existir no ambiente ou no `.env`, o programa encerra com erro de configuração. Não a defina |
+
+Quando o provedor falha de forma passageira (sem conexão, tempo esgotado, erro 5xx, limite de requisições), o chat mostra uma linha por nova tentativa, com o motivo, a espera e o número da tentativa. Erros que não adiantam repetir (chave inválida, sem crédito, requisição recusada) aparecem na hora, com orientação. Se as tentativas acabam, o chat continua aberto e o histórico fica como estava.
 
 ## Como testar
 
@@ -82,7 +91,7 @@ As demais variáveis são opcionais e estão descritas em `.env.example` e na se
 | `npm run contexto` | Imprime o contexto montado (as quatro camadas) do perfil padrão | Não |
 | `npm run chat -- --show-context` | Imprime o contexto montado respeitando `--perfil`, `--system-prompt` e `--context-dir`, sem chamar o modelo | Não |
 | `npm run check` | Portão de qualidade: lint + typecheck + testes unitários + varredura de segredos | Não |
-| `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local | Não |
+| `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local (planejado, ENG-54; ainda não existe) | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real (streaming e saída estruturada) | **Sim, e consome crédito** |
 | `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real | **Sim, e consome crédito** |
 
@@ -91,6 +100,14 @@ As demais variáveis são opcionais e estão descritas em `.env.example` e na se
 Confirma, contra a API real, que o modelo configurado, o `reasoning.effort` e a saída estruturada são aceitos. Faz duas chamadas curtas, sem novas tentativas, com uma pergunta genérica. **Usa a chave do `.env` e gasta crédito: rode à mão, uma vez, e nunca em laço.** Não faz parte do `npm run check` nem do CI.
 
 O comando imprime o modelo pedido e o devolvido, o número de trechos recebidos, o tamanho do texto, o tempo até o primeiro trecho e o total, os tokens, um resumo do objeto estruturado (nomes dos campos, valor do campo enumerado e tamanho do texto livre, nunca o texto) e uma linha por checagem, terminando em `Resultado: APROVADO` ou `Resultado: REPROVADO`. Nada é gravado em disco e tudo o que é impresso passa pela redação de segredos; em caso de falha, aparece só o resumo do erro (status, código, tipo e mensagem), com os identificadores de organização (`org-…`) e de projeto (`proj_…`) mascarados. Mesmo assim, **revise a saída antes de colar em um PR ou issue**: o repositório é público e a mensagem de erro é texto escrito pelo provedor. Código de saída: 0 quando o texto chega em mais de um trecho e o objeto é válido; 1 quando alguma checagem falha ou a chave não está configurada; 2 em erro inesperado.
+
+### Roteiro manual: falhas do provedor
+
+Sem gastar crédito além de uma pergunta e sem alterar o código. Se preferir não usar a rede real, a demonstração com servidor local (`npm run demo:falhas`) chega na ENG-54.
+
+- **(a) Rede desconectada.** Com o chat aberto (`npm run chat`), desligue a rede (Wi-Fi ou cabo) e faça uma pergunta. Aparecem linhas como `Falha de conexão com o provedor. Nova tentativa 1 de 3, em 1 s.`, depois 2 s e 4 s, e por fim a mensagem de que não foi possível obter a resposta depois de 4 tentativas. O chat continua aberto: religue a rede e pergunte de novo. Para ver o fim mais depressa, use `RETRY_MAX_ATTEMPTS=1` no `.env`.
+- **(b) Chave inválida.** Troque o valor de `OPENAI_API_KEY` no `.env` por um texto qualquer com o formato de chave, abra o chat e faça uma pergunta. A resposta é uma única mensagem orientando a conferir `OPENAI_API_KEY` e gerar uma chave nova no painel, sem nova tentativa e sem repetir a chave. Restaure o `.env` depois.
+- **Ctrl+C.** Durante a espera de uma nova tentativa, o primeiro Ctrl+C cancela a pergunta e encerra o chat; um segundo Ctrl+C, se algo travar, encerra o programa na hora.
 
 ## Integração contínua
 

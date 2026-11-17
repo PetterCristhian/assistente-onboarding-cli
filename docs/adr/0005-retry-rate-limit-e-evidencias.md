@@ -11,7 +11,7 @@ F8 exige retry limitado com espera crescente e aviso ao usuário; erros não rec
 
 ### Mecanismo
 
-1. **Retry próprio; o do SDK é desligado.** O cliente é criado com `maxRetries: 0` e `timeout` explícito. O SDK tenta de novo sozinho e em silêncio por padrão, o que impediria os avisos de "tentando novamente" e tornaria o comportamento não testável. O `timeout` do SDK não cobre o corpo de um stream (só conta até os cabeçalhos da resposta); por isso `REQUEST_TIMEOUT_MS` é imposto também por um temporizador do próprio cliente, como prazo total da chamada (ADR 0002, decisão 7). Um stream que estoura esse prazo termina com o mesmo erro de timeout do SDK.
+1. **Retry próprio; o do SDK é desligado.** O cliente é criado com `maxRetries: 0` e `timeout` explícito. O SDK tenta de novo sozinho e em silêncio por padrão, o que impediria os avisos de "tentando novamente" e tornaria o comportamento não testável. O `timeout` do SDK não cobre o corpo de um stream (só conta até os cabeçalhos da resposta); por isso `REQUEST_TIMEOUT_MS` é imposto também por um temporizador do próprio cliente, **por tentativa** (ADR 0002, decisão 7): cada nova tentativa recebe o prazo inteiro, e não existe prazo total da chamada. O pior caso é, portanto, de `(RETRY_MAX_ATTEMPTS + 1) x REQUEST_TIMEOUT_MS` mais as esperas (cada uma de no máximo 30 s). Um stream que estoura o prazo da tentativa termina com o mesmo erro de timeout do SDK, que é transitório.
 2. **Ponto único:** `withRetry()` em `src/llm/retry.ts` envolve toda chamada feita por `LlmClient` (geração, revisão, autoavaliação, juiz).
 3. **Classificação** em `src/llm/errors.ts`, a partir das classes de erro do SDK:
 
@@ -29,6 +29,19 @@ F8 exige retry limitado com espera crescente e aviso ao usuário; erros não rec
 8. **Limite local (F9b):** janela deslizante em `src/chat/rate-limiter.ts`, contando perguntas do usuário, com `RATE_LIMIT_MAX_REQUESTS` por `RATE_LIMIT_WINDOW_SECONDS`. No chat, a pergunta que excede o limite não é enviada e o usuário vê quantos segundos aguardar. Na bateria, o mesmo limitador é usado em modo de espera (aguarda em vez de recusar), para a execução não falhar por causa dele.
 
 O relógio e a função de espera são injetados em `withRetry` e no limitador, para permitir teste com tempo falso.
+
+### Decisões da implementação (ENG-51)
+
+9. **Classificação de `LlmResponseError`.** Só `interrupted` (a resposta não pôde ser lida até o fim) e `failed` (o provedor informou a falha) são repetíveis, como falha transitória. `malformed`, `incomplete`, `empty`, `refusal` e `invalid_output` são fatais (razão `response`) e mantêm a própria mensagem: repetir não muda o contrato violado, a decisão do modelo nem o limite de tokens. Qualquer outro erro que não seja do provedor (um `TypeError`, um texto, o que o `onChunk` ou o `onRetry` do chamador lança) é fatal e desconhecido: não é repetido nem engolido.
+10. **Prazo por tentativa.** Ver a decisão 1.
+11. **Teto de 30 s e `Retry-After` longo.** A espera nunca passa de 30 s, constante em `src/llm/retry.ts`. Se o provedor pede, em `retry-after-ms` ou `retry-after`, uma espera maior que o teto, a chamada falha na hora, sem esperar e sem aviso de nova tentativa, e a mensagem diz: "o provedor pediu para aguardar N s; tente de novo mais tarde". O erro original é relançado sem alteração; o valor pedido fica guardado à parte (um `WeakMap` em `retry.ts`) para a mensagem. `retry-after` aceita segundos (inteiros ou decimais) e data HTTP. Valor inválido, negativo, infinito ou data já passada não conta: cai no backoff.
+12. **Jitter só para cima.** `exp = min(30 s, base x 2^(n-1))` e `espera = min(30 s, round(exp x (1 + 0,2 x aleatório)))`, com o aleatório em `[0, 1)`: de 0 a 20% a mais, nunca menos que a base. O número aleatório é injetado.
+13. **Orçamento compartilhado.** O 429 e as falhas transitórias gastam as mesmas `RETRY_MAX_ATTEMPTS` novas tentativas; não há um orçamento por classe. Esgotado o orçamento, o último erro original é relançado, sem wrapper, para que o resumo de erro e a sessão leiam `status` e `code`.
+14. **Streaming interrompido.** A sessão fecha a linha da resposta parcial (`endAnswer`), avisa em uma linha que a resposta foi interrompida, que o texto acima está incompleto e será descartado, e que a geração recomeça do zero (com a tentativa e a espera); a nova geração é impressa logo abaixo. O texto parcial nunca entra no histórico: só o texto da tentativa que vence chega a `commitTurn`. Se a última tentativa falha depois de algum texto, a linha é fechada uma vez, e o aviso "Resposta interrompida." precede a mensagem de erro.
+15. **`onRetry` por requisição.** O aviso de nova tentativa é um callback do `LlmRequest` (`onRetry`), não da configuração do cliente: quem chama decide o que mostrar (o chat imprime uma linha; a bateria pode registrar). É chamado antes da espera. Um erro lançado por ele encerra a chamada.
+16. **Espera abortável.** A espera recebe o `AbortSignal` da chamada e rejeita na hora quando ele aborta, sem deixar temporizador nem ouvinte; o cancelamento durante a espera termina com `APIUserAbortError`, sem nova requisição. Ctrl+C: o primeiro cancela o turno; o segundo encerra o programa na hora, com o código de saída que um erro de escrita tenha definido (ou 0).
+17. **Mensagens ao usuário.** Textos fixos em português mais o status e um código curto (identificador de até 40 caracteres); nunca o `error.message` do SDK, cujo texto de um 401 cita a chave mascarada. A mensagem final ainda passa por `redact()` na sessão. Um erro que não é do SDK (por exemplo, o de um `onChunk` do chamador) mantém a própria mensagem, já redigida.
+18. **Exceção da fumaça.** `npm run smoke:llm` cria o cliente com `retryMaxAttempts: 0` (ADR 0002, decisão 11).
 
 ### Evidência em três níveis
 
