@@ -11,6 +11,7 @@
     "chat": "tsx src/cli/main.ts",
     "contexto": "tsx scripts/show-context.ts",
     "smoke:llm": "tsx scripts/smoke-llm.ts",
+    "demo:falhas": "tsx scripts/demo-falhas.ts",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "format": "prettier --write .",

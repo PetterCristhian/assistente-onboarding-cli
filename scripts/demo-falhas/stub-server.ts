@@ -12,7 +12,12 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { connect, type AddressInfo, type Socket } from "node:net";
+import {
+  connect,
+  createServer as createNetServer,
+  type AddressInfo,
+  type Socket,
+} from "node:net";
 
 export const STUB_HOST = "127.0.0.1";
 
@@ -223,4 +228,28 @@ export function isPortRefused(
       finish(error.code === "ECONNREFUSED"),
     );
   });
+}
+
+/**
+ * A port that refuses connections right now, found by opening and closing a
+ * listener (at most `attempts` times). Used when the port that the server just
+ * freed was taken by another process in the meantime.
+ */
+export async function findRefusedPort(
+  attempts = 5,
+): Promise<number | undefined> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const probe = createNetServer();
+    const port = await new Promise<number>((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(0, STUB_HOST, () => {
+        resolve((probe.address() as AddressInfo).port);
+      });
+    });
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    if (await isPortRefused(port)) {
+      return port;
+    }
+  }
+  return undefined;
 }

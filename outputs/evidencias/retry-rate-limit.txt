@@ -1,0 +1,106 @@
+Demonstração de falhas do provedor: retry e rate limit (ENG-54)
+Servidor simulado em 127.0.0.1 (porta livre, encerrado ao final). Chave falsa. Nenhuma requisição sai da máquina.
+Cliente real (LlmClient + withRetry): até 3 novas tentativas (4 chamadas), espera base de 100 ms dobrando a cada tentativa, sem jitter, teto de 30 s.
+
+== Cenário 1: 429 com Retry-After e depois sucesso ==
+Roteiro do servidor: 429 com "Retry-After: 1"; depois 200.
+  Aviso: O provedor limitou as requisições (HTTP 429). Nova tentativa 1 de 3, em 1 s.
+  Espera planejada: 1000 ms (origem: Retry-After do provedor)
+Desfecho: sucesso na chamada 2.
+  [ok] Chamadas do cliente: esperado 2, obtido 2
+  [ok] Requisições recebidas pelo servidor: esperado 2, obtido 2
+  [ok] Esperas planejadas (ms): esperado [1000], obtido [1000]
+  [ok] Origem da espera: esperado Retry-After do provedor, obtido Retry-After do provedor
+  [ok] Espera real de pelo menos a planejada (tolerância de 15 ms): esperado sim, obtido sim
+  [ok] Avisos de nova tentativa: esperado 1, obtido 1
+  [ok] Desfecho: esperado sucesso, obtido sucesso
+  [ok] Requisições fora do roteiro: esperado 0, obtido 0
+  [ok] Chave da demonstração em toda requisição: esperado sim, obtido sim
+
+== Cenário 2: 429 sem cabeçalho e depois sucesso ==
+Roteiro do servidor: 429 sem cabeçalho de espera; depois 200.
+  Aviso: O provedor limitou as requisições (HTTP 429). Nova tentativa 1 de 3, em 0,1 s.
+  Espera planejada: 100 ms (origem: espera exponencial do cliente)
+Desfecho: sucesso na chamada 2.
+  [ok] Chamadas do cliente: esperado 2, obtido 2
+  [ok] Requisições recebidas pelo servidor: esperado 2, obtido 2
+  [ok] Esperas planejadas (ms): esperado [100], obtido [100]
+  [ok] Origem da espera: esperado espera exponencial do cliente, obtido espera exponencial do cliente
+  [ok] Espera real de pelo menos a planejada (tolerância de 15 ms): esperado sim, obtido sim
+  [ok] Avisos de nova tentativa: esperado 1, obtido 1
+  [ok] Desfecho: esperado sucesso, obtido sucesso
+  [ok] Requisições fora do roteiro: esperado 0, obtido 0
+  [ok] Chave da demonstração em toda requisição: esperado sim, obtido sim
+
+== Cenário 3: 500 repetido até esgotar as tentativas ==
+Roteiro do servidor: 500 em todas as 4 chamadas.
+  Aviso: O provedor está com problemas (HTTP 500). Nova tentativa 1 de 3, em 0,1 s.
+  Espera planejada: 100 ms (origem: espera exponencial do cliente)
+  Aviso: O provedor está com problemas (HTTP 500). Nova tentativa 2 de 3, em 0,2 s.
+  Espera planejada: 200 ms (origem: espera exponencial do cliente)
+  Aviso: O provedor está com problemas (HTTP 500). Nova tentativa 3 de 3, em 0,4 s.
+  Espera planejada: 400 ms (origem: espera exponencial do cliente)
+Desfecho: falha depois de 4 chamadas (status HTTP 500).
+Mensagem ao usuário: O provedor está com problemas (status 500, código server_error). Desisti depois de 4 tentativas; tente de novo em instantes.
+  [ok] Chamadas do cliente: esperado 4, obtido 4
+  [ok] Requisições recebidas pelo servidor: esperado 4, obtido 4
+  [ok] Esperas planejadas (ms): esperado [100, 200, 400], obtido [100, 200, 400]
+  [ok] Origem da espera: esperado espera exponencial do cliente, obtido espera exponencial do cliente
+  [ok] Espera real de pelo menos a planejada (tolerância de 15 ms): esperado sim, obtido sim
+  [ok] Avisos de nova tentativa: esperado 3, obtido 3
+  [ok] Desfecho: esperado falha, obtido falha
+  [ok] Status HTTP da falha: esperado 500, obtido 500
+  [ok] Classificação da falha: esperado transient:http_status, obtido transient:http_status
+  [ok] Mensagem ao usuário: esperado contém "Desisti depois de 4 tentativas", obtido contém o trecho
+  [ok] Requisições fora do roteiro: esperado 0, obtido 0
+  [ok] Chave da demonstração em toda requisição: esperado sim, obtido sim
+
+== Cenário 4: 401 sem nova tentativa ==
+Roteiro do servidor: 401 na primeira chamada.
+  Nenhum aviso: o cliente não tentou de novo.
+Desfecho: falha depois de 1 chamada (status HTTP 401).
+Mensagem ao usuário: A chave da OpenAI foi recusada. Confira o valor de OPENAI_API_KEY no arquivo ".env" e, se preciso, gere uma chave nova no painel da OpenAI. (status 401, código invalid_api_key)
+  [ok] Chamadas do cliente: esperado 1, obtido 1
+  [ok] Requisições recebidas pelo servidor: esperado 1, obtido 1
+  [ok] Esperas planejadas (ms): esperado [], obtido []
+  [ok] Origem da espera: esperado nenhuma, obtido nenhuma
+  [ok] Espera real de pelo menos a planejada (tolerância de 15 ms): esperado sim, obtido sim
+  [ok] Avisos de nova tentativa: esperado 0, obtido 0
+  [ok] Desfecho: esperado falha, obtido falha
+  [ok] Status HTTP da falha: esperado 401, obtido 401
+  [ok] Classificação da falha: esperado fatal:auth, obtido fatal:auth
+  [ok] Mensagem ao usuário: esperado contém "A chave da OpenAI foi recusada", obtido contém o trecho
+  [ok] Requisições fora do roteiro: esperado 0, obtido 0
+  [ok] Chave da demonstração em toda requisição: esperado sim, obtido sim
+
+== Cenário 5: conexão recusada até esgotar as tentativas ==
+Roteiro do servidor: nenhum servidor escutando na porta; a conexão é recusada.
+  Aviso: Falha de conexão com o provedor. Nova tentativa 1 de 3, em 0,1 s.
+  Espera planejada: 100 ms (origem: espera exponencial do cliente)
+  Aviso: Falha de conexão com o provedor. Nova tentativa 2 de 3, em 0,2 s.
+  Espera planejada: 200 ms (origem: espera exponencial do cliente)
+  Aviso: Falha de conexão com o provedor. Nova tentativa 3 de 3, em 0,4 s.
+  Espera planejada: 400 ms (origem: espera exponencial do cliente)
+Desfecho: falha depois de 4 chamadas (sem status HTTP).
+Mensagem ao usuário: Falha de conexão com o provedor (código ECONNREFUSED). Desisti depois de 4 tentativas; verifique a conexão e tente de novo.
+  [ok] Chamadas do cliente: esperado 4, obtido 4
+  [ok] Esperas planejadas (ms): esperado [100, 200, 400], obtido [100, 200, 400]
+  [ok] Origem da espera: esperado espera exponencial do cliente, obtido espera exponencial do cliente
+  [ok] Espera real de pelo menos a planejada (tolerância de 15 ms): esperado sim, obtido sim
+  [ok] Avisos de nova tentativa: esperado 3, obtido 3
+  [ok] Desfecho: esperado falha, obtido falha
+  [ok] Status HTTP da falha: esperado nenhum, obtido nenhum
+  [ok] Classificação da falha: esperado transient:connection, obtido transient:connection
+  [ok] Mensagem ao usuário: esperado contém "Falha de conexão com o provedor", obtido contém o trecho
+  [ok] Requisições fora do roteiro: esperado 0, obtido 0
+
+== Resumo ==
+Cenário    | Esperado                     | Obtido                       | Resultado
+1          | 2 chamadas, sucesso          | 2 chamadas, sucesso          | CONFERE
+2          | 2 chamadas, sucesso          | 2 chamadas, sucesso          | CONFERE
+3          | 4 chamadas, falha 500        | 4 chamadas, falha 500        | CONFERE
+4          | 1 chamada, falha 401         | 1 chamada, falha 401         | CONFERE
+5          | 4 chamadas, falha sem status | 4 chamadas, falha sem status | CONFERE
+Servidor local encerrado ao final: esperado sim, obtido sim | CONFERE
+Duração total abaixo de 60 s: esperado sim, obtido sim | CONFERE
+Resultado geral: 5 de 5 cenários conferem (mais o encerramento do servidor). Código de saída 0.

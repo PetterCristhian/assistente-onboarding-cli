@@ -139,16 +139,85 @@ describe("architecture rules", () => {
     }
   });
 
-  // The smoke test is the registered exception to withRetry (ADR 0002,
-  // decision 11): it makes one try per call, on purpose.
-  it("creates the real client only in the chat entry point and in the smoke test", () => {
+  // The smoke test is the only exception to withRetry (ADR 0002, decision 11):
+  // it makes one try per call, on purpose. The demonstration of failures is NOT
+  // an exception: it uses the same client, so the retry that it shows is the
+  // retry of the chat (ADR 0005, decision 24).
+  it("creates the real client only in the chat entry point, in the smoke test and in the demo", () => {
     const callers = filesMatching(
       listTypeScriptFiles("src", "evals", "scripts"),
       /\bcreateOpenAiLlmClient\s*\(/,
     ).filter((file) => file !== "src/llm/client.ts");
 
-    expect(callers).toEqual(["scripts/smoke-llm.ts", "src/cli/main.ts"]);
+    expect(callers).toEqual([
+      "scripts/demo-falhas/run.ts",
+      "scripts/smoke-llm.ts",
+      "src/cli/main.ts",
+    ]);
     expect(readSource("scripts/smoke-llm.ts")).toMatch(/retryMaxAttempts: 0\b/);
+  });
+
+  // ENG-54: what the demonstration shows is the retry of the chat, against a
+  // simulated provider reached only through the base URL. Nothing of the retry
+  // is copied, nothing is read from the environment, and the disk is written
+  // only by the safe writer.
+  describe("the demonstration of failures (scripts/demo-falhas*)", () => {
+    const files = listTypeScriptFiles("scripts").filter((file) =>
+      file.startsWith("scripts/demo-falhas"),
+    );
+
+    it("is made of the entry point and the folder with its pieces", () => {
+      expect(files).toEqual([
+        "scripts/demo-falhas.ts",
+        "scripts/demo-falhas/config.ts",
+        "scripts/demo-falhas/loopback-fetch.ts",
+        "scripts/demo-falhas/observe.ts",
+        "scripts/demo-falhas/report.ts",
+        "scripts/demo-falhas/run.ts",
+        "scripts/demo-falhas/scenarios.ts",
+        "scripts/demo-falhas/stub-server.ts",
+      ]);
+    });
+
+    it("does not copy the retry, turn it off, read the environment or write to the disk", () => {
+      const forbidden = [
+        /retryMaxAttempts\s*:\s*0\b/,
+        /\bwithRetry\(/,
+        /\bcomputeDelay\b/,
+        /\bprocess\s*\.\s*env\b/,
+        /\bloadConfig\b/,
+        /\bloadEnvFile\b/,
+        /writeFile|appendFile|createWriteStream/,
+        /\bnew\s+OpenAI\b/,
+      ];
+
+      for (const pattern of forbidden) {
+        expect([pattern.source, filesMatching(files, pattern)]).toEqual([
+          pattern.source,
+          [],
+        ]);
+      }
+    });
+
+    it("reaches the simulated provider through the base URL and waits with the wait of the chat", () => {
+      const run = readSource("scripts/demo-falhas/run.ts");
+
+      expect(run).toMatch(/\bbaseURL\b/);
+      expect(run).toMatch(/\bdefaultSleep\b/);
+      expect(run).toMatch(/from\s+"\.\.\/\.\.\/src\/llm\/retry\.js"/);
+      expect(run.match(/\bcreateOpenAiLlmClient\s*\(/g)).toHaveLength(1);
+    });
+
+    it("keeps the entry point to wiring: no server, no socket, no scenario logic", () => {
+      const entry = readSource("scripts/demo-falhas.ts");
+
+      expect(entry).not.toMatch(/node:http|node:net|\bhttp\b|\bnet\b/);
+      expect(entry).not.toMatch(/\bprocess\s*\.\s*exit\s*\(/);
+      expect(entry).toMatch(/\bprocess\.exitCode\b/);
+      expect(entry).toMatch(/\bcreateSafeWriter\b/);
+      expect(entry).toMatch(/\bAbortController\b/);
+      expect(entry).toMatch(/\bSIGINT\b/);
+    });
   });
 
   // The limiter is created in one place, so that the policy (refuse or wait) is

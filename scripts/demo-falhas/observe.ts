@@ -97,7 +97,8 @@ export async function runScenario(
     return snapshot({ outcome: "success" });
   } catch (error) {
     const cause = classifyError(error);
-    if (cause.kind === "cancelled") {
+    // An interruption by the caller is not a result of the scenario.
+    if (context.signal?.aborted === true || cause.kind === "cancelled") {
       throw error;
     }
     return snapshot({
