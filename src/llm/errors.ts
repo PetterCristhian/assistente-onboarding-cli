@@ -221,7 +221,9 @@ function where(error: unknown): string {
 
 function seconds(ms: number): string {
   const value = Math.ceil(ms / 100) / 10;
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(1).replace(".", ",");
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -317,7 +319,11 @@ export function describeFailure(
           ? error.message
           : `${error.message} Desisti depois de ${tries}; tente de novo.`;
       }
-      return `${describeTransient(kind, false)}${detail}. Desisti depois de ${tries}; verifique a conexão e tente de novo.`;
+      const advice =
+        kind.reason === "connection" || kind.reason === "timeout"
+          ? "verifique a conexão e tente de novo"
+          : "tente de novo em instantes";
+      return `${describeTransient(kind, false)}${detail}. Desisti depois de ${tries}; ${advice}.`;
     }
     case "fatal":
       switch (kind.reason) {

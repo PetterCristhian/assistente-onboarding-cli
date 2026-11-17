@@ -91,7 +91,7 @@ Quando o provedor falha de forma passageira (sem conexão, tempo esgotado, erro 
 | `npm run contexto` | Imprime o contexto montado (as quatro camadas) do perfil padrão | Não |
 | `npm run chat -- --show-context` | Imprime o contexto montado respeitando `--perfil`, `--system-prompt` e `--context-dir`, sem chamar o modelo | Não |
 | `npm run check` | Portão de qualidade: lint + typecheck + testes unitários + varredura de segredos | Não |
-| `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local | Não |
+| `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local (planejado, ENG-54; ainda não existe) | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real (streaming e saída estruturada) | **Sim, e consome crédito** |
 | `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real | **Sim, e consome crédito** |
 
@@ -103,7 +103,7 @@ O comando imprime o modelo pedido e o devolvido, o número de trechos recebidos,
 
 ### Roteiro manual: falhas do provedor
 
-Sem gastar crédito além de uma pergunta e sem alterar o código. Se preferir não usar a rede real, `npm run demo:falhas` reproduz os cenários com um servidor local.
+Sem gastar crédito além de uma pergunta e sem alterar o código. Se preferir não usar a rede real, a demonstração com servidor local (`npm run demo:falhas`) chega na ENG-54.
 
 - **(a) Rede desconectada.** Com o chat aberto (`npm run chat`), desligue a rede (Wi-Fi ou cabo) e faça uma pergunta. Aparecem linhas como `Falha de conexão com o provedor. Nova tentativa 1 de 3, em 1 s.`, depois 2 s e 4 s, e por fim a mensagem de que não foi possível obter a resposta depois de 4 tentativas. O chat continua aberto: religue a rede e pergunte de novo. Para ver o fim mais depressa, use `RETRY_MAX_ATTEMPTS=1` no `.env`.
 - **(b) Chave inválida.** Troque o valor de `OPENAI_API_KEY` no `.env` por um texto qualquer com o formato de chave, abra o chat e faça uma pergunta. A resposta é uma única mensagem orientando a conferir `OPENAI_API_KEY` e gerar uma chave nova no painel, sem nova tentativa e sem repetir a chave. Restaure o `.env` depois.

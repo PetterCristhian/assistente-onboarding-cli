@@ -326,7 +326,7 @@ describe("what the user reads", () => {
         { partialText: true },
       ),
     ).toMatch(
-      /interrompida.*descartado.*do zero.*nova tentativa 1 de 3, em 1\.5 s/,
+      /interrompida.*descartado.*do zero.*nova tentativa 1 de 3, em 1,5 s/,
     );
   });
 });
