@@ -9,6 +9,12 @@ export function batteryIdFrom(date: Date): string {
   if (Number.isNaN(date.getTime())) {
     throw new RangeError("A data de início da bateria não é válida.");
   }
+  const year = date.getUTCFullYear();
+  if (year < 1000 || year > 9999) {
+    throw new RangeError(
+      "O ano da data de início da bateria deve ter quatro dígitos (1000 a 9999).",
+    );
+  }
   return `${date.toISOString().slice(0, 19).replaceAll(":", "-")}Z`;
 }
 

@@ -22,8 +22,13 @@ import {
 const CHARACTER_BUDGET = 24_000;
 
 // Files of context/ that are no layer: the safe message and the two prompts of
-// the self-critique (ENG-53). They never go into the assembled context.
-const NON_LAYER_FILES = ["fallback.md", "avaliador.md", "revisao.md"];
+// the self-critique (ENG-53), plus the prompt of the judge (ENG-57). They never go into the assembled context.
+const NON_LAYER_FILES = [
+  "fallback.md",
+  "avaliador.md",
+  "revisao.md",
+  "juiz.md",
+];
 
 // Layers that hold no company data (docs/adr/0003-contexto-em-quatro-camadas.md).
 const FILES_WITHOUT_COMPANY_DATA = [
@@ -31,6 +36,7 @@ const FILES_WITHOUT_COMPANY_DATA = [
   "02-politicas.md",
   "avaliador.md",
   "revisao.md",
+  "juiz.md",
 ];
 
 // Written as code points: an invisible character in the source is easy to lose.
@@ -114,9 +120,11 @@ describe("context files", () => {
   });
 
   it("stays within the character budget", () => {
-    // The two prompts are sent in calls of their own, not in the context.
+    // The prompts are sent in calls of their own, not in the context.
     const total = readContextFiles(
-      FILES.filter((path) => !["avaliador.md", "revisao.md"].includes(path)),
+      FILES.filter(
+        (path) => !["avaliador.md", "revisao.md", "juiz.md"].includes(path),
+      ),
     ).reduce((sum, file) => sum + file.content.length, 0);
 
     expect(total).toBeLessThan(CHARACTER_BUDGET);

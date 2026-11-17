@@ -1,9 +1,10 @@
 // The runner of the battery (ADR 0006): runs every case through the pipeline
 // of the chat (`createChatSession`, architecture rule 6), in a new session per
-// execution, applies the deterministic checks and writes one line per
-// execution to outputs/<id>/execucoes.jsonl through the single safe writer.
-// It has no pipeline of its own: the session does the draft, the evaluation,
-// the revision, the retry and the wait for the local limit.
+// execution, applies the deterministic checks, asks the judge (ENG-57) and
+// writes one line per execution to outputs/<id>/execucoes.jsonl through the
+// single safe writer. It has no pipeline of its own: the session does the
+// draft, the evaluation, the revision, the retry and the wait for the local
+// limit, and the judge takes a slot of that same limiter.
 //
 // Everything that varies is passed in (the client, the clocks, the limiter,
 // the writer, where to print): the tests need no network and no real time.
@@ -24,16 +25,19 @@ import type { SafeWriter } from "../src/security/safe-writer.js";
 import type { StreamRedactor } from "../src/security/stream-redact.js";
 import { createCollectingOutput } from "./collector.js";
 import type { BatteryContext } from "./contexts.js";
+import type { Judge, JudgeInput } from "./judge.js";
 import {
   answeredTurnLine,
   buildExecutionLine,
+  execucaoSchema,
   failedTurnLine,
   type ExecutionLine,
+  type JudgeResult,
   type TurnLine,
 } from "./record.js";
 import { createRetryCounter } from "./retry-count.js";
 import type { Caso } from "./schema.js";
-import { buildVerdict, type Outcome } from "./verdict.js";
+import { buildVerdict, needsJudge, type Outcome } from "./verdict.js";
 
 export const OUTPUTS_FOLDER = "outputs";
 export const EXECUTIONS_FILE = "execucoes.jsonl";
@@ -65,6 +69,13 @@ export interface BatteryDeps {
   /** The name of the folder in outputs/. */
   readonly batteryId: string;
   readonly llm: LlmClient;
+  /** Decides each execution against the rubric of its case. */
+  readonly judge: Judge;
+  /** The hashes written on every line: of context/ and of the cases. */
+  readonly fingerprints: {
+    readonly hashContexto: string;
+    readonly hashCasos: string;
+  };
   /** By profile slug, for every profile that the cases use. */
   readonly contexts: ReadonlyMap<string, BatteryContext>;
   readonly redact: Redactor;
@@ -122,6 +133,13 @@ interface Played {
   readonly outcome: Outcome;
   readonly model: string | null;
   readonly origin: string | null;
+}
+
+function describeJudge(juiz: JudgeResult): string {
+  if (juiz.situacao === "erro") {
+    return "erro";
+  }
+  return juiz.passou ? "passou" : "falhou";
 }
 
 const UNEXPECTED_RATE_LIMIT: ErrorSummary = {
@@ -249,6 +267,42 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
     };
   }
 
+  /** The judge reads the gabarito of the case and every turn of the run. */
+  function judgeInputOf(caso: Caso, played: Played): JudgeInput {
+    return {
+      comportamentoEsperado: caso.comportamentoEsperado,
+      rubrica: caso.criterios.rubrica,
+      turnos: played.turns.flatMap((turn) =>
+        turn.situacao === "respondido"
+          ? [{ pergunta: turn.pergunta, respostaFinal: turn.respostaFinal }]
+          : [],
+      ),
+    };
+  }
+
+  /** The judge takes a slot of the same limiter as the questions. */
+  async function runJudge(
+    caso: Caso,
+    played: Played,
+  ): Promise<JudgeResult | "cancelled"> {
+    try {
+      const slot = await observedLimiter.acquire({
+        wait: true,
+        ...(deps.signal === undefined ? {} : { signal: deps.signal }),
+      });
+      if (!slot.allowed) {
+        throw new Error("limite local atingido durante a espera (inesperado)");
+      }
+    } catch (error) {
+      if (deps.signal?.aborted === true) {
+        return "cancelled";
+      }
+      throw error;
+    }
+    const juiz = await deps.judge(judgeInputOf(caso, played), deps.signal);
+    return deps.signal?.aborted === true ? "cancelled" : juiz;
+  }
+
   for (const [index, { caso, execucao }] of planned.entries()) {
     if (deps.signal?.aborted === true) {
       interrupted = true;
@@ -270,7 +324,16 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
       interrupted = true;
       break;
     }
-    const veredito = buildVerdict(caso, played.outcome);
+    let juiz: JudgeResult | undefined;
+    if (needsJudge(played.outcome)) {
+      const judged = await runJudge(caso, played);
+      if (judged === "cancelled") {
+        interrupted = true;
+        break;
+      }
+      juiz = judged;
+    }
+    const veredito = buildVerdict(caso, played.outcome, juiz);
     const line = buildExecutionLine({
       bateria: deps.batteryId,
       casoId: caso.id,
@@ -278,9 +341,13 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
       dataHora: startedAt,
       modelo: played.model,
       perfil: caso.perfil,
+      hashContexto: deps.fingerprints.hashContexto,
+      hashCasos: deps.fingerprints.hashCasos,
       turnos: played.turns,
       veredito,
     });
+    // A line that breaks its own schema is a bug, not a result: not written.
+    execucaoSchema.parse(line);
     // Not caught: a battery that cannot write its evidence must stop.
     await deps.writer.appendJsonLine(file, line);
     lines.push(line);
@@ -290,8 +357,10 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
       veredito.resultado === "erro"
         ? (veredito.motivo ?? "sem motivo")
         : `origem ${played.origin ?? "-"}`;
+    const judged =
+      veredito.juiz === null ? "" : ` | juiz: ${describeJudge(veredito.juiz)}`;
     show(
-      `${label} ... ${veredito.resultado} | ${detail} | ${formatSeconds(deps.nowMs() - started)}`,
+      `${label} ... ${veredito.resultado}${judged} | ${detail} | ${formatSeconds(deps.nowMs() - started)}`,
     );
   }
 

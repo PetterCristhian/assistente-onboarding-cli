@@ -2,6 +2,7 @@
 // cases, the configuration, the client and the clocks. The disk is the real
 // one only inside a temporary folder; the real outputs/ is never touched.
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,6 +15,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfigError, parseConfig } from "../src/config/env.js";
 import { runEvalCli, type EvalCliDeps } from "../evals/cli.js";
+import { hashContextFiles, hashText } from "../evals/context-hash.js";
+import { readContextTree } from "../src/context/loaders.js";
 import { execucaoSchema, type ExecutionLine } from "../evals/record.js";
 import { approvedStep } from "./helpers/critique-fixtures.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
@@ -67,8 +70,14 @@ afterEach(() => {
   }
 });
 
-function turn(text: string): FakeLlmStep[] {
-  return [{ text }, approvedStep()];
+/** The answer of the judge that follows the self-evaluation of a turn. */
+function judged(passou = true): FakeLlmStep {
+  return { value: { justificativa: "decisão do juiz", passou } };
+}
+
+/** A draft, its approval and the judge: what one execution of one turn takes. */
+function turn(text: string, passou = true): FakeLlmStep[] {
+  return [{ text }, approvedStep(), judged(passou)];
 }
 
 interface Harness {
@@ -231,7 +240,8 @@ describe("runEvalCli: running", () => {
     expect(code).toBe(0);
     const lines = linesOf(h.root);
     expect(lines.map((line) => line.casoId)).toEqual(["CT02"]);
-    expect(h.fake.calls).toHaveLength(2);
+    // The draft, the self-evaluation and the judge.
+    expect(h.fake.calls).toHaveLength(3);
     expect(h.stdout.join("")).toContain("[1/1] CT02 execução 1/1 ...");
   });
 
@@ -312,8 +322,19 @@ describe("runEvalCli: running", () => {
     );
 
     expect(await runEvalCli(h.deps)).toBe(0);
-    expect(sleeps).toEqual([2000, 2000]);
+    // The question and the judge of each execution take a slot each.
+    expect(sleeps).toEqual([2000, 2000, 2000, 2000, 2000]);
     expect(h.stdout.join("")).toContain("aguardando 2 s (limite local)");
+  });
+
+  it("exits with 1 when the judge fails an execution whose checks hold", async () => {
+    const h = harness(["--runs", "1", "--case", "CT01"], turn("alfa", false));
+
+    expect(await runEvalCli(h.deps)).toBe(1);
+    expect(linesOf(h.root)[0]?.veredito).toMatchObject({
+      resultado: "falhou",
+      juiz: { situacao: "ok", passou: false },
+    });
   });
 
   it("exits with 130 when it is interrupted", async () => {
@@ -324,6 +345,74 @@ describe("runEvalCli: running", () => {
     expect(await runEvalCli(h.deps)).toBe(130);
     expect(h.fake.calls).toHaveLength(0);
     expect(existsSync(join(h.root, "outputs"))).toBe(false);
+  });
+});
+
+describe("runEvalCli: the judge and the fingerprints", () => {
+  it("uses one client for the chatbot and the judge, and the model of EVAL_JUDGE_MODEL for the judge", async () => {
+    const h = harness(
+      ["--runs", "1", "--case", "CT01"],
+      turn("alfa"),
+      {},
+      { OPENAI_MODEL: "modelo-do-chat", EVAL_JUDGE_MODEL: "modelo-do-juiz" },
+    );
+
+    expect(await runEvalCli(h.deps)).toBe(0);
+
+    expect(h.createClient).toHaveBeenCalledTimes(1);
+    const [draft, evaluation, judge] = h.fake.calls;
+    expect(draft?.kind).toBe("streamText");
+    expect(evaluation?.request.model).toBeUndefined();
+    expect(judge?.kind).toBe("generateStructured");
+    expect(judge?.request.model).toBe("modelo-do-juiz");
+  });
+
+  it("writes the hashes of context/ and of the cases on every line", async () => {
+    const h = harness(
+      ["--runs", "2", "--case", "CT01"],
+      [...turn("alfa"), ...turn("alfa")],
+    );
+
+    await runEvalCli(h.deps);
+    const lines = linesOf(h.root);
+
+    expect(lines).toHaveLength(2);
+    expect(new Set(lines.map((line) => line.hashContexto)).size).toBe(1);
+    expect(new Set(lines.map((line) => line.hashCasos)).size).toBe(1);
+    expect(lines[0]?.hashCasos).toBe(hashText(CASES));
+    expect(lines[0]?.hashContexto).toBe(
+      hashContextFiles(readContextTree(FIXTURE_CONTEXT)),
+    );
+  });
+
+  it("changes the hash of the cases when the text of the cases changes", async () => {
+    const other = `${CASES}
+`;
+    const first = harness(["--runs", "1", "--case", "CT01"], turn("alfa"));
+    const second = harness(["--runs", "1", "--case", "CT01"], turn("alfa"), {
+      readCases: () => other,
+    });
+
+    await runEvalCli(first.deps);
+    await runEvalCli(second.deps);
+
+    expect(linesOf(first.root)[0]?.hashCasos).not.toBe(
+      linesOf(second.root)[0]?.hashCasos,
+    );
+  });
+
+  it("stops before the configuration when there is no judge prompt", async () => {
+    const root = temporaryRoot();
+    const noJudge = join(root, "context");
+    cpSync(FIXTURE_CONTEXT, noJudge, { recursive: true });
+    rmSync(join(noJudge, "juiz.md"));
+    const h = harness([], [], { contextDir: noJudge });
+
+    expect(await runEvalCli(h.deps)).toBe(2);
+    expect(h.stderr.join("")).toMatch(/^contexto: .*juiz\.md/);
+    expect(h.loadConfig).not.toHaveBeenCalled();
+    expect(h.createClient).not.toHaveBeenCalled();
+    expect(h.fake.calls).toHaveLength(0);
   });
 });
 
@@ -358,7 +447,7 @@ describe("runEvalCli: what must not leak or crash", () => {
     expect(stderr).not.toMatch(/^\s+at /m);
     expect(stderr.trimEnd().split("\n")).toHaveLength(1);
     // Stopped at the first execution: the second never reached the model.
-    expect(h.fake.calls).toHaveLength(2);
+    expect(h.fake.calls).toHaveLength(3);
   });
 
   it("neutralizes control characters in what it prints", async () => {

@@ -52,8 +52,13 @@ const APPROVED: Step = {
   kind: "verdict",
   value: { aprovada: true, violacoes: [] },
 };
-function answer(text: string): Step[] {
-  return [{ kind: "draft", chunks: [text] }, APPROVED];
+/** A draft, its approval and the answer of the judge. */
+function answer(text: string, passou = true): Step[] {
+  return [
+    { kind: "draft", chunks: [text] },
+    APPROVED,
+    { kind: "verdict", value: { justificativa: "decisão do juiz", passou } },
+  ];
 }
 
 interface Run {
@@ -63,6 +68,8 @@ interface Run {
   readonly stderr: string;
   /** The bodies of the requests that reached the fake API. */
   readonly requests: number;
+  /** The bodies of those requests, parsed, in order. */
+  readonly bodies: Record<string, unknown>[];
   readonly elapsedMs: number;
 }
 
@@ -106,12 +113,17 @@ function runProbe(
       },
     },
   );
+  const bodies = readFileSync(record, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
   return {
     root,
     status: child.status,
     stdout: child.stdout,
     stderr: child.stderr,
-    requests: readFileSync(record, "utf8").split("\n").filter(Boolean).length,
+    requests: bodies.length,
+    bodies,
     elapsedMs: performance.now() - started,
   };
 }
@@ -212,7 +224,8 @@ describe("npm run eval in a child process, over a fake API", () => {
     expect(existsSync(join(run.root, "logs"))).toBe(false);
 
     expect(run.status).toBe(0);
-    expect(run.requests).toBe(4);
+    // The draft, the self-evaluation and the judge, for each execution.
+    expect(run.requests).toBe(6);
     const lines = linesOf(run);
     expect(lines.map((line) => `${line.casoId}/${line.execucao}`)).toEqual([
       "CT06/1",
@@ -224,7 +237,16 @@ describe("npm run eval in a child process, over a fake API", () => {
     ]);
     expect(lines[0]?.dataHora.startsWith("1970")).toBe(false);
     expect(run.stdout).toContain("[1/2] CT06 execução 1/2 ...");
-    expect(run.stdout).toContain("... passou | origem rascunho |");
+    expect(run.stdout).toContain(
+      "... passou | juiz: passou | origem rascunho |",
+    );
+    for (const line of lines) {
+      expect(line.veredito.juiz).toMatchObject({
+        situacao: "ok",
+        passou: true,
+      });
+      expect(line.esquema).toBe(1);
+    }
     expect(run.stdout).toContain(
       "Resumo: 2 de 2 execuções gravadas | passou 2 | falhou 0 | erro 0",
     );
@@ -252,7 +274,53 @@ describe("npm run eval in a child process, over a fake API", () => {
     expect(run.status).toBe(1);
     const [line] = linesOf(run);
     expect(line?.veredito.resultado).toBe("falhou");
-    expect(run.stdout).toContain("... falhou | origem rascunho |");
+    expect(run.stdout).toContain(
+      "... falhou | juiz: passou | origem rascunho |",
+    );
+  });
+
+  it("exits with 1 when the judge fails an execution whose checks hold", () => {
+    const run = runProbe(
+      ["--case", "CT06", "--runs", "1"],
+      answer("Uma resposta curta.", false),
+    );
+    everyOutput.push(run.stdout, run.stderr);
+    expect(existsSync(join(run.root, "logs"))).toBe(false);
+
+    expect(run.status).toBe(1);
+    const [line] = linesOf(run);
+    expect(line?.veredito).toMatchObject({
+      resultado: "falhou",
+      juiz: { situacao: "ok", passou: false },
+    });
+    expect(run.stdout).toContain(
+      "... falhou | juiz: falhou | origem rascunho |",
+    );
+  });
+
+  it("sends the judge to the model of EVAL_JUDGE_MODEL, apart from the model of the chatbot", () => {
+    const run = runProbe(
+      ["--case", "CT06", "--runs", "1"],
+      answer("Uma resposta curta."),
+      { OPENAI_MODEL: "modelo-do-chat", EVAL_JUDGE_MODEL: "modelo-do-juiz" },
+    );
+    everyOutput.push(run.stdout, run.stderr);
+    expect(run.status).toBe(0);
+
+    const isJudge = (body: Record<string, unknown>): boolean =>
+      JSON.stringify(body["text"] ?? null).includes('"name":"juiz"');
+    const judgeBodies = run.bodies.filter(isJudge);
+    const otherBodies = run.bodies.filter((body) => !isJudge(body));
+
+    expect(judgeBodies).toHaveLength(1);
+    expect(judgeBodies[0]?.["model"]).toBe("modelo-do-juiz");
+    expect(otherBodies).toHaveLength(2);
+    for (const body of otherBodies) {
+      expect(body["model"]).toBe("modelo-do-chat");
+    }
+    // The judge reads the gabarito and the answer, as data in blocks.
+    expect(JSON.stringify(judgeBodies[0])).toContain("comportamento_esperado");
+    expect(JSON.stringify(judgeBodies[0])).toContain("Uma resposta curta.");
   });
 
   it("records a 5xx that outlasts the retry as an error and goes on", () => {

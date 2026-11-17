@@ -23,6 +23,18 @@ describe("batteryIdFrom", () => {
   it("refuses an invalid date", () => {
     expect(() => batteryIdFrom(new Date(Number.NaN))).toThrow(RangeError);
   });
+
+  it("refuses a year outside 1000 to 9999, which the id and the schema cannot hold", () => {
+    for (const iso of ["0999-12-31T23:59:59Z", "+010000-01-01T00:00:00Z"]) {
+      expect(() => batteryIdFrom(new Date(iso))).toThrow(RangeError);
+    }
+    expect(batteryIdFrom(new Date("1000-01-01T00:00:00Z"))).toBe(
+      "1000-01-01T00-00-00Z",
+    );
+    expect(batteryIdFrom(new Date("9999-12-31T23:59:59Z"))).toBe(
+      "9999-12-31T23-59-59Z",
+    );
+  });
 });
 
 describe("uniqueBatteryId", () => {

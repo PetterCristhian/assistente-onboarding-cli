@@ -244,7 +244,9 @@ describe("architecture rules", () => {
           "evals/battery-id.ts",
           "evals/cli.ts",
           "evals/collector.ts",
+          "evals/context-hash.ts",
           "evals/contexts.ts",
+          "evals/judge.ts",
           "evals/record.ts",
           "evals/retry-count.ts",
           "evals/runner.ts",
@@ -253,13 +255,27 @@ describe("architecture rules", () => {
       );
     });
 
-    it("calls the model client only in the decorator that counts the new tries", () => {
+    it("calls the model client only in the judge and in the decorator that counts the new tries", () => {
       const callers = filesMatching(
         files,
         /\.\s*(?:streamText|generateStructured)\s*\(/,
       );
 
-      expect(callers).toEqual(["evals/retry-count.ts"]);
+      expect(callers).toEqual(["evals/judge.ts", "evals/retry-count.ts"]);
+    });
+
+    // ENG-57: the judge goes through the same client as the chatbot (rule 2),
+    // so the retry, the deadline and the cancellation are the same. It never
+    // creates a client nor retries, and it names its model.
+    it("keeps the judge on the one path to the provider, with its own model", () => {
+      const judge = readSource("evals/judge.ts");
+
+      expect(judge).not.toMatch(/["']openai["'/]/);
+      expect(judge).not.toMatch(/\bwithRetry\b|\bcreateOpenAiLlmClient\b/);
+      expect(judge).not.toMatch(/\bnew\s+OpenAI\b/);
+      expect(judge).toMatch(/\bmodel:/);
+      expect(judge).toMatch(/\bcreateRetryCounter\b/);
+      expect(filesMatching(files, /\bgpt-[\w.-]+/)).toEqual([]);
     });
 
     it("runs the turns through createChatSession, with the clock always passed", () => {
@@ -273,10 +289,17 @@ describe("architecture rules", () => {
       expect(runner).not.toMatch(/\bonTurn\b|new\s+Date\s*\(/);
     });
 
-    it("does not write the log of a chat session, nor read the environment, the process or the disk", () => {
+    it("does not write the log of a chat session, nor read the environment, the process, the clock or the disk", () => {
       expect(filesMatching(files, /logging\/session-log/)).toEqual([]);
       expect(filesMatching(files, /\bprocess\b|loadEnvFile/)).toEqual([]);
       expect(filesMatching(files, /node:fs|from\s+["']fs["']/)).toEqual([]);
+      // node:crypto is allowed (the hashes): it neither reads nor writes.
+      expect(
+        filesMatching(
+          files,
+          /new\s+Date\s*\(|Date\s*\.\s*now|performance\s*\.\s*now/,
+        ),
+      ).toEqual([]);
       expect(
         filesMatching(files, /writeFile|appendFile|createWriteStream/),
       ).toEqual([]);
@@ -292,10 +315,10 @@ describe("architecture rules", () => {
       );
     });
 
-    it("keeps the entry point to wiring: no process.exit, Ctrl+C by AbortController, short", () => {
+    it("keeps the entry point to wiring: no logic, no process.exit, Ctrl+C by AbortController", () => {
       const entry = readSource("scripts/eval.ts");
 
-      expect(entry.split("\n").length).toBeLessThanOrEqual(40);
+      expect(entry).not.toMatch(/\b(?:if|for|while|switch)\s*\(/);
       expect(entry).not.toMatch(/\bprocess\s*\.\s*exit\s*\(/);
       expect(entry).toMatch(/\bprocess\.exitCode\b/);
       expect(entry).toMatch(/\bAbortController\b/);
