@@ -125,6 +125,66 @@ export const summarySchema = z
         message: "os totais não fecham com as execuções esperadas e gravadas",
       });
     }
+    if (
+      summary.execucoesEsperadas !==
+      summary.porCaso.length * summary.execucoesPorCaso
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["execucoesEsperadas"],
+        message: "execucoesEsperadas deve ser casos x execuções por caso",
+      });
+    }
+    for (const field of ["passou", "falhou", "erro", "ausentes"] as const) {
+      const sum = summary.porCaso.reduce(
+        (total, caso) => total + caso[field],
+        0,
+      );
+      if (sum !== totais[field]) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["totais", field],
+          message: `a soma de ${field} por caso não fecha com o total`,
+        });
+      }
+    }
+    summary.porCaso.forEach((caso, index) => {
+      if (caso.consistencia !== `${caso.passou}/${caso.esperadas}`) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["porCaso", index, "consistencia"],
+          message: "consistencia deve ser passou/esperadas",
+        });
+      }
+      if (caso.todasAprovadas !== (caso.passou === caso.esperadas)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["porCaso", index, "todasAprovadas"],
+          message:
+            "todasAprovadas deve ser verdadeiro só com passou = esperadas",
+        });
+      }
+    });
+    const approvedCases = summary.porCaso.filter(
+      (caso) => caso.todasAprovadas,
+    ).length;
+    if (
+      summary.taxaConsistenciaGeral.casosTodasAprovadas !== approvedCases ||
+      summary.taxaConsistenciaGeral.casos !== summary.porCaso.length
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["taxaConsistenciaGeral"],
+        message: "a taxa de consistência geral não fecha com os casos",
+      });
+    }
+    if (summary.f13Mensuravel && summary.execucoesPorCaso < F13_MIN_RUNS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["f13Mensuravel"],
+        message: `F13 exige ao menos ${F13_MIN_RUNS} execuções por caso`,
+      });
+    }
     if (summary.completa !== (totais.ausentes === 0)) {
       ctx.addIssue({
         code: "custom",

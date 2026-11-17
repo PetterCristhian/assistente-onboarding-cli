@@ -22,9 +22,19 @@ export interface SafeWriterOptions {
   redact: Redactor;
   /** Default: the project root, wherever the cwd is. */
   rootDir?: string;
+  /**
+   * Exact relative paths under docs/, outside outputs/ and logs/, that this
+   * writer may also write (a generated document such as
+   * docs/CASOS-DE-TESTE.md), by overwrite only (writeText): never appended to
+   * and never as JSON. Compared as written: no other spelling of the same file
+   * is accepted. Symlinks and junctions in docs/ are not checked (the same
+   * limit as outputs/). Default: none.
+   */
+  extraFiles?: readonly string[];
 }
 
 const ALLOWED_TOP_LEVEL_DIRECTORIES = ["outputs", "logs"];
+const EXTRA_FILES_PREFIX = "docs/";
 
 const NOT_SERIALIZABLE_MESSAGE =
   "O valor informado não pode ser convertido em JSON.";
@@ -92,12 +102,33 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     options.rootDir ?? fileURLToPath(new URL("../../", import.meta.url)),
   );
 
+  const extraFiles = new Set(options.extraFiles ?? []);
+  for (const extra of extraFiles) {
+    const parts = extra.split(/[\\/]/);
+    if (
+      extra === "" ||
+      // Only the generated documents folder: never src/, .git/, .github/ or
+      // the root. The exact prefix, in the spelling that was written.
+      !extra.startsWith(EXTRA_FILES_PREFIX) ||
+      isAbsolute(extra) ||
+      // A drive ("Y:docs/x.md", relative to the drive's cwd) or an alternate
+      // data stream: neither stays inside the root.
+      extra.includes(":") ||
+      parts.length < 2 ||
+      parts.some((part) => part === "" || part === "." || part === "..")
+    ) {
+      throw new Error(
+        "extraFiles aceita só caminhos relativos normalizados dentro de docs/, sem ':' e sem subir de pasta.",
+      );
+    }
+  }
+
   // The writer does not trust the redactor it receives: whatever it does (or
   // fails to do), the key-shaped pattern is applied last.
   const applyRedaction: Redactor = (text) =>
     redactBasePattern(options.redact(text));
 
-  function resolveTarget(relativePath: string): string {
+  function resolveTarget(relativePath: string, allowExtra: boolean): string {
     // A file name is as public as the content: outputs/ is versioned.
     const shownPath = applyRedaction(relativePath);
     if (shownPath !== relativePath) {
@@ -107,6 +138,12 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     }
 
     const absolutePath = resolve(rootDir, relativePath);
+    // An extra file is accepted only when the text is exactly one of them, and
+    // only by overwrite of plain text; otherwise it falls to the check below,
+    // which refuses it (it is outside outputs/ and logs/).
+    if (allowExtra && extraFiles.has(relativePath)) {
+      return absolutePath;
+    }
     const segments = relative(rootDir, absolutePath).split(sep);
     const topLevel = segments[0] ?? "";
 
@@ -126,8 +163,9 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     relativePath: string,
     content: string,
     mode: "overwrite" | "append",
+    allowExtra = false,
   ): Promise<string> {
-    const absolutePath = resolveTarget(relativePath);
+    const absolutePath = resolveTarget(relativePath, allowExtra);
     const safeContent = applyRedaction(content);
 
     await mkdir(dirname(absolutePath), { recursive: true });
@@ -141,7 +179,7 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
 
   return {
     writeText: (relativePath, content) =>
-      write(relativePath, content, "overwrite"),
+      write(relativePath, content, "overwrite", true),
     appendText: (relativePath, content) =>
       write(relativePath, content, "append"),
     // Redaction runs twice: on every string before JSON.stringify, and on

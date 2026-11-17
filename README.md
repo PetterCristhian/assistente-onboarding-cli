@@ -104,7 +104,8 @@ O limite local conta **perguntas do usuário**, numa janela deslizante: ao ating
 | `npm run check` | Portão de qualidade: lint + typecheck + testes unitários + varredura de segredos | Não |
 | `npm run demo:falhas` | Demonstração de retry e rate limit contra um servidor local simulado; regrava `outputs/evidencias/retry-rate-limit.txt` | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real (streaming e saída estruturada) | **Sim, e consome crédito** |
-| `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real (`--runs <n>`, `--case <id>`); grava `outputs/<data-hora>/execucoes.jsonl` | **Sim, e consome crédito** |
+| `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real, com juiz (`--runs <n>`, `--case <id>`); grava `outputs/<data-hora>/` com `execucoes.jsonl`, `resumo.json` e `RELATORIO.md` | **Sim, e consome crédito** |
+| `npm run casos:doc` | Gera `docs/CASOS-DE-TESTE.md` a partir de `evals/casos.json` | Não |
 
 ### Teste de fumaça do cliente (`npm run smoke:llm`)
 
@@ -133,9 +134,17 @@ npm run eval -- --case CT03 --runs 1
 
 O terminal mostra o progresso (`[ 3/36] CT03 execução 1/3 ... passou | origem rascunho | 12,4 s`) e um resumo com a contagem de `passou`, `falhou` e `erro`. As perguntas acima do limite local (`RATE_LIMIT_MAX_REQUESTS`) **esperam** em vez de falhar (`aguardando N s (limite local)`). Cada linha traz, por turno, o rascunho, a autoavaliação, a origem e o texto da resposta final, o modelo devolvido pela API, as novas tentativas e os avisos, e o veredito.
 
-Veredito desta etapa: só as checagens determinísticas (termos de `deveConter` e `naoDeveConter` sem diferenciar maiúsculas e acentos, ausência de emoji e resposta final que não seja a mensagem segura), sobre o texto final do último turno. `erro` é falha de infraestrutura depois do retry (ou autoavaliação indisponível), distinta de `falhou`. O juiz com rubrica, `resumo.json` e `RELATORIO.md` virão na ENG-57. **Atenção:** sem o juiz, os casos CT05, CT06 e CT11 ficam `passou` mesmo que o modelo vaze o que deveria recusar; o código de saída 0 não prova o comportamento esperado.
+**Veredito.** Uma execução só passa (`passou`) se as duas partes aprovam: (1) as checagens determinísticas (termos de `deveConter` e `naoDeveConter` sem diferenciar maiúsculas e acentos, ausência de emoji e resposta final que não seja a mensagem segura), sobre o texto final do último turno; e (2) o **juiz**, uma chamada ao modelo (`EVAL_JUDGE_MODEL`, padrão: o mesmo modelo do chat) que lê o comportamento esperado e a rubrica do caso e devolve `{ passou, justificativa }`. A linha guarda o resultado de cada parte. `erro` é falha de infraestrutura depois do retry (ou autoavaliação ou juiz indisponíveis), distinta de `falhou`. O juiz é um modelo, e da mesma família do chatbot por padrão: a revisão manual dos outputs (docs/ANALISE.md) existe por isso.
 
-Código de saída: 0 todas as execuções passaram; 1 alguma falhou ou deu erro; 2 a bateria não rodou (uso inválido, configuração, contexto, falha ao gravar); 130 interrompida com Ctrl+C (a execução em curso é descartada e a pasta parcial fica, sem ser apagada). Se `outputs/` for versionado, **confira o conteúdo de uma pasta antes de dar commit**: ela é pública e o texto vem do modelo (a chave é redigida ao gravar).
+**Relatório.** Ao fim da bateria, a pasta ganha `resumo.json` (agregados legíveis por máquina) e `RELATORIO.md` (data, modelos, hash de `context/`, consistência `n/N` por caso e por regra, taxa geral, rascunhos reprovados pela autoavaliação, meta F13 e a transcrição de cada execução). Os dois são gravados uma vez, e `--case` ou `--runs` menor que 3 gera uma bateria "parcial", que não valida F13. Se o relatório não puder ser montado, o terminal diz `relatório não gerado: ...`, `execucoes.jsonl` continua completo e o código de saída é 2 (se alguma execução falhou, continua 1).
+
+**Custo aproximado.** Uma bateria completa tem 36 execuções (12 casos x 3). Cada execução faz de 2 a 4 chamadas do chat por turno (rascunho e autoavaliação, mais revisão e nova autoavaliação quando a primeira reprova) e mais 1 do juiz. A conta é da chave do `.env`: **gasta crédito**, então rode uma bateria completa só quando for usar o resultado, e use `--case` e `--runs 1` para testes rápidos.
+
+Código de saída: 0 todas as execuções passaram e o relatório foi gerado (na bateria completa isso é a meta de F13; com `--case` ou `--runs` menor que 3 a bateria é parcial e o 0 só diz que as execuções rodadas passaram, sem validar F13: ver ADR 0006); 1 alguma falhou ou deu erro; 2 a bateria não rodou (uso inválido, configuração, contexto, falha ao gravar) ou tudo passou mas o relatório não pôde ser montado; 130 interrompida com Ctrl+C (a execução em curso é descartada; a pasta parcial fica, com relatório marcado "INCOMPLETA", sem ser apagada). Um script de CI distingue bateria parcial de completa lendo `f13Mensuravel` (e `f13Atingido`) em `resumo.json`, porque o código 0 sozinho não valida F13 em bateria parcial. Se `outputs/` for versionado, **confira o conteúdo de uma pasta antes de dar commit**: ela é pública e o texto vem do modelo (a chave é redigida ao gravar).
+
+### Documento dos casos (`npm run casos:doc`)
+
+Gera [`docs/CASOS-DE-TESTE.md`](docs/CASOS-DE-TESTE.md) a partir de `evals/casos.json`: tabela de cobertura por categoria, índice e, por caso, id, título, categoria, regras, perfil, perguntas por turno, comportamento esperado e critério de aprovação. **Não usa a chave nem a rede.** O arquivo é gerado (não edite à mão) e determinístico; um teste unitário falha, pedindo para rodar o comando de novo, quando ele fica diferente de `evals/casos.json`.
 
 ### Roteiro manual: falhas do provedor
 
@@ -163,5 +172,6 @@ Não há. A aplicação roda apenas localmente, no terminal.
 - [`docs/PRD.md`](docs/PRD.md): requisitos
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md): arquitetura e stack
 - [`docs/adr/`](docs/adr/): decisões de arquitetura
+- [`docs/CASOS-DE-TESTE.md`](docs/CASOS-DE-TESTE.md): os 12 casos de teste (gerado por `npm run casos:doc`)
 - [`docs/BACKLOG.md`](docs/BACKLOG.md): plano de trabalho
 - [`CHANGELOG.md`](CHANGELOG.md): histórico de mudanças

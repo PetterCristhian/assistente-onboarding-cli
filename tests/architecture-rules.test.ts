@@ -57,6 +57,13 @@ function domainTerms(): { company: string[]; people: string[] } {
   return { company: [...labels, ...domains], people };
 }
 
+/** Drops block comments and the comments that start a line or follow a space. */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|\s)\/\/.*$/gm, "$1");
+}
+
 function filesMatching(files: string[], pattern: RegExp): string[] {
   return files.filter((file) =>
     pattern.test(readFileSync(join(PROJECT_ROOT, file), "utf8")),
@@ -243,6 +250,8 @@ describe("architecture rules", () => {
           "evals/aggregate.ts",
           "evals/args.ts",
           "evals/battery-id.ts",
+          "evals/cases-doc-cli.ts",
+          "evals/cases-doc.ts",
           "evals/cli.ts",
           "evals/collector.ts",
           "evals/context-hash.ts",
@@ -322,12 +331,15 @@ describe("architecture rules", () => {
     // runner, through the writer (the CLI only wraps its failures). The
     // aggregator, the renderer and the sanitizers are pure: they hold no writer.
     it("writes the summary and the report only in the runner, and keeps the pure pieces pure", () => {
+      // cases-doc-cli.ts writes docs/CASOS-DE-TESTE.md, never outputs/.
       expect(filesMatching(files, /\.\s*(?:writeJson|writeText)\(/)).toEqual([
+        "evals/cases-doc-cli.ts",
         "evals/cli.ts",
         "evals/runner.ts",
       ]);
       const pure = [
         "evals/aggregate.ts",
+        "evals/cases-doc.ts",
         "evals/markdown.ts",
         "evals/redact-lines.ts",
         "evals/report.ts",
@@ -336,6 +348,23 @@ describe("architecture rules", () => {
         const source = readSource(file);
         expect(source, file).not.toMatch(/safe-writer|SafeWriter|node:/);
         expect(source, file).not.toMatch(/\bsleep\b|Math\.random/);
+      }
+      // The whole family of pure pieces: no clock, no environment, no disk.
+      // A mention in a comment does not count; Date.parse is allowed (it reads
+      // a string, not the clock), and node:crypto is the hashes' one import.
+      for (const file of [
+        ...pure,
+        "evals/context-hash.ts",
+        "evals/verdict.ts",
+        "evals/record.ts",
+      ]) {
+        const source = withoutComments(readSource(file));
+        expect(source, file).not.toMatch(
+          /new\s+Date\s*\(|Date\s*\.\s*now|performance\s*\.\s*now/,
+        );
+        expect(source, file).not.toMatch(/\bprocess\s*\.\s*env\b/);
+        expect(source, file).not.toMatch(/node:(?!crypto["'])/);
+        expect(source, file).not.toMatch(/safe-writer|SafeWriter/);
       }
       // No regeneration: nothing reads the files back to render them again.
       expect(filesMatching(files, /readFile|readdir|existsSync/)).toEqual([]);
@@ -356,6 +385,84 @@ describe("architecture rules", () => {
       expect(entry).toMatch(/\brunEvalCli\b/);
       expect(entry).not.toMatch(/\bcreateSafeWriter\b|\bwithRetry\b/);
       expect(entry).not.toMatch(/\bprocess\s*\.\s*env\b|loadEnvFile/);
+    });
+
+    // The writer is used by its name only where it is meant to be: taking a
+    // method out of it (a destructuring or a string key) would slip past the
+    // `.writeJson(` checks above.
+    it("does not take a method out of the writer outside the runner and the CLIs", () => {
+      const methods = "writeJson|writeText|appendJsonLine|appendText";
+      const holders = filesMatching(
+        files,
+        new RegExp(
+          `\\{[^}]*\\b(?:${methods})\\b[^}]*\\}\\s*=[^=>]|\\[\\s*["'\`](?:${methods})["'\`]\\s*\\]`,
+        ),
+      );
+
+      expect(
+        holders.filter(
+          (file) =>
+            ![
+              "evals/cases-doc-cli.ts",
+              "evals/cli.ts",
+              "evals/runner.ts",
+            ].includes(file),
+        ),
+      ).toEqual([]);
+    });
+
+    // ENG-57 part 3: the one exception to "the writer only writes outputs/ and
+    // logs/" is the generated catalog, and only the casos:doc entry opts in.
+    describe("npm run casos:doc", () => {
+      it("keeps the entry point to wiring: no logic, no process.exit", () => {
+        const entry = readSource("scripts/casos-doc.ts");
+
+        expect(entry).not.toMatch(/\b(?:if|for|while|switch)\s*\(/);
+        expect(entry.split("\n").length).toBeLessThanOrEqual(30);
+        expect(entry).not.toMatch(/\s\?\s[^?]*\s:\s/);
+        expect(entry).not.toMatch(/\.\s*(?:map|filter|reduce|flatMap)\s*\(/);
+        expect(entry).not.toMatch(/\bprocess\s*\.\s*exit\s*\(/);
+        expect(entry).toMatch(/\bprocess\.exitCode\b/);
+        expect(entry).toMatch(/\brunCasesDocCli\b/);
+        expect(entry).not.toMatch(/\bprocess\s*\.\s*env\b|loadEnvFile/);
+        expect(entry).not.toMatch(/writeFile|createSafeWriter/);
+      });
+
+      it("creates its writer with exactly the one extra file", () => {
+        const cli = readSource("evals/cases-doc-cli.ts");
+
+        expect(
+          filesMatching(
+            listTypeScriptFiles("src", "evals", "scripts"),
+            /\bcreateSafeWriter\s*\(/,
+          ).filter((file) => file.includes("cases-doc")),
+        ).toEqual(["evals/cases-doc-cli.ts"]);
+        expect(cli.match(/\bextraFiles\s*:/g)).toHaveLength(1);
+        expect(cli).toMatch(/\bextraFiles: \[CASES_DOC_FILE\]/);
+        expect(readSource("evals/cases-doc.ts")).toMatch(
+          /\bCASES_DOC_FILE = "docs\/CASOS-DE-TESTE\.md";/,
+        );
+      });
+
+      it("mentions extraFiles only in the safe writer and in the casos:doc entry", () => {
+        expect(
+          filesMatching(
+            listTypeScriptFiles("src", "evals", "scripts"),
+            /\bextraFiles\b/,
+          ),
+        ).toEqual(["evals/cases-doc-cli.ts", "src/security/safe-writer.ts"]);
+      });
+
+      it("keeps the document renderer free of the disk, the process and the clock", () => {
+        for (const file of ["evals/cases-doc.ts"]) {
+          const source = readSource(file);
+
+          expect(source, file).not.toMatch(/node:|\bprocess\b|safe-writer/);
+          expect(source, file).not.toMatch(
+            /new\s+Date\s*\(|Date\s*\.\s*now|performance\s*\.\s*now/,
+          );
+        }
+      });
     });
 
     it("has no option for the key in the parser", () => {

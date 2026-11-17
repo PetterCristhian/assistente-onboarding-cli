@@ -83,7 +83,7 @@ Regras de dependência entre módulos:
 
 - `cli/` e `evals/` são as únicas bordas; ambos usam `chat/session` e nunca chamam a OpenAI diretamente.
 - Toda chamada ao provedor passa por `llm/client`, que sempre passa por `llm/retry`. Não existe outro ponto de saída de rede.
-- Toda escrita em disco (`outputs/`, `logs/`) passa por `security/redact`.
+- Toda escrita em disco (`outputs/`, `logs/`) passa por `security/redact`. Única exceção de caminho: `docs/CASOS-DE-TESTE.md`, documento gerado por `npm run casos:doc`, que o escritor só aceita porque `evals/cases-doc-cli.ts` o declara em `extraFiles` (comparação exata do texto do caminho, sem normalização; `..`, caminho absoluto, outra caixa, barra invertida ou ponto final são recusados). Na criação do escritor, cada item precisa começar com o prefixo exato `docs/` (`src/`, `.git/`, `.github/` e a raiz são recusados) e não pode conter `:` (letra de unidade, fluxo alternativo de dados); o arquivo extra só aceita sobrescrita por `writeText` (`appendText`, `appendJsonLine` e `writeJson` são recusados). Symlink ou junction em `docs/` não é verificado (o mesmo limite de `outputs/`). A redação continua valendo. `extraFiles` só aparece em `security/safe-writer.ts` e em `evals/cases-doc-cli.ts` (guarda de arquitetura).
 - `src/` não contém nenhum texto de domínio (nome da empresa, regras, contatos). Domínio vive só em `context/` e `evals/casos.json`.
 
 ## 4. Pipeline de um turno
@@ -118,6 +118,8 @@ sequenceDiagram
 Demonstração de falhas (ENG-54): `scripts/demo-falhas/run.ts` cria o mesmo `LlmClient` do chat (o `withRetry` está dentro dele) com `baseURL` apontando para um servidor `node:http` local em `127.0.0.1` e um `fetch` com guarda que só aceita esse endereço. Só a espera é trocada por uma que mede a duração real, sobre o `defaultSleep` do chat; o jitter é desligado para a transcrição ser determinística. Não há mudança em `src/`. A transcrição vai a `outputs/evidencias/retry-rate-limit.txt` pelo escritor único, só se todos os cenários conferem. Decisões 23 a 29 do ADR 0005.
 
 Bateria (ENG-56): `scripts/eval.ts` liga o cliente real, os relógios e o terminal a `evals/cli.ts`, que valida tudo antes da primeira chamada (argumentos, casos, contexto de todos os perfis, configuração) e entrega a `evals/runner.ts`. O runner cria uma `createChatSession` nova por execução, com o mesmo pipeline do chat (rascunho, autoavaliação, revisão, retry) e um coletor no lugar do terminal, envia os turnos do caso em ordem, aplica as checagens de `evals/verdict.ts` ao texto final do último turno e grava uma linha em `outputs/<AAAA-MM-DDTHH-mm-ssZ>/execucoes.jsonl` pelo escritor único assim que a execução termina. Um limitador único por bateria, em modo de espera, respeita o limite local. Erro de infraestrutura é `erro`, mensagem segura como resposta final é `falhou`; o terminal mostra o progresso. Código de saída 0 só se tudo passou. Detalhes e desvios do formato: nota de implementação do ADR 0006.
+
+Juiz, relatório e catálogo (ENG-57): depois do veredito determinístico, `evals/judge.ts` faz uma chamada com saída estruturada pelo mesmo `LlmClient` (modelo de `EVAL_JUDGE_MODEL`), com uma vaga do mesmo limitador. No fim da bateria, o runner agrega as linhas (`evals/aggregate.ts`), valida o resultado com `summarySchema` e grava `resumo.json` e `RELATORIO.md` uma vez cada, pelo escritor único; se o relatório não puder ser montado, o resultado da bateria é mantido, `execucoes.jsonl` fica completo e o código de saída é 2 quando tudo passou (nunca verde sem relatório). `npm run casos:doc` (`scripts/casos-doc.ts` → `evals/cases-doc-cli.ts`) gera `docs/CASOS-DE-TESTE.md` a partir de `evals/casos.json`, sem chave e sem rede; um teste compara o arquivo versionado com a saída do renderizador.
 
 Retry (ENG-51): cada chamada do `LlmClient` passa por `withRetry` (em `runCall`, dentro de `src/llm/client.ts`). Antes de cada nova tentativa, o cliente chama o `onRetry` da própria requisição, e a sessão mostra uma linha com o motivo, a tentativa e a espera; só depois a espera começa (abortável). Se já havia texto parcial na tela, a sessão fecha a linha, avisa que o texto acima será descartado e deixa a nova geração começar logo abaixo; o parcial nunca entra no histórico. `REQUEST_TIMEOUT_MS` vale por tentativa. Detalhes: `docs/adr/0005-retry-rate-limit-e-evidencias.md`.
 
@@ -163,6 +165,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   │   ├── ferramentas.md
 │   │   └── contatos.md           # quem procurar + canais de P4
 │   ├── avaliador.md              # prompt do avaliador (não é camada; texto genérico)
+│   ├── juiz.md                   # prompt do juiz da bateria (não é camada; texto genérico, entra no hashContexto)
 │   ├── revisao.md                # prompt da revisão (não é camada; marcador {{violacoes}})
 │   └── fallback.md               # mensagem segura fixa (não é camada; nunca vai ao modelo)
 │
@@ -190,7 +193,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   ├── security/
 │   │   ├── redact.ts             # remove credenciais de qualquer texto gravado
 │   │   ├── stream-redact.ts      # redige o rascunho enquanto chega (retém a cauda que ainda pode virar segredo)
-│   │   ├── safe-writer.ts        # escritor único de outputs/ e logs/ (aplica redact)
+│   │   ├── safe-writer.ts        # escritor único de outputs/ e logs/ (aplica redact); exceção: `extraFiles`
 │   │   ├── error-summary.ts      # resume um erro: status, código, tipo, mensagem
 │   │   └── secret-scan.ts        # lógica da varredura usada por check-secrets.ts
 │   └── logging/
@@ -203,16 +206,24 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   ├── args.ts                   # --runs e --case (ENG-56)
 │   ├── cli.ts                    # runEvalCli: ordem de validação, limitador, escritor (tudo injetado)
 │   ├── contexts.ts               # um contexto por perfil, carregado antes da chave
-│   ├── runner.ts                 # runBattery: sessão nova por execução, uma linha jsonl por execução
+│   ├── runner.ts                 # runBattery: sessão nova por execução, uma linha jsonl por execução; no fim, resumo.json e RELATORIO.md
 │   ├── collector.ts              # ChatOutput que não escreve no terminal
 │   ├── retry-count.ts            # decorador do LlmClient que conta novas tentativas por turno
-│   ├── record.ts                 # esquema zod da linha de execucoes.jsonl
+│   ├── record.ts                 # esquema zod (v1) da linha de execucoes.jsonl
 │   ├── battery-id.ts             # nome da pasta de cada bateria
-│   ├── verdict.ts                # checagens determinísticas (o juiz é da ENG-57)
-│   └── report.ts                 # (ENG-57) RELATORIO.md, resumo.json, docs/CASOS-DE-TESTE.md
+│   ├── verdict.ts                # checagens determinísticas + veredito final (checagens e juiz)
+│   ├── judge.ts                  # juiz por rubrica: mesma via do LlmClient, saída estruturada
+│   ├── context-hash.ts           # sha256 de context/ e de casos.json (hashContexto, hashCasos)
+│   ├── aggregate.ts              # agregador puro e summarySchema (resumo.json)
+│   ├── report.ts                 # RELATORIO.md (puro, determinístico)
+│   ├── markdown.ts               # sanitizadores de texto não confiável para Markdown
+│   ├── redact-lines.ts           # redige as linhas antes de agregar e renderizar
+│   ├── cases-doc.ts              # renderCasesDoc: docs/CASOS-DE-TESTE.md (puro, sem data)
+│   └── cases-doc-cli.ts          # runCasesDocCli: lê casos.json e grava o documento (tudo injetado)
 │
 ├── scripts/
 │   ├── eval.ts                   # entrada de `npm run eval`: só liga as peças reais a evals/cli.ts
+│   ├── casos-doc.ts              # entrada de `npm run casos:doc`: só liga as peças a evals/cases-doc-cli.ts
 │   ├── demo-falhas.ts            # entrada de `npm run demo:falhas`: só liga as peças
 │   ├── demo-falhas/              # a demonstração de falhas (ENG-54)
 │   │   ├── config.ts             # chave falsa, tempos e configuração do cliente (parseConfig, sem ambiente)
@@ -230,9 +241,9 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │
 ├── outputs/                      # VERSIONADO: entregável E4
 │   ├── <AAAA-MM-DDTHH-mm-ssZ>/   # uma pasta por execução da bateria
-│   │   ├── execucoes.jsonl
-│   │   ├── resumo.json
-│   │   └── RELATORIO.md
+│   │   ├── execucoes.jsonl       # uma linha por execução, gravada ao terminar (evidência bruta)
+│   │   ├── resumo.json           # agregados legíveis por máquina (esquema 1), gravado uma vez no fim
+│   │   └── RELATORIO.md          # relatório de consistência e transcrição, gravado uma vez no fim
 │   └── evidencias/
 │       └── retry-rate-limit.txt  # transcrição de `npm run demo:falhas`
 │

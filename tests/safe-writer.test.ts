@@ -636,3 +636,117 @@ describe("createSafeWriter: other shapes of value and of text (QA)", () => {
     expect(await readdir(rootDir)).toEqual([]);
   });
 });
+
+describe("createSafeWriter, extraFiles (ENG-57)", () => {
+  const EXTRA = "docs/CASOS-DE-TESTE.md";
+
+  function withExtra(): SafeWriter {
+    return createSafeWriter({
+      redact: createRedactor([KEY]),
+      rootDir,
+      extraFiles: [EXTRA],
+    });
+  }
+
+  it("keeps the default behavior: the extra file is refused without the option", async () => {
+    await expect(writer.writeText(EXTRA, "x")).rejects.toThrow(
+      "O escritor só grava em outputs/ e logs/.",
+    );
+    await expect(
+      createSafeWriter({
+        redact: createRedactor([KEY]),
+        rootDir,
+        extraFiles: [],
+      }).writeText(EXTRA, "x"),
+    ).rejects.toThrow("O escritor só grava em outputs/ e logs/.");
+    expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  it("writes exactly the configured file, redacted, and still writes outputs/", async () => {
+    const extra = withExtra();
+
+    const path = await extra.writeText(EXTRA, `texto ${KEY}\n`);
+    await extra.writeText("outputs/a.txt", "ok\n");
+
+    expect(path).toBe(resolve(rootDir, "docs", "CASOS-DE-TESTE.md"));
+    expect(await readFile(path, "utf8")).toBe(`texto ${REDACTED}\n`);
+    expect(await readdir(join(rootDir, "docs"))).toEqual(["CASOS-DE-TESTE.md"]);
+  });
+
+  it.each([
+    ["another file of docs/", "docs/OUTRO.md"],
+    ["a parent segment", "docs/../x"],
+    ["a parent segment that comes back", "docs/../docs/CASOS-DE-TESTE.md"],
+    ["a child of the file", "docs/CASOS-DE-TESTE.md/x"],
+    ["another case", "docs/casos-de-teste.md"],
+    ["a backslash", "docs\\CASOS-DE-TESTE.md"],
+    ["a trailing dot", "docs/CASOS-DE-TESTE.md."],
+    ["a leading dot segment", "./docs/CASOS-DE-TESTE.md"],
+    ["a double slash", "docs//CASOS-DE-TESTE.md"],
+    ["an absolute path", resolve(tmpdir(), "docs", "CASOS-DE-TESTE.md")],
+    ["the root", "CASOS-DE-TESTE.md"],
+  ])(
+    "refuses %s even when the extra file is configured",
+    async (_l, target) => {
+      const extra = withExtra();
+
+      await expect(extra.writeText(target, "x")).rejects.toThrow(
+        "Caminho de escrita não permitido",
+      );
+      await expect(extra.appendText(target, "x")).rejects.toThrow(
+        "Caminho de escrita não permitido",
+      );
+      expect(await readdir(rootDir)).toEqual([]);
+    },
+  );
+
+  it("accepts the extra file by overwrite only, never append or JSON", async () => {
+    const extra = withExtra();
+
+    await expect(extra.appendText(EXTRA, "x")).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    await expect(extra.appendJsonLine(EXTRA, { a: 1 })).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    await expect(extra.writeJson(EXTRA, { a: 1 })).rejects.toThrow(
+      "Caminho de escrita não permitido",
+    );
+    expect(await readdir(rootDir)).toEqual([]);
+    await extra.writeText(EXTRA, "a\n");
+    await extra.writeText(EXTRA, "b\n");
+    expect(await readFile(join(rootDir, EXTRA), "utf8")).toBe("b\n");
+  });
+
+  it("still refuses a key in the name of an extra file", async () => {
+    const name = `docs/${KEY}.md`;
+    const extra = createSafeWriter({
+      redact: createRedactor([KEY]),
+      rootDir,
+      extraFiles: [name],
+    });
+
+    await expect(extra.writeText(name, "x")).rejects.toThrow(
+      "possível credencial",
+    );
+    expect(await readdir(rootDir)).toEqual([]);
+  });
+
+  it.each([
+    ["an absolute path", resolve(tmpdir(), "x.md")],
+    ["a parent segment", "docs/../x.md"],
+    ["a bare file name", "x.md"],
+    ["an empty path", ""],
+    ["a git hook", ".git/hooks/x"],
+    ["a workflow", ".github/workflows/ci.yml"],
+    ["the code of the writer", "src/security/safe-writer.ts"],
+  ])("refuses to be created with %s as an extra file", (_label, extra) => {
+    expect(() =>
+      createSafeWriter({
+        redact: createRedactor([KEY]),
+        rootDir,
+        extraFiles: [extra],
+      }),
+    ).toThrow("extraFiles");
+  });
+});

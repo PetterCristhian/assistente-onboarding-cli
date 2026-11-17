@@ -295,6 +295,7 @@ describe("the end of the battery", () => {
           novasTentativas: 0,
         } satisfies JudgeResult),
       fingerprints: { hashContexto: HASH_CONTEXT, hashCasos: HASH_CASES },
+      catalogSize: 2,
       contexts: new Map([
         ["dora-teixeira", { instructions: "I", critique: makeCritiqueDeps() }],
       ]),
