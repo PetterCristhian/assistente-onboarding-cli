@@ -69,7 +69,7 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
             session.clear();
             stdout.write(`${CLEARED_MESSAGE}\n`);
           } else if (parsed.name === "contexto") {
-            stdout.write(`${deps.contextText}\n`);
+            stdout.write(`${sanitizeForTerminal(deps.contextText)}\n`);
           } else {
             stdout.write(`${HELP_LINES.join("\n")}\n`);
           }

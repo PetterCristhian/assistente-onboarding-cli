@@ -159,12 +159,9 @@ describe("architecture rules", () => {
   it("reads the arguments only in src/cli/main.ts and parses them only in src/cli/args.ts", () => {
     const files = listTypeScriptFiles("src");
 
-    // main.ts starts reading them in the commit that wires the parser.
-    expect(
-      filesMatching(files, /process\s*\.\s*argv\b/).filter(
-        (file) => file !== "src/cli/main.ts",
-      ),
-    ).toEqual([]);
+    expect(filesMatching(files, /process\s*\.\s*argv\b/)).toEqual([
+      "src/cli/main.ts",
+    ]);
     expect(filesMatching(files, /parseArgs/)).toEqual(["src/cli/args.ts"]);
   });
 
