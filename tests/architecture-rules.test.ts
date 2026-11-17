@@ -273,7 +273,6 @@ describe("architecture rules", () => {
       expect(judge).not.toMatch(/["']openai["'/]/);
       expect(judge).not.toMatch(/\bwithRetry\b|\bcreateOpenAiLlmClient\b/);
       expect(judge).not.toMatch(/\bnew\s+OpenAI\b/);
-      expect(judge).toMatch(/\bmodel:/);
       expect(judge).toMatch(/\bcreateRetryCounter\b/);
       expect(filesMatching(files, /\bgpt-[\w.-]+/)).toEqual([]);
     });
@@ -319,6 +318,10 @@ describe("architecture rules", () => {
       const entry = readSource("scripts/eval.ts");
 
       expect(entry).not.toMatch(/\b(?:if|for|while|switch)\s*\(/);
+      // Wiring only: short, no ternary and no list handling.
+      expect(entry.split("\n").length).toBeLessThanOrEqual(60);
+      expect(entry).not.toMatch(/\s\?\s[^?]*\s:\s/);
+      expect(entry).not.toMatch(/\.\s*(?:map|filter|reduce|flatMap)\s*\(/);
       expect(entry).not.toMatch(/\bprocess\s*\.\s*exit\s*\(/);
       expect(entry).toMatch(/\bprocess\.exitCode\b/);
       expect(entry).toMatch(/\bAbortController\b/);

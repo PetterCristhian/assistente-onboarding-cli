@@ -29,6 +29,7 @@ import type { Judge, JudgeInput } from "./judge.js";
 import {
   answeredTurnLine,
   buildExecutionLine,
+  describeErrorSummary,
   execucaoSchema,
   failedTurnLine,
   type ExecutionLine,
@@ -280,7 +281,11 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
     };
   }
 
-  /** The judge takes a slot of the same limiter as the questions. */
+  /**
+   * The judge takes a slot of the same limiter as the questions. It never
+   * throws: a judge that throws (or a slot that is denied) is a judge that did
+   * not answer, like a failed turn, and never a pass. A cut is not an error.
+   */
   async function runJudge(
     caso: Caso,
     played: Played,
@@ -293,14 +298,18 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
       if (!slot.allowed) {
         throw new Error("limite local atingido durante a espera (inesperado)");
       }
+      const juiz = await deps.judge(judgeInputOf(caso, played), deps.signal);
+      return deps.signal?.aborted === true ? "cancelled" : juiz;
     } catch (error) {
       if (deps.signal?.aborted === true) {
         return "cancelled";
       }
-      throw error;
+      return {
+        situacao: "erro",
+        resumo: describeErrorSummary(summarizeError(error, deps.redact)),
+        novasTentativas: 0,
+      };
     }
-    const juiz = await deps.judge(judgeInputOf(caso, played), deps.signal);
-    return deps.signal?.aborted === true ? "cancelled" : juiz;
   }
 
   for (const [index, { caso, execucao }] of planned.entries()) {

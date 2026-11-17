@@ -135,21 +135,55 @@ const verdictSchema = z
       }
       return;
     }
-    if (resultado === "erro") {
-      if (juiz === null && checagens.length > 0) {
+    if (resultado === "falhou") {
+      // The aggregator reads `resultado` as it is: a failure needs its reason
+      // in the line itself (no judge, a check that failed, or a judge that
+      // said no). Anything else is a pass or an error written as a failure.
+      const reasoned =
+        juiz === null ||
+        checagens.some((check) => !check.ok) ||
+        (juiz.situacao === "ok" && !juiz.passou);
+      if (!reasoned) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["resultado"],
+          message:
+            "falhou exige juiz nulo, uma checagem que falhou ou o juiz com passou falso",
+        });
+      }
+      return;
+    }
+    if (juiz === null) {
+      if (checagens.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["checagens"],
           message: "erro de infraestrutura não tem checagens",
         });
       }
-      if (juiz !== null && juiz.situacao !== "erro") {
+      if (verdict.motivo === undefined) {
         ctx.addIssue({
           code: "custom",
-          path: ["juiz"],
-          message: "erro com juiz exige que o juiz tenha dado erro",
+          path: ["motivo"],
+          message: "erro sem juiz exige o motivo",
         });
       }
+      return;
+    }
+    if (juiz.situacao !== "erro") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["juiz"],
+        message: "erro com juiz exige que o juiz tenha dado erro",
+      });
+    }
+    if (checagens.length === 0 || !checagens.every((check) => check.ok)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["checagens"],
+        message:
+          "erro com juiz exige checagens não vazias e todas ok (senão seria falhou)",
+      });
     }
   });
 
