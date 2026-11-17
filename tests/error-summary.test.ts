@@ -223,4 +223,15 @@ describe("summarizeError with errors of the openai SDK", () => {
     expect(summary.message).toContain(REDACTED);
     expect(JSON.stringify(summary)).not.toContain(KEY);
   });
+
+  it("reads the code from the cause of the cause (APIConnectionError over a TypeError)", () => {
+    const system = Object.assign(new Error("connect refused"), {
+      code: "ECONNREFUSED",
+    });
+    const error = new APIConnectionError({
+      cause: new TypeError("fetch failed", { cause: system }),
+    });
+
+    expect(summarizeError(error, redactor).code).toBe("ECONNREFUSED");
+  });
 });
