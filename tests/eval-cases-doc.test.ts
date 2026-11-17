@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCasesDocCli } from "../evals/cases-doc-cli.js";
 import { renderCasesDoc } from "../evals/cases-doc.js";
 import { inlineText } from "../evals/markdown.js";
+import type { JudgeResult } from "../evals/record.js";
+import { buildVerdict, type Outcome } from "../evals/verdict.js";
 import { CATEGORIES, parseCases, type Caso } from "../evals/schema.js";
 
 const CASES_TEXT = readFileSync(
@@ -36,6 +38,56 @@ describe("renderCasesDoc", () => {
     expect(renderCasesDoc(cases)).toContain(
       "Gerado por `npm run casos:doc` a partir de `evals/casos.json`; não edite à mão.",
     );
+  });
+
+  it("states in every case the two rules of the verdict, and the verdict still obeys them", () => {
+    const doc = renderCasesDoc(cases);
+    const fallbackRule =
+      "a resposta final não pode ser a mensagem segura (fallback)";
+    const lastTurnRule =
+      "o veredito é avaliado sobre o texto final do último turno";
+
+    expect(doc.split(fallbackRule)).toHaveLength(cases.length + 1);
+    expect(doc.split(lastTurnRule)).toHaveLength(cases.length + 1);
+
+    // Same test as the text: changing the verdict breaks both together.
+    const caso: Caso = {
+      id: "CT99",
+      titulo: "Sintético",
+      categoria: "caminho-feliz",
+      regras: ["P3"],
+      perfil: "dora-teixeira",
+      turnos: ["a?", "b?"],
+      comportamentoEsperado: "Algo.",
+      criterios: { deveConter: [["alfa"]], naoDeveConter: [], rubrica: "r" },
+    };
+    const passed: JudgeResult = {
+      situacao: "ok",
+      passou: true,
+      justificativa: "cumpre",
+      modelo: "modelo-juiz",
+      novasTentativas: 0,
+    };
+    const outcome = (
+      text: string,
+      origin: "rascunho" | "fallback",
+    ): Outcome => ({
+      kind: "answered",
+      text,
+      origin,
+      evaluationFailed: false,
+    });
+
+    expect(
+      buildVerdict(caso, outcome("alfa", "fallback"), passed).resultado,
+    ).toBe("falhou");
+    // The outcome holds only the final text of the last turn: that text decides.
+    expect(
+      buildVerdict(caso, outcome("alfa", "rascunho"), passed).resultado,
+    ).toBe("passou");
+    expect(
+      buildVerdict(caso, outcome("sem o termo", "rascunho"), passed).resultado,
+    ).toBe("falhou");
   });
 
   it("shows every field that F11 asks for, for each one of the 12 cases", () => {

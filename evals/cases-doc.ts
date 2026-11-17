@@ -91,7 +91,7 @@ function renderCase(caso: Caso): string[] {
     "",
     `> ${text(caso.comportamentoEsperado)}`,
     "",
-    "Critério de aprovação: todas as checagens determinísticas e o juiz.",
+    "Critério de aprovação: todas as checagens determinísticas e o juiz; a resposta final não pode ser a mensagem segura (fallback); o veredito é avaliado sobre o texto final do último turno.",
     "",
     ...renderCriteria(caso),
   ];
