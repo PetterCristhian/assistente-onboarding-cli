@@ -64,6 +64,8 @@ export interface ContextOptions {
   readonly contextDir?: string;
   /** Name of a profile, without folder and without extension. */
   readonly profile?: string;
+  /** Path of a profile file; excludes `profile`. */
+  readonly profileFile?: string;
   /** Another file for the first layer; the other three do not change. */
   readonly globalInstructionsFile?: string;
 }
