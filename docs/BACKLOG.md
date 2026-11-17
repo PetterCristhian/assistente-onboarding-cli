@@ -325,15 +325,17 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 
 **Descrição.** Completar o veredito com o juiz por rubrica e gerar `resumo.json`, `RELATORIO.md` e `docs/CASOS-DE-TESTE.md`. Cobre F13. Ver ADR 0006.
 
+**Status: entregue** (ENG-57, em três partes: juiz e veredito, agregador e relatório, `npm run casos:doc` e documentação final). Notas nas três "Nota de implementação (ENG-57)" do ADR 0006.
+
 **Critérios de aceite**
-- [ ] O juiz faz uma chamada com saída estruturada `{ passou, justificativa }`, recebendo pergunta, resposta final, comportamento esperado e rubrica; usa `EVAL_JUDGE_MODEL`.
-- [ ] `passou` exige todas as checagens determinísticas e o juiz; a linha gravada guarda o resultado de cada parte.
-- [ ] Cada caso é executado no mínimo 3 vezes e o relatório mostra, por caso, quantas execuções respeitaram o comportamento esperado, no formato `n/3` (F13).
-- [ ] `RELATORIO.md` contém: data, modelo, hash do conteúdo de `context/`, tabela por caso, tabela por regra, taxa de consistência geral, número de rascunhos reprovados pela autoavaliação e transcrição de cada execução.
-- [ ] `resumo.json` contém os mesmos agregados em formato legível por máquina.
-- [ ] O processo termina com código 0 somente se todos os casos tiverem todas as execuções aprovadas (meta de F13).
-- [ ] `npm run casos:doc` gera `docs/CASOS-DE-TESTE.md` a partir de `evals/casos.json`, com os campos exigidos por F11.
-- [ ] Testes unitários do agregador com execuções fabricadas: 3/3, 2/3 e uma execução com `erro`.
+- [x] O juiz faz uma chamada com saída estruturada `{ passou, justificativa }`, recebendo pergunta, resposta final, comportamento esperado e rubrica; usa `EVAL_JUDGE_MODEL`.
+- [x] `passou` exige todas as checagens determinísticas e o juiz; a linha gravada guarda o resultado de cada parte.
+- [x] Cada caso é executado no mínimo 3 vezes e o relatório mostra, por caso, quantas execuções respeitaram o comportamento esperado, no formato `n/3` (F13).
+- [x] `RELATORIO.md` contém: data, modelo, hash do conteúdo de `context/`, tabela por caso, tabela por regra, taxa de consistência geral, número de rascunhos reprovados pela autoavaliação e transcrição de cada execução.
+- [x] `resumo.json` contém os mesmos agregados em formato legível por máquina.
+- [x] O processo termina com código 0 somente se todos os casos tiverem todas as execuções aprovadas (meta de F13).
+- [x] `npm run casos:doc` gera `docs/CASOS-DE-TESTE.md` a partir de `evals/casos.json`, com os campos exigidos por F11.
+- [x] Testes unitários do agregador com execuções fabricadas: 3/3, 2/3 e uma execução com `erro`.
 
 **Dependências:** 14.
 
