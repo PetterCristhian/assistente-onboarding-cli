@@ -103,6 +103,13 @@ describe("createRateLimiter: tryAcquire", () => {
     });
   });
 
+  it("exposes the limit in force", () => {
+    const { limiter } = limiterWith(3, 45);
+
+    expect(limiter.maxRequests).toBe(3);
+    expect(limiter.windowSeconds).toBe(45);
+  });
+
   it("works with a limit of 1", () => {
     const { limiter } = limiterWith(1, 60);
 

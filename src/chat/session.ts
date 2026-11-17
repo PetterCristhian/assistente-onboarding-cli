@@ -3,6 +3,11 @@
 // is shown goes to the ChatOutput that the caller passes in, so that the
 // chat and the test battery can share it.
 import {
+  formatRateLimitNotice,
+  waitSecondsFor,
+  type RateLimiter,
+} from "./rate-limiter.js";
+import {
   APIError,
   APIUserAbortError,
   type LlmClient,
@@ -35,6 +40,14 @@ export interface ChatSessionDeps {
   readonly instructions: string;
   readonly output: ChatOutput;
   readonly redact: Redactor;
+  /**
+   * The local limit on questions. Without it there is no limit. The policy
+   * is the caller's: the chat refuses, the battery waits.
+   */
+  readonly rateLimit?: {
+    readonly limiter: RateLimiter;
+    readonly mode: "refuse" | "wait";
+  };
 }
 
 export type TurnResult =
@@ -47,6 +60,8 @@ export type TurnResult =
       usage?: LlmUsage;
     }
   | { status: "cancelled" }
+  /** The local limit was reached: the question was not sent nor kept. */
+  | { status: "rate_limited"; waitSeconds: number }
   | { status: "failed"; summary: ErrorSummary };
 
 export interface ChatSession {
@@ -99,6 +114,40 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     );
   }
 
+  /** Takes a slot of the local limit; a result only when the turn must end. */
+  async function takeRateLimitSlot(
+    signal: AbortSignal | undefined,
+  ): Promise<TurnResult | undefined> {
+    const { rateLimit } = deps;
+    if (rateLimit === undefined) {
+      return undefined;
+    }
+    const waiting = rateLimit.mode === "wait";
+    const slot = await rateLimit.limiter.acquire({
+      wait: waiting,
+      ...(signal === undefined ? {} : { signal }),
+      onWait: (retryAfterMs) => {
+        deps.output.notice(
+          "info",
+          `Aguardando ${waitSecondsFor(retryAfterMs)} s para respeitar o limite de perguntas.`,
+        );
+      },
+    });
+    if (slot.allowed) {
+      return undefined;
+    }
+    const waitSeconds = waitSecondsFor(slot.retryAfterMs);
+    deps.output.notice(
+      "warning",
+      formatRateLimitNotice(
+        rateLimit.limiter.maxRequests,
+        rateLimit.limiter.windowSeconds,
+        waitSeconds,
+      ),
+    );
+    return { status: "rate_limited", waitSeconds };
+  }
+
   async function ask(
     question: string,
     options: { signal?: AbortSignal } = {},
@@ -112,6 +161,12 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     let retries = 0;
     let maxRetries = 0;
     try {
+      // A slot is taken once per accepted question. A turn that fails or is
+      // cancelled after this point does not give it back.
+      const limited = await takeRateLimitSlot(signal);
+      if (limited !== undefined) {
+        return limited;
+      }
       const input: LlmMessage[] = [
         ...history,
         { role: "user", content: question },

@@ -17,6 +17,9 @@ export interface AcquireOptions {
 }
 
 export interface RateLimiter {
+  /** The limit in force, for the message shown when a question is refused. */
+  readonly maxRequests: number;
+  readonly windowSeconds: number;
   /** Synchronous, so the check and the taking of the slot are one step. */
   tryAcquire(): TryAcquireResult;
   acquire(options?: AcquireOptions): Promise<TryAcquireResult>;
@@ -108,5 +111,10 @@ export function createRateLimiter(deps: RateLimiterDeps): RateLimiter {
     }
   }
 
-  return { tryAcquire, acquire };
+  return {
+    maxRequests: deps.maxRequests,
+    windowSeconds: deps.windowSeconds,
+    tryAcquire,
+    acquire,
+  };
 }
