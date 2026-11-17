@@ -12,6 +12,7 @@
     "contexto": "tsx scripts/show-context.ts",
     "smoke:llm": "tsx scripts/smoke-llm.ts",
     "demo:falhas": "tsx scripts/demo-falhas.ts",
+    "eval": "tsx scripts/eval.ts",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "format": "prettier --write .",

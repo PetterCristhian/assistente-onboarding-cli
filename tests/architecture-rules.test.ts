@@ -143,7 +143,7 @@ describe("architecture rules", () => {
   // it makes one try per call, on purpose. The demonstration of failures is NOT
   // an exception: it uses the same client, so the retry that it shows is the
   // retry of the chat (ADR 0005, decision 24).
-  it("creates the real client only in the chat entry point, in the smoke test and in the demo", () => {
+  it("creates the real client only in the entry points: the chat, the battery, the smoke test and the demo", () => {
     const callers = filesMatching(
       listTypeScriptFiles("src", "evals", "scripts"),
       /\bcreateOpenAiLlmClient\s*\(/,
@@ -151,6 +151,7 @@ describe("architecture rules", () => {
 
     expect(callers).toEqual([
       "scripts/demo-falhas/run.ts",
+      "scripts/eval.ts",
       "scripts/smoke-llm.ts",
       "src/cli/main.ts",
     ]);
@@ -220,15 +221,101 @@ describe("architecture rules", () => {
     });
   });
 
-  // The limiter is created in one place, so that the policy (refuse or wait) is
-  // chosen by the entry point and not by the pipeline.
-  it("creates the rate limiter only in the chat entry point", () => {
+  // The limiter is created in one place per entry point, so that the policy
+  // (refuse or wait) is chosen by the entry point and not by the pipeline.
+  it("creates the rate limiter only in the chat entry point and in the battery", () => {
     const creators = filesMatching(
       listTypeScriptFiles("src", "evals", "scripts"),
       /\bcreateRateLimiter\s*\(/,
     ).filter((file) => file !== "src/chat/rate-limiter.ts");
 
-    expect(creators).toEqual(["src/cli/main.ts"]);
+    expect(creators).toEqual(["evals/cli.ts", "src/cli/main.ts"]);
+  });
+
+  // ENG-56: the battery is the second border. It runs the pipeline of the chat
+  // and has no pipeline of its own; its entry point only wires the real pieces.
+  describe("the battery (evals/ and scripts/eval.ts)", () => {
+    const files = listTypeScriptFiles("evals");
+
+    it("is made of the pieces that the plan names", () => {
+      expect(files).toEqual(
+        expect.arrayContaining([
+          "evals/args.ts",
+          "evals/battery-id.ts",
+          "evals/cli.ts",
+          "evals/collector.ts",
+          "evals/contexts.ts",
+          "evals/record.ts",
+          "evals/retry-count.ts",
+          "evals/runner.ts",
+          "evals/verdict.ts",
+        ]),
+      );
+    });
+
+    it("calls the model client only in the decorator that counts the new tries", () => {
+      const callers = filesMatching(
+        files,
+        /\.\s*(?:streamText|generateStructured)\s*\(/,
+      );
+
+      expect(callers).toEqual(["evals/retry-count.ts"]);
+    });
+
+    it("runs the turns through createChatSession, with the clock always passed", () => {
+      const runner = readSource("evals/runner.ts");
+
+      expect(runner).toMatch(
+        /import\s*\{[^}]*\bcreateChatSession\b[^}]*\}\s*from\s*"\.\.\/src\/chat\/session\.js"/,
+      );
+      expect(runner.match(/\bcreateChatSession\(/g)).toHaveLength(1);
+      expect(runner).toMatch(/\bnow: deps\.now\b/);
+      expect(runner).not.toMatch(/\bonTurn\b|new\s+Date\s*\(/);
+    });
+
+    it("does not write the log of a chat session, nor read the environment, the process or the disk", () => {
+      expect(filesMatching(files, /logging\/session-log/)).toEqual([]);
+      expect(filesMatching(files, /\bprocess\b|loadEnvFile/)).toEqual([]);
+      expect(filesMatching(files, /node:fs|from\s+["']fs["']/)).toEqual([]);
+      expect(
+        filesMatching(files, /writeFile|appendFile|createWriteStream/),
+      ).toEqual([]);
+    });
+
+    it("writes only through the safe writer, and only to outputs/", () => {
+      expect(filesMatching(files, /\bappendJsonLine\(/)).toEqual([
+        "evals/cli.ts",
+        "evals/runner.ts",
+      ]);
+      expect(readSource("evals/runner.ts")).toMatch(
+        /\bOUTPUTS_FOLDER = "outputs"/,
+      );
+    });
+
+    it("keeps the entry point to wiring: no process.exit, Ctrl+C by AbortController, short", () => {
+      const entry = readSource("scripts/eval.ts");
+
+      expect(entry.split("\n").length).toBeLessThanOrEqual(40);
+      expect(entry).not.toMatch(/\bprocess\s*\.\s*exit\s*\(/);
+      expect(entry).toMatch(/\bprocess\.exitCode\b/);
+      expect(entry).toMatch(/\bAbortController\b/);
+      expect(entry).toMatch(/\bSIGINT\b/);
+      expect(entry).toMatch(/\brunEvalCli\b/);
+      expect(entry).not.toMatch(/\bcreateSafeWriter\b|\bwithRetry\b/);
+      expect(entry).not.toMatch(/\bprocess\s*\.\s*env\b|loadEnvFile/);
+    });
+
+    it("has no option for the key in the parser", () => {
+      const source = readSource("evals/args.ts");
+      const block = /OPTION_DEFINITIONS\s*=\s*\{([\s\S]*?)\}\s*as const/.exec(
+        source,
+      );
+      const names = [
+        ...(block?.[1] ?? "").matchAll(/^\s*"?([\w-]+)"?\s*:\s*\{/gm),
+      ].map((match) => match[1] ?? "");
+
+      expect(names).toEqual(["runs", "case", "help"]);
+    });
   });
 
   it("imports errors.ts before client.ts without breaking the cycle between them", async () => {

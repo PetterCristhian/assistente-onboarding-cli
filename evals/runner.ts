@@ -163,7 +163,7 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
   ): Promise<Played | "cancelled"> {
     const counter = createRetryCounter(deps.llm);
     const collector = createCollectingOutput();
-    // No `onTurn`: the battery does not write the log of a chat session.
+    // No turn hook: the battery does not write the log of a chat session.
     const session = createChatSession({
       llm: counter.client,
       instructions: context.instructions,
