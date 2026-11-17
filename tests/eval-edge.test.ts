@@ -60,9 +60,8 @@ describe("parseCases, weak spots", () => {
     ).toHaveLength(12);
   });
 
-  // Desired behavior (a term that normalizes to nothing or to blanks matches
-  // every text). These fail today, so they are marked as known gaps.
-  it.fails("rejects a forbidden term made only of spaces", () => {
+  // A term that normalizes to nothing or to blanks matches every text.
+  it("rejects a forbidden term made only of spaces", () => {
     expect(() =>
       parseCases(
         withCase((caso) => {
@@ -72,7 +71,7 @@ describe("parseCases, weak spots", () => {
     ).toThrow();
   });
 
-  it.fails("rejects a term that normalizes to the empty string", () => {
+  it("rejects a term that normalizes to the empty string", () => {
     expect(() =>
       parseCases(
         withCase((caso) => {
@@ -82,7 +81,7 @@ describe("parseCases, weak spots", () => {
     ).toThrow();
   });
 
-  it.fails("rejects a profile name that is a path", () => {
+  it("rejects a profile name that is a path", () => {
     expect(() =>
       parseCases(
         withCase((caso) => {
@@ -90,5 +89,28 @@ describe("parseCases, weak spots", () => {
         }),
       ),
     ).toThrow();
+  });
+
+  it("keeps accepting a term with a trailing space and a simple slug profile", () => {
+    expect(() =>
+      parseCases(
+        withCase((caso) => {
+          caso.criterios.naoDeveConter = ["def "];
+          caso.perfil = "ana-souza";
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects profile names with slashes, dots or uppercase", () => {
+    for (const perfil of ["a/b", "a\b", "ana.json", "..", "Ana", "-ana"]) {
+      expect(() =>
+        parseCases(
+          withCase((caso) => {
+            caso.perfil = perfil;
+          }),
+        ),
+      ).toThrow();
+    }
   });
 });

@@ -1,6 +1,7 @@
 // Schema of evals/casos.json (ADR 0006). Holds no domain data: every case lives
 // in the JSON file. The semantics of the fields are in the ADR.
 import { z } from "zod";
+import { normalizeForMatch } from "./normalize.js";
 
 export const CATEGORIES = [
   "caminho-feliz",
@@ -21,9 +22,20 @@ const nonEmptyText = z.string().refine((text) => text.trim().length > 0, {
   message: "não pode ser vazio",
 });
 
-const termSchema = z.string().refine((term) => term.length >= MIN_TERM_LENGTH, {
-  message: `cada termo precisa ter ao menos ${MIN_TERM_LENGTH} caracteres`,
-});
+// Measured on the normalized term (what is really matched), ignoring spaces at
+// the ends, so "   " or only combining marks are rejected but "def " is kept.
+const termSchema = z
+  .string()
+  .refine((term) => normalizeForMatch(term).trim().length >= MIN_TERM_LENGTH, {
+    message: `cada termo precisa ter ao menos ${MIN_TERM_LENGTH} caracteres úteis depois de normalizado`,
+  });
+
+const profileSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9]+(-[a-z0-9]+)*$/,
+    "o perfil deve ser um nome simples (slug)",
+  );
 
 const termGroupSchema = z
   .array(termSchema)
@@ -40,7 +52,7 @@ export const casoSchema = z
       .refine((rules) => new Set(rules).size === rules.length, {
         message: "regras repetidas",
       }),
-    perfil: nonEmptyText,
+    perfil: profileSchema,
     turnos: z.array(nonEmptyText).min(1, "informe ao menos um turno"),
     comportamentoEsperado: nonEmptyText,
     criterios: z.strictObject({
