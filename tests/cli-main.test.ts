@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ENV_VARIABLE_NAMES } from "../src/config/env.js";
+import { loadContextLayers } from "../src/context/loaders.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -18,6 +19,7 @@ const BLANK_VARIABLES = Object.fromEntries(
 function runMain(
   extraArgs: string[] = [],
   variables: Record<string, string> = {},
+  input = "",
 ) {
   return spawnSync(
     process.execPath,
@@ -25,6 +27,7 @@ function runMain(
     {
       cwd: PROJECT_ROOT,
       encoding: "utf8",
+      input,
       env: { ...process.env, ...BLANK_VARIABLES, ...variables },
       timeout: CHILD_TIMEOUT_MS,
     },
@@ -52,7 +55,7 @@ describe("src/cli/main.ts without the key", () => {
     CHILD_TIMEOUT_MS,
   );
 
-  // Issue 8 adds the argument parser; it must keep this behavior.
+  // ENG-50 adds the argument parser; it must keep this behavior.
   it.each([
     ["--api-key <key>", ["--api-key", KEY]],
     ["--openai-api-key=<key>", [`--openai-api-key=${KEY}`]],
@@ -73,14 +76,28 @@ describe("src/cli/main.ts without the key", () => {
 
 describe("src/cli/main.ts with the key in the environment", () => {
   it(
-    "starts and never prints the key",
+    "greets the default profile, lists the commands and ends on /sair, never printing the key",
     () => {
-      const result = runMain([], { OPENAI_API_KEY: KEY });
+      const layers = loadContextLayers({}, { now: () => new Date() });
+      const result = runMain([], { OPENAI_API_KEY: KEY }, "/sair\n");
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("Assistente de onboarding");
+      expect(result.stdout).toContain(`Olá, ${layers.userProfile.nome}.`);
+      expect(result.stdout).toContain("/ajuda");
       expect(result.stdout).not.toContain(KEY);
       expect(result.stderr).not.toContain(KEY);
+      expect(result.stderr).toBe("");
+    },
+    CHILD_TIMEOUT_MS,
+  );
+
+  it(
+    "ends with 0 at the end of the input, without a question reaching the model",
+    () => {
+      const result = runMain([], { OPENAI_API_KEY: KEY }, "");
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
     },
     CHILD_TIMEOUT_MS,
   );

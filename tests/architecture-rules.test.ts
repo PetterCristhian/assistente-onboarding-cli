@@ -130,6 +130,29 @@ describe("architecture rules", () => {
     expect(writers).toEqual(["src/security/safe-writer.ts"]);
   });
 
+  // The session is reusable by the battery: no terminal, no disk, no node:.
+  it("keeps src/chat/ free of terminal, process, disk and node: modules", () => {
+    const files = listTypeScriptFiles("src").filter((file) =>
+      file.startsWith("src/chat/"),
+    );
+
+    expect(files).toContain("src/chat/session.ts");
+    expect(filesMatching(files, /readline|process|console|node:/)).toEqual([]);
+    expect(
+      filesMatching(
+        ["src/chat/session.ts"],
+        /writeFile|appendFile|createWriteStream/,
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads the terminal input only in src/cli/", () => {
+    const readers = filesMatching(listTypeScriptFiles("src"), /readline/);
+
+    expect(readers.length).toBeGreaterThan(0);
+    expect(readers.every((file) => file.startsWith("src/cli/"))).toBe(true);
+  });
+
   // The key is not accepted through a command-line argument. For now no file
   // of src/ reads the arguments at all. Issue 8 replaces this check by "the
   // parser declares no option for the key" and by the test of --help.

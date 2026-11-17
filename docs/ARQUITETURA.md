@@ -159,6 +159,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 ├── src/
 │   ├── cli/
 │   │   ├── main.ts               # entrada do chat: argumentos, laço readline
+│   │   ├── chat-loop.ts          # laço readline: lê linhas, executa comandos, encerra com Ctrl+C
 │   │   ├── commands.ts           # /sair /limpar /contexto /detalhes /ajuda
 │   │   └── renderer.ts           # escrita no terminal (stream, avisos, modo detalhado)
 │   ├── config/
@@ -248,3 +249,10 @@ Contexto fixo estimado em 4 a 6 mil tokens. Cada execução da bateria faz gera�
 - A resposta reprovada chega a aparecer na tela antes da retratação (consequência aceita do streaming real; ver ADR 0004).
 - `gpt-6-luna` não tem snapshot datado: o comportamento pode mudar com atualizações do provedor. Os outputs gravam o identificador de modelo devolvido pela API.
 - O juiz da bateria é um modelo; a análise (F14) inclui revisão manual dos outputs.
+
+### Limites conhecidos do chat interativo (ENG-49)
+
+- O renderer neutraliza caracteres de controle (ESC, C0, DEL, C1) só na exibição; o histórico e o que vai ao modelo não mudam. Um erro de escrita em stdout/stderr encerra o chat sem stack (EPIPE: código 0; outro erro: uma linha e código 1).
+- O texto do modelo é exibido e guardado no histórico sem redação de chave: se o modelo repetir a chave, ela pode ser impressa. A chave só chega ao modelo se estiver no contexto, o que as regras proíbem. A defesa é a autoavaliação e a redação de saída da ENG-53.
+- O histórico não tem limite: o custo e o tamanho da entrada crescem a cada turno (use `/limpar`).
+- Ctrl+C em um terminal real (TTY) não foi verificado à mão; os testes cobrem o sinal e o cancelamento do turno, não o terminal.
