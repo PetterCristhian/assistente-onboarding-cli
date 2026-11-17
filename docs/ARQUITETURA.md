@@ -235,7 +235,7 @@ Variáveis de ambiente (todas documentadas em `.env.example`; só `OPENAI_API_KE
 | `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas permitidas por janela (limite local) |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local |
 
-Opções de linha de comando do chat: `--system-prompt <arquivo>` (substitui a camada 1), `--perfil <nome|arquivo>` (escolhe a camada 3), `--context-dir <pasta>` (troca o domínio), `--verbose` (modo detalhado), `--show-context` (imprime o contexto montado e sai).
+Opções de linha de comando do chat (`src/cli/args.ts`, o único arquivo que usa `parseArgs`; `src/cli/main.ts` é o único que lê `process.argv`): `--system-prompt <arquivo>` (substitui só a camada 1; `.md` ou `.txt`), `--perfil <nome|arquivo>` (escolhe a camada 3: nome de `03-usuario/` ou caminho de um `.json`), `--context-dir <pasta>` (troca o domínio), `--verbose` (detalhes técnicos em stderr; provisório até a ENG-53), `--show-context` (imprime o contexto montado e sai antes de ler a configuração: sem chave, sem `.env`, sem rede) e `-h`/`--help`. A chave da API não é opção, e um teste confere que o parser não declara nenhuma. Opção repetida e argumento posicional são erro de uso. Códigos de saída: 0 normal, ajuda e `--show-context`; 1 uso inválido, configuração ou contexto; 2 erro inesperado. Todo arquivo de camada tem no máximo 64 KiB e precisa ser um arquivo comum.
 
 Comandos dentro do chat: `/sair`, `/limpar`, `/contexto`, `/detalhes`, `/ajuda`.
 

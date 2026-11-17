@@ -18,6 +18,10 @@ A entrega é um repositório Git público. O projeto usa a chave de API paga do 
 7. **Antes de tornar o repositório público** (issue 19): rodar a varredura também sobre todo o histórico (`git log -p`) e conferir que `.env` nunca foi adicionado.
 8. **Se a chave vazar:** revogar no painel da OpenAI imediatamente e gerar outra. Reescrever o histórico não desfaz a exposição.
 
+## Adendo (ENG-50): `--system-prompt` envia o arquivo ao provedor
+
+O arquivo indicado em `--system-prompt` vira a camada 1 e, como todo o contexto, é enviado ao provedor a cada chamada. O projeto não o inspeciona em busca de segredos. Por isso a opção recusa um arquivo cujo nome começa com `.env`, só aceita `.md` ou `.txt`, só lê arquivo comum de até 64 KiB, e o README avisa que o conteúdo sai da máquina. O mesmo vale para o arquivo de perfil. A chave continua fora de qualquer argumento de linha de comando: o parser não declara essa opção e nunca repete na mensagem de erro o texto de um argumento que não reconhece.
+
 ## Alternativas descartadas
 
 - Confiar só no `.gitignore`: não protege outputs nem logs.
