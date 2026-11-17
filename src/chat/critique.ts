@@ -155,6 +155,8 @@ export function buildEvaluationRequest(
   };
 }
 
+const INVISIBLE_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+
 /**
  * The reason is text of the model: redacted, flattened into one line without
  * control or format characters, free of angle brackets (so that it cannot
@@ -162,11 +164,17 @@ export function buildEvaluationRequest(
  * so that a cut key still gets caught.
  */
 export function cleanReason(reason: string, redact: Redactor): string {
-  const flat = redact(reason)
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
-    .replace(/[<>]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Invisible characters may sit in the middle of a key. Taken out (not
+  // replaced by a blank), the key is whole again and gets caught; when
+  // nothing is caught that way, the usual form (a blank in their place)
+  // keeps the words apart.
+  const joined = reason.replace(INVISIBLE_CHARACTERS, "");
+  const joinedSafe = redact(joined);
+  const base =
+    joinedSafe !== joined
+      ? joinedSafe
+      : redact(reason.replace(INVISIBLE_CHARACTERS, " "));
+  const flat = base.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
   const cut = [...flat].slice(0, MAX_REASON_LENGTH).join("").trim();
   return cut === "" ? NO_REASON : cut;
 }
