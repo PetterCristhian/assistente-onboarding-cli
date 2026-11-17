@@ -18,9 +18,11 @@ import {
   loadCritiquePrompts,
   loadFallbackMessage,
   loadGlobalInstructions,
+  loadJudgePrompt,
   loadPolicies,
   loadUserProfile,
   nodeFileReader,
+  readContextTree,
   resolveContextSources,
   type ContextFileReader,
   type ContextSources,
@@ -119,6 +121,7 @@ function madeUpFiles(): Record<string, string> {
     [join(ROOT, "fallback.md")]: "Mensagem fixa que nunca vai ao modelo.\n",
     [join(ROOT, "avaliador.md")]: "# Avaliador\n\nApenas audite.\n",
     [join(ROOT, "revisao.md")]: `Corrija: ${REVISION_VIOLATIONS_MARKER}\n`,
+    [join(ROOT, "juiz.md")]: "# Juiz\n\nApenas julgue.\n",
   };
 }
 
@@ -1484,5 +1487,89 @@ describe("the safe message and the critique prompts (ENG-53)", () => {
 
     expect(text).not.toContain(prompts.evaluator);
     expect(text).not.toContain(prompts.revision);
+  });
+});
+
+describe("the prompt of the judge and the tree of the context (ENG-57)", () => {
+  it("loads the judge prompt trimmed", () => {
+    expect(loadJudgePrompt(ROOT, fakeReader(madeUpFiles()))).toBe(
+      "# Juiz\n\nApenas julgue.",
+    );
+  });
+
+  it("refuses a missing, an empty and a path-less judge prompt", () => {
+    const missing = madeUpFiles();
+    delete missing[join(ROOT, "juiz.md")];
+    const empty = { ...madeUpFiles(), [join(ROOT, "juiz.md")]: " \n" };
+
+    expect(
+      contextErrorMessage(() => loadJudgePrompt(ROOT, fakeReader(missing))),
+    ).toContain(join(ROOT, "juiz.md"));
+    expect(
+      contextErrorMessage(() => loadJudgePrompt(ROOT, fakeReader(empty))),
+    ).toContain("vazio");
+    expect(contextErrorMessage(() => loadJudgePrompt(" "))).toContain("vazia");
+  });
+
+  it("loads the real judge prompt of context/ and of the fixture", () => {
+    const fixture = fileURLToPath(
+      new URL("./fixtures/minimal-context", import.meta.url),
+    );
+
+    for (const dir of [DEFAULT_CONTEXT_DIR, fixture]) {
+      expect(loadJudgePrompt(dir)).toContain("passou");
+    }
+  });
+
+  it("lists the .md and .json files of the three folders, raw and ordered", () => {
+    const files = {
+      ...madeUpFiles(),
+      [join(ROOT, ".oculto.md")]: "x",
+      [join(ROOT, "notas.txt")]: "x",
+      [join(COMPANY_DIR, ".rascunho.md")]: "x",
+      [join(ROOT, "juiz.md")]: "linha\r\n",
+    };
+
+    const tree = readContextTree(ROOT, fakeReader(files));
+
+    expect(tree.map((file) => file.path)).toEqual([
+      "01-instrucoes-globais.md",
+      "02-politicas.md",
+      "03-usuario/alfa.json",
+      "03-usuario/beta.json",
+      "04-empresa/a-primeiro.md",
+      "04-empresa/b-segundo.md",
+      "avaliador.md",
+      "fallback.md",
+      "juiz.md",
+      "revisao.md",
+    ]);
+    expect(tree.find((file) => file.path === "juiz.md")?.text).toBe(
+      "linha\r\n",
+    );
+  });
+
+  it("refuses a file above the limit and a folder that is missing", () => {
+    const big = {
+      ...madeUpFiles(),
+      [join(ROOT, "juiz.md")]: "x".repeat(MAX_LAYER_FILE_BYTES + 1),
+    };
+    const noCompany = madeUpFiles();
+    delete noCompany[join(COMPANY_DIR, "a-primeiro.md")];
+    delete noCompany[join(COMPANY_DIR, "b-segundo.md")];
+
+    expect(
+      contextErrorMessage(() => readContextTree(ROOT, fakeReader(big))),
+    ).toContain("excede");
+    expect(
+      contextErrorMessage(() => readContextTree(ROOT, fakeReader(noCompany))),
+    ).toContain("não encontrada");
+    expect(contextErrorMessage(() => readContextTree(""))).toContain("vazia");
+  });
+
+  it("reads the whole real context/", () => {
+    const paths = readContextTree(DEFAULT_CONTEXT_DIR).map((file) => file.path);
+
+    expect(paths).toEqual(listContextFiles());
   });
 });

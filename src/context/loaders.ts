@@ -64,6 +64,7 @@ const POLICIES_FILE = "02-politicas.md";
 const FALLBACK_FILE = "fallback.md";
 const EVALUATOR_PROMPT_FILE = "avaliador.md";
 const REVISION_PROMPT_FILE = "revisao.md";
+const JUDGE_PROMPT_FILE = "juiz.md";
 const USER_PROFILE_DIR = "03-usuario";
 const COMPANY_DATA_DIR = "04-empresa";
 const PROFILE_EXTENSION = ".json";
@@ -82,6 +83,8 @@ const COMPANY_DATA_LAYER = "dados da empresa";
 const FALLBACK_LAYER = "mensagem segura";
 const EVALUATOR_PROMPT_LAYER = "prompt do avaliador";
 const REVISION_PROMPT_LAYER = "prompt da revisão";
+const JUDGE_PROMPT_LAYER = "prompt do juiz";
+const CONTEXT_TREE_LAYER = "contexto";
 
 const BYTE_ORDER_MARK = String.fromCodePoint(0xfeff);
 const PROFILE_FIELDS = Object.keys(userProfileSchema.shape);
@@ -504,6 +507,101 @@ export function loadCritiquePrompts(
     );
   }
   return { evaluator, revision };
+}
+
+/** The prompt of the judge of the battery (juiz.md, ENG-57). */
+export function loadJudgePrompt(
+  contextDir: string,
+  reader: ContextFileReader = nodeFileReader,
+): string {
+  refuseEmptyContextDir(contextDir);
+  return readLayerFile(
+    join(contextDir, JUDGE_PROMPT_FILE),
+    JUDGE_PROMPT_LAYER,
+    reader,
+  );
+}
+
+/** One file of context/, as it is on the disk (not trimmed). */
+export interface ContextTreeFile {
+  /** POSIX path from the context folder, such as "04-empresa/contatos.md". */
+  readonly path: string;
+  readonly text: string;
+}
+
+const CONTEXT_TREE_EXTENSIONS: readonly string[] = [".md", ".json"];
+// The root of context/ and the two folders of the layers that have folders.
+const CONTEXT_TREE_FOLDERS: readonly string[] = [
+  "",
+  USER_PROFILE_DIR,
+  COMPANY_DATA_DIR,
+];
+
+function readTreeFile(path: string, reader: ContextFileReader): string {
+  let raw: string;
+  try {
+    raw = reader.readText(path);
+  } catch (error) {
+    const code = readErrorCode(error);
+    if (code === TOO_BIG_CODE) {
+      throw new ContextError(
+        `Um arquivo do ${CONTEXT_TREE_LAYER} excede ${MAX_LAYER_FILE_BYTES / 1024} KiB: ${path}.`,
+      );
+    }
+    if (code === NOT_REGULAR_CODE) {
+      throw new ContextError(
+        `O caminho do ${CONTEXT_TREE_LAYER} não é um arquivo comum: ${path}.`,
+      );
+    }
+    throw unreadable(path, error);
+  }
+  if (Buffer.byteLength(raw, "utf8") > MAX_LAYER_FILE_BYTES) {
+    throw new ContextError(
+      `Um arquivo do ${CONTEXT_TREE_LAYER} excede ${MAX_LAYER_FILE_BYTES / 1024} KiB: ${path}.`,
+    );
+  }
+  return raw;
+}
+
+/**
+ * Every .md and .json file of the root of context/, of 03-usuario/ and of
+ * 04-empresa/, with the text as it is on the disk, ordered by path. Names that
+ * start with "." are left out. Only for the fingerprint of the battery: it
+ * includes the profiles that no case uses, and the prompts that are not layers.
+ */
+export function readContextTree(
+  contextDir: string,
+  reader: ContextFileReader = nodeFileReader,
+): ContextTreeFile[] {
+  refuseEmptyContextDir(contextDir);
+  const files: ContextTreeFile[] = [];
+  for (const folder of CONTEXT_TREE_FOLDERS) {
+    const directory = resolve(join(contextDir, folder));
+    let names: string[];
+    try {
+      names = reader.listFiles(directory);
+    } catch (error) {
+      if (readErrorCode(error) === "ENOENT") {
+        throw new ContextError(
+          `Pasta do ${CONTEXT_TREE_LAYER} não encontrada. Caminho esperado: ${directory}.`,
+        );
+      }
+      throw unreadable(directory, error);
+    }
+    for (const name of names) {
+      if (
+        name.startsWith(".") ||
+        !CONTEXT_TREE_EXTENSIONS.some((extension) => name.endsWith(extension))
+      ) {
+        continue;
+      }
+      files.push({
+        path: folder === "" ? name : `${folder}/${name}`,
+        text: readTreeFile(join(directory, name), reader),
+      });
+    }
+  }
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 function twoDigits(value: number): string {
