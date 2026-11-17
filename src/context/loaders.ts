@@ -10,8 +10,10 @@ import {
   hasLineBreak,
   singleLineFieldProblem,
   userProfileSchema,
+  REVISION_VIOLATIONS_MARKER,
   type CompanyDocument,
   type ContextLayers,
+  type CritiquePrompts,
   type UserProfile,
 } from "./types.js";
 
@@ -59,6 +61,9 @@ export const DEFAULT_CONTEXT_DIR = resolve(
 
 const GLOBAL_INSTRUCTIONS_FILE = "01-instrucoes-globais.md";
 const POLICIES_FILE = "02-politicas.md";
+const FALLBACK_FILE = "fallback.md";
+const EVALUATOR_PROMPT_FILE = "avaliador.md";
+const REVISION_PROMPT_FILE = "revisao.md";
 const USER_PROFILE_DIR = "03-usuario";
 const COMPANY_DATA_DIR = "04-empresa";
 const PROFILE_EXTENSION = ".json";
@@ -73,6 +78,10 @@ const GLOBAL_INSTRUCTIONS_LAYER = "instruções globais";
 const POLICIES_LAYER = "políticas";
 const USER_DATA_LAYER = "dados do usuário";
 const COMPANY_DATA_LAYER = "dados da empresa";
+// Files of context/ that are not a layer (they never go in the context).
+const FALLBACK_LAYER = "mensagem segura";
+const EVALUATOR_PROMPT_LAYER = "prompt do avaliador";
+const REVISION_PROMPT_LAYER = "prompt da revisão";
 
 const BYTE_ORDER_MARK = String.fromCodePoint(0xfeff);
 const PROFILE_FIELDS = Object.keys(userProfileSchema.shape);
@@ -459,6 +468,42 @@ export function loadCompanyData(
     name,
     content: readLayerFile(join(path, name), COMPANY_DATA_LAYER, reader),
   }));
+}
+
+/**
+ * The fixed safe message (fallback.md). Read at start-up: a missing or empty
+ * file stops the chat, so that the failure path never depends on the disk.
+ */
+export function loadFallbackMessage(
+  contextDir: string,
+  reader: ContextFileReader = nodeFileReader,
+): string {
+  refuseEmptyContextDir(contextDir);
+  return readLayerFile(join(contextDir, FALLBACK_FILE), FALLBACK_LAYER, reader);
+}
+
+/** The prompts of the evaluator and of the revision (ENG-53). */
+export function loadCritiquePrompts(
+  contextDir: string,
+  reader: ContextFileReader = nodeFileReader,
+): CritiquePrompts {
+  refuseEmptyContextDir(contextDir);
+  const evaluator = readLayerFile(
+    join(contextDir, EVALUATOR_PROMPT_FILE),
+    EVALUATOR_PROMPT_LAYER,
+    reader,
+  );
+  const revision = readLayerFile(
+    join(contextDir, REVISION_PROMPT_FILE),
+    REVISION_PROMPT_LAYER,
+    reader,
+  );
+  if (!revision.includes(REVISION_VIOLATIONS_MARKER)) {
+    throw new ContextError(
+      `O ${REVISION_PROMPT_LAYER} deve conter o marcador ${REVISION_VIOLATIONS_MARKER}: ${join(contextDir, REVISION_PROMPT_FILE)}.`,
+    );
+  }
+  return { evaluator, revision };
 }
 
 function twoDigits(value: number): string {

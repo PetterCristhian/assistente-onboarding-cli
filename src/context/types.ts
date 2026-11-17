@@ -80,6 +80,17 @@ export interface BuiltContext {
   readonly text: string;
 }
 
+/** The prompts of the self-critique: files of context/, outside the layers. */
+export interface CritiquePrompts {
+  /** Role of the auditor; the layers 2, 3 and 4 are appended after it. */
+  readonly evaluator: string;
+  /** Asks for the rewrite; holds REVISION_VIOLATIONS_MARKER once or more. */
+  readonly revision: string;
+}
+
+/** Where the revision prompt receives the list of violated rules. */
+export const REVISION_VIOLATIONS_MARKER = "{{violacoes}}";
+
 export class ContextError extends Error {
   override readonly name = "ContextError";
 }
