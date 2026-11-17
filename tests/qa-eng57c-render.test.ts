@@ -86,27 +86,29 @@ describe("renderCasesDoc: hostile text", () => {
     expect(typeof doc).toBe("string");
   });
 
-  it.fails(
-    "a term that starts with a list marker does not open a nested list",
-    () => {
-      const doc = renderCasesDoc([
-        makeCase("CT01", {
-          criterios: {
-            deveConter: [["- item falso", "1. outro"]],
-            naoDeveConter: ["- proibido", "+ mais"],
-            rubrica: "- rubrica\n- falsa",
-          },
-        }),
-      ]);
+  it("a term that starts with a list marker does not open a nested list", () => {
+    const doc = renderCasesDoc([
+      makeCase("CT01", {
+        criterios: {
+          deveConter: [["- item falso", "1. outro", "2) mais"]],
+          naoDeveConter: ["- proibido", "+ mais"],
+          rubrica: "- rubrica\n- falsa",
+        },
+      }),
+    ]);
 
-      for (const line of doc.split("\n")) {
-        // After the layout marker of the line there is no second list marker.
-        expect(line, line).not.toMatch(
-          /^\s*(?:[-*+]|\d+\.)\s+(?:[-+]|\d+\.)\s/,
-        );
-      }
-    },
-  );
+    for (const line of doc.split("\n")) {
+      // After the layout marker of the line there is no second list marker.
+      expect(line, line).not.toMatch(
+        /^\s*(?:[-*+]|\d+\.)\s+(?:[-+]|\d+[.)])(?:\s|$)/,
+      );
+      expect(line, line).not.toMatch(/^>\s+(?:[-+]|\d+[.)])(?:\s|$)/);
+    }
+    expect(doc).toContain("\\- item falso");
+    expect(doc).toContain("1\\. outro");
+    expect(doc).toContain("2\\) mais");
+    expect(doc).toContain("> \\- rubrica - falsa");
+  });
 });
 
 describe("renderCasesDoc: shapes", () => {

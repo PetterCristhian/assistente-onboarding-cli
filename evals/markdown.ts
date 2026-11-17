@@ -86,6 +86,10 @@ export function inlineText(text: string, max = MAX_INLINE_LENGTH): string {
   return (
     cut
       .replace(INLINE_SPECIALS, (sign) => `\\${sign}`)
+      // A marker at the start would open a (nested) list or a rule: "- ", "+ ",
+      // "1. ", "1) ". The digit stays; the delimiter is escaped ("1\. ").
+      .replace(/^(\s*)([-+])/, "$1\\$2")
+      .replace(/^(\s*\d{1,9})([.)])(?=\s|$)/, "$1\\$2")
       .replaceAll("://", ":\\//")
       .replace(/www\./gi, (match) => `${match.slice(0, 3)}\\.`)
       // E-mail autolinks (a@b.co) and the mailto:/xmpp: schemes become links too.
