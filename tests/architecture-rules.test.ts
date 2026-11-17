@@ -151,6 +151,17 @@ describe("architecture rules", () => {
     expect(readSource("scripts/smoke-llm.ts")).toMatch(/retryMaxAttempts: 0\b/);
   });
 
+  // The limiter is created in one place, so that the policy (refuse or wait) is
+  // chosen by the entry point and not by the pipeline.
+  it("creates the rate limiter only in the chat entry point", () => {
+    const creators = filesMatching(
+      listTypeScriptFiles("src", "evals", "scripts"),
+      /\bcreateRateLimiter\s*\(/,
+    ).filter((file) => file !== "src/chat/rate-limiter.ts");
+
+    expect(creators).toEqual(["src/cli/main.ts"]);
+  });
+
   it("imports errors.ts before client.ts without breaking the cycle between them", async () => {
     vi.resetModules();
     const errors = await import("../src/llm/errors.js");

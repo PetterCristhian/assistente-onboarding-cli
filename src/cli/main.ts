@@ -3,12 +3,14 @@
 // The key is never an argument: only src/config/env.ts reads the environment.
 // Exit codes: 0 = normal end (also --help and --show-context), 1 = invalid
 // use, configuration or context problem, 2 = unexpected error.
+import { createRateLimiter } from "../chat/rate-limiter.js";
 import { createChatSession } from "../chat/session.js";
 import { ConfigError, loadConfig } from "../config/env.js";
 import { buildContext } from "../context/builder.js";
 import { loadContext, type ContextSources } from "../context/loaders.js";
 import { ContextError } from "../context/types.js";
 import { createOpenAiLlmClient } from "../llm/client.js";
+import { defaultSleep } from "../llm/retry.js";
 import { createRedactor, type Redactor } from "../security/redact.js";
 import { HELP_TEXT, parseCliArgs, toContextOptions } from "./args.js";
 import { createInterruptHandler } from "./interrupt.js";
@@ -78,11 +80,22 @@ async function main(): Promise<number> {
     const config = loadConfig();
     redactText = createRedactor([config.openaiApiKey]);
 
+    // The limit on questions (F9b, ADR 0005): the chat refuses the excess.
+    // The clock is monotonic on purpose: a change of the system time, forward
+    // or back, must neither free nor block the slots.
+    const limiter = createRateLimiter({
+      maxRequests: config.rateLimitMaxRequests,
+      windowSeconds: config.rateLimitWindowSeconds,
+      now: () => performance.now(),
+      sleep: defaultSleep,
+    });
+
     const session = createChatSession({
       llm: createOpenAiLlmClient(config),
       instructions: context.text,
       output: createTerminalOutput(process.stdout, process.stderr),
       redact: redactText,
+      rateLimit: { limiter, mode: "refuse" },
     });
 
     // First Ctrl+C: stop in an orderly way (this also ends a wait for a new
