@@ -4,13 +4,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildContext } from "../src/context/builder.js";
 import {
   DEFAULT_CONTEXT_DIR,
   formatCurrentDate,
   listProfiles,
+  MAX_LAYER_FILE_BYTES,
   loadCompanyData,
+  loadContext,
   loadContextLayers,
   loadGlobalInstructions,
   loadPolicies,
@@ -23,6 +26,7 @@ import {
 import { ContextError, userProfileSchema } from "../src/context/types.js";
 import {
   CONTEXT_ROOT,
+  listContextFiles,
   listContextFolder,
   readContextFile,
 } from "./helpers/context-files.js";
@@ -1102,7 +1106,9 @@ describe("nodeFileReader on a temporary folder", () => {
         loadContextLayers({ contextDir: root }, { now }),
       );
 
-      expect(message).toMatch(/^Não foi possível ler /);
+      expect(message).toMatch(
+        /^O caminho da camada .* não é um arquivo comum: /,
+      );
       expect(message).toContain(file);
       expect(message).not.toMatch(/\n|illegal operation/);
     });
@@ -1151,5 +1157,236 @@ describe("nodeFileReader on a temporary folder", () => {
         ),
       ).toBe(`O arquivo da camada "dados da empresa" está vazio: ${file}.`);
     });
+  });
+});
+
+describe("files picked by the user (ENG-50)", () => {
+  const now = () => new Date(2020, 1, 3, 12, 0);
+  const reader = () => fakeReader(madeUpFiles());
+
+  it("refuses a profile by name and by file together", () => {
+    expect(
+      contextErrorMessage(() =>
+        resolveContextSources(
+          { contextDir: ROOT, profile: "alfa", profileFile: "x.json" },
+          reader(),
+        ),
+      ),
+    ).toBe("Informe o perfil por nome ou por arquivo, não os dois.");
+  });
+
+  it("uses a profile file without listing the profiles", () => {
+    const fake = reader();
+    const file = resolve("elsewhere", "someone.json");
+
+    const sources = resolveContextSources(
+      { contextDir: ROOT, profileFile: file },
+      fake,
+    );
+
+    expect(sources.userProfileFile).toBe(file);
+    expect(sources.policiesFile).toBe(POLICIES_FILE);
+    expect(fake.lists).not.toContain(PROFILE_DIR);
+  });
+
+  it("still requires a valid context folder with a profile file", () => {
+    const missing = resolve("no-such-context");
+
+    expect(
+      contextErrorMessage(() =>
+        resolveContextSources(
+          { contextDir: missing, profileFile: "x.json" },
+          reader(),
+        ),
+      ),
+    ).toBe(`Pasta de contexto não encontrada. Caminho esperado: ${missing}.`);
+  });
+
+  it.each(["", "  "])('refuses the blank profile file "%s"', (file) => {
+    expect(
+      contextErrorMessage(() =>
+        resolveContextSources(
+          { contextDir: ROOT, profileFile: file },
+          reader(),
+        ),
+      ),
+    ).toContain("arquivo de perfil informado está vazio");
+  });
+
+  it.each(["perfil.txt", "perfil", "perfil.json.bak"])(
+    "refuses the profile file %s",
+    (file) => {
+      expect(
+        contextErrorMessage(() =>
+          resolveContextSources(
+            { contextDir: ROOT, profileFile: file },
+            reader(),
+          ),
+        ),
+      ).toContain("O arquivo de perfil deve ter a extensão .json");
+    },
+  );
+
+  it.each(["prompt.json", "prompt", "prompt.md.exe"])(
+    "refuses the global instructions file %s",
+    (file) => {
+      expect(
+        contextErrorMessage(() =>
+          resolveContextSources(
+            { contextDir: ROOT, globalInstructionsFile: file },
+            reader(),
+          ),
+        ),
+      ).toContain("deve ter a extensão .md ou .txt");
+    },
+  );
+
+  it.each(["prompt.TXT", "prompt.Md"])("accepts %s", (file) => {
+    expect(() =>
+      resolveContextSources(
+        { contextDir: ROOT, globalInstructionsFile: file },
+        reader(),
+      ),
+    ).not.toThrow();
+  });
+
+  it.each([".env", ".env.md", ".ENV.txt", "pasta/.env.local.md"])(
+    "refuses %s as a global instructions file",
+    (file) => {
+      expect(
+        contextErrorMessage(() =>
+          resolveContextSources(
+            { contextDir: ROOT, globalInstructionsFile: file },
+            reader(),
+          ),
+        ),
+      ).toContain("arquivo de ambiente");
+    },
+  );
+
+  it("refuses an env file as a profile file", () => {
+    expect(
+      contextErrorMessage(() =>
+        resolveContextSources(
+          { contextDir: ROOT, profileFile: ".env.json" },
+          reader(),
+        ),
+      ),
+    ).toContain("arquivo de ambiente");
+  });
+
+  it("loadContext returns the layers and where they came from", () => {
+    const loaded = loadContext({ contextDir: ROOT }, { reader: reader(), now });
+
+    expect(loaded.sources.userProfileFile).toBe(FIRST_PROFILE);
+    expect(loaded.layers.userProfile.nome).toBe("Pessoa Alfa");
+  });
+
+  it("loads a profile from a file outside the profile folder", () => {
+    const file = resolve("elsewhere", "someone.json");
+    const fake = fakeReader({
+      ...madeUpFiles(),
+      [file]: profileJson({ ...VALID_PROFILE, nome: "Pessoa Gama" }),
+    });
+
+    const { layers } = loadContext(
+      { contextDir: ROOT, profileFile: file },
+      { reader: fake, now },
+    );
+
+    expect(layers.userProfile.nome).toBe("Pessoa Gama");
+  });
+});
+
+describe("the limits of the real reader (ENG-50)", () => {
+  function inTemporaryFolder(action: (root: string) => void): void {
+    const root = mkdtempSync(join(tmpdir(), "made-up-limits-"));
+    try {
+      action(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("refuses a folder where a file is expected", () => {
+    inTemporaryFolder((root) => {
+      const folder = join(root, "prompt.md");
+      mkdirSync(folder);
+
+      expect(contextErrorMessage(() => loadGlobalInstructions(folder))).toBe(
+        `O caminho da camada "instruções globais" não é um arquivo comum: ${folder}.`,
+      );
+    });
+  });
+
+  it("refuses a file above the limit and accepts one at the limit", () => {
+    inTemporaryFolder((root) => {
+      const big = join(root, "big.md");
+      writeFileSync(big, "a".repeat(MAX_LAYER_FILE_BYTES + 1));
+      const exact = join(root, "exact.md");
+      writeFileSync(exact, "a".repeat(MAX_LAYER_FILE_BYTES));
+
+      expect(contextErrorMessage(() => loadPolicies(big))).toBe(
+        `O arquivo da camada "políticas" excede 64 KiB: ${big}.`,
+      );
+      expect(loadPolicies(exact)).toHaveLength(MAX_LAYER_FILE_BYTES);
+    });
+  });
+
+  it("applies the limit to a profile and to a company document", () => {
+    inTemporaryFolder((root) => {
+      const profile = join(root, "p.json");
+      writeFileSync(profile, " ".repeat(MAX_LAYER_FILE_BYTES + 1));
+      writeFileSync(join(root, "a.md"), "a".repeat(MAX_LAYER_FILE_BYTES + 1));
+
+      expect(contextErrorMessage(() => loadUserProfile(profile))).toContain(
+        "excede 64 KiB",
+      );
+      expect(contextErrorMessage(() => loadCompanyData(root))).toContain(
+        "excede 64 KiB",
+      );
+    });
+  });
+
+  it("keeps the real context/ far below the limit", () => {
+    for (const path of listContextFiles()) {
+      expect(readContextFile(path).length).toBeLessThan(
+        MAX_LAYER_FILE_BYTES / 2,
+      );
+    }
+  });
+});
+
+describe("the minimal context fixture (ENG-50)", () => {
+  const FIXTURE = fileURLToPath(
+    new URL("./fixtures/minimal-context", import.meta.url),
+  );
+  const now = () => new Date(2026, 10, 16, 12, 0);
+
+  it("loads the four layers, with the first profile by default", () => {
+    const { layers, sources } = loadContext({ contextDir: FIXTURE }, { now });
+
+    expect(listProfiles(FIXTURE)).toEqual(["dora-teixeira", "egon-pires"]);
+    expect(layers.userProfile.nome).toBe("Dora Teixeira");
+    expect(layers.globalInstructions).toContain("Mercearia Fixture");
+    expect(layers.policies).toContain("Regra de teste F1");
+    expect(layers.companyData.map((document) => document.name)).toEqual([
+      "um.md",
+    ]);
+    expect(sources.userProfileFile).toBe(
+      join(FIXTURE, "03-usuario", "dora-teixeira.json"),
+    );
+    expect(() => buildContext(layers)).not.toThrow();
+  });
+
+  it("holds nothing of the real context/", () => {
+    const { layers } = loadContext({ contextDir: FIXTURE }, { now });
+    const real = loadContext({}, { now }).layers;
+    const text = buildContext(layers).text;
+
+    expect(text).not.toContain(real.userProfile.nome);
+    expect(text).not.toContain(real.userProfile.gestor);
+    expect(text).not.toContain(real.policies.slice(0, 80));
+    expect(text).not.toContain(real.globalInstructions.slice(0, 80));
   });
 });
