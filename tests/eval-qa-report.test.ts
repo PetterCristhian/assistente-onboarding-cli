@@ -186,7 +186,8 @@ describe("the report is a pure function of the lines", () => {
         `${runs}/${runs}`,
       ]);
       expect(summary.parcial).toBe(runs < 3);
-      expect(summary.f13Atendido).toBe(runs >= 3);
+      expect(summary.f13Mensuravel).toBe(runs >= 3);
+      expect(summary.f13Atingido).toBe(runs >= 3);
     }
   });
 

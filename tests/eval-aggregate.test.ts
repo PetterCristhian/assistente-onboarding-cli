@@ -65,7 +65,8 @@ describe("aggregateBattery: consistency per case", () => {
       taxa: 1,
     });
     expect(summary.completa).toBe(true);
-    expect(summary.f13Atendido).toBe(true);
+    expect(summary.f13Mensuravel).toBe(true);
+    expect(summary.f13Atingido).toBe(true);
   });
 
   it("a case with one failed run is 2/3", () => {
@@ -140,7 +141,8 @@ describe("aggregateBattery: consistency per case", () => {
     expect(summary.execucoesEsperadas).toBe(9);
     expect(summary.execucoesGravadas).toBe(3);
     expect(summary.completa).toBe(false);
-    expect(summary.f13Atendido).toBe(false);
+    expect(summary.f13Mensuravel).toBe(false);
+    expect(summary.f13Atingido).toBe(false);
     expect(summary.parcial).toBe(false);
     expect(summary.totais).toEqual({
       passou: 3,
@@ -181,7 +183,8 @@ describe("aggregateBattery: partial batteries and F13", () => {
 
     expect(summary.parcial).toBe(true);
     expect(summary.completa).toBe(true);
-    expect(summary.f13Atendido).toBe(false);
+    expect(summary.f13Mensuravel).toBe(false);
+    expect(summary.f13Atingido).toBe(false);
   });
 
   it("a selection of the cases is partial, and F13 is not met", () => {
@@ -191,16 +194,18 @@ describe("aggregateBattery: partial batteries and F13", () => {
     });
 
     expect(summary.parcial).toBe(true);
-    expect(summary.f13Atendido).toBe(false);
+    expect(summary.f13Mensuravel).toBe(false);
+    expect(summary.f13Atingido).toBe(false);
     expect(summary.porCaso).toHaveLength(1);
   });
 
-  it("3 runs, every case and the battery complete meets F13, even with failures", () => {
+  it("3 runs, every case and the battery complete is measurable, but not met with failures", () => {
     const lines = fullBattery([CT01, CT02, CT03], 3, "falhou");
     const summary = aggregate(lines);
 
     expect(summary.parcial).toBe(false);
-    expect(summary.f13Atendido).toBe(true);
+    expect(summary.f13Mensuravel).toBe(true);
+    expect(summary.f13Atingido).toBe(false);
     expect(summary.taxaConsistenciaGeral.taxa).toBe(0);
   });
 });
@@ -513,8 +518,27 @@ describe("summarySchema", () => {
       }).success,
     ).toBe(false);
     expect(
-      summarySchema.safeParse({ ...base, parcial: true, f13Atendido: true })
+      summarySchema.safeParse({ ...base, parcial: true, f13Mensuravel: true })
         .success,
+    ).toBe(false);
+    expect(
+      summarySchema.safeParse({
+        ...base,
+        f13Mensuravel: false,
+        f13Atingido: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      summarySchema.safeParse({
+        ...base,
+        f13Mensuravel: true,
+        f13Atingido: true,
+        totais: {
+          ...base.totais,
+          passou: base.totais.passou - 1,
+          falhou: base.totais.falhou + 1,
+        },
+      }).success,
     ).toBe(false);
     expect(summarySchema.safeParse({ ...base, completa: false }).success).toBe(
       false,

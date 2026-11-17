@@ -209,9 +209,20 @@ beforeAll(() => {
   outputsBefore = listing("outputs");
 });
 
+// These two guarantees are checked once, after every test of the file, so they
+// hold whatever the order of the tests (a shuffled run included).
 afterAll(() => {
-  for (const root of roots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
+  try {
+    // The real outputs/ is as it was before any test, and the key was never
+    // shown by anything the child processes printed.
+    expect(listing("outputs")).toEqual(outputsBefore);
+    for (const text of everyOutput) {
+      expect(text).not.toContain(KEY);
+    }
+  } finally {
+    for (const root of roots.splice(0)) {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -278,7 +289,8 @@ describe("npm run eval in a child process, over a fake API", () => {
     // --case and --runs 2: partial, so F13 is not met, but it all passed.
     expect(summary).toMatchObject({
       parcial: true,
-      f13Atendido: false,
+      f13Mensuravel: false,
+      f13Atingido: false,
       completa: true,
       execucoesGravadas: 2,
     });
@@ -416,14 +428,6 @@ describe("npm run eval in a child process, over a fake API", () => {
     expect(existsSync(join(run.root, "outputs"))).toBe(false);
   });
 
-  it("leaves the real outputs/ as it was, and never shows the key", () => {
-    expect(listing("outputs")).toEqual(outputsBefore);
-
-    expect(everyOutput.length).toBeGreaterThan(0);
-    for (const text of everyOutput) {
-      expect(text).not.toContain(KEY);
-    }
-  });
 });
 
 describe("scripts/eval.ts itself, only for what writes nothing", () => {

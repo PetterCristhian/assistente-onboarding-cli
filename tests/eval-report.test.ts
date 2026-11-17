@@ -99,7 +99,9 @@ describe("the text of the report", () => {
     expect(text).toContain(`- Casos (casos.json): ${HASH_CASES.slice(0, 19)}`);
     expect(text).not.toContain(HASH_CONTEXT);
     expect(text).toContain("- Execuções: 6 de 6");
-    expect(text).toContain("- F13: atendido");
+    expect(text).toContain(
+      "- F13: medido, meta não atingida (0/2 casos com todas as execuções aprovadas)",
+    );
     expect(text).not.toContain("INCOMPLETA");
   });
 
@@ -294,7 +296,16 @@ describe("formatPercent and the descriptions", () => {
     expect(describeGeneralConsistency(summary)).toBe(
       "2/2 casos com todas as execuções aprovadas (100,0%)",
     );
-    expect(describeF13(summary)).toBe("F13: atendido");
+    expect(describeF13(summary)).toBe(
+      "F13: atingido (todas as execuções aprovadas)",
+    );
+  });
+
+  it("says measured, goal not met, when a measurable battery has failures", () => {
+    const summary = summarize(fullBattery([CT01, CT02], 3, "falhou"));
+    expect(describeF13(summary)).toBe(
+      "F13: medido, meta não atingida (0/2 casos com todas as execuções aprovadas)",
+    );
   });
 });
 

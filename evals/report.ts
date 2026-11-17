@@ -32,10 +32,14 @@ export function describeGeneralConsistency(summary: BatterySummary): string {
   return `${casosTodasAprovadas}/${casos} casos com todas as execuções aprovadas (${formatPercent(casosTodasAprovadas, casos)})`;
 }
 
-/** "F13: atendido" or why it was not validated. */
+/** F13 met, measured but not met, or why it was not validated. */
 export function describeF13(summary: BatterySummary): string {
-  if (summary.f13Atendido) {
-    return "F13: atendido";
+  if (summary.f13Atingido) {
+    return "F13: atingido (todas as execuções aprovadas)";
+  }
+  if (summary.f13Mensuravel) {
+    const { casosTodasAprovadas, casos } = summary.taxaConsistenciaGeral;
+    return `F13: medido, meta não atingida (${casosTodasAprovadas}/${casos} casos com todas as execuções aprovadas)`;
   }
   return summary.parcial
     ? "F13: não validado (parcial)"

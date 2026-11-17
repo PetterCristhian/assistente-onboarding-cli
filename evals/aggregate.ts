@@ -69,7 +69,10 @@ export const summarySchema = z
     completa: z.boolean(),
     /** --case or --runs below 3: F13 cannot be validated. */
     parcial: z.boolean(),
-    f13Atendido: z.boolean(),
+    /** The battery can validate F13: 3 runs or more, every case, complete. */
+    f13Mensuravel: z.boolean(),
+    /** F13 met: measurable and every case with every run approved. */
+    f13Atingido: z.boolean(),
     totais: z.strictObject({
       passou: count,
       falhou: count,
@@ -129,12 +132,32 @@ export const summarySchema = z
         message: "completa deve ser verdadeiro só quando não há ausentes",
       });
     }
-    if (summary.f13Atendido && (summary.parcial || !summary.completa)) {
+    if (summary.f13Mensuravel && (summary.parcial || !summary.completa)) {
       ctx.addIssue({
         code: "custom",
-        path: ["f13Atendido"],
+        path: ["f13Mensuravel"],
         message:
-          "F13 não pode estar atendido numa bateria parcial ou incompleta",
+          "F13 não pode ser mensurável numa bateria parcial ou incompleta",
+      });
+    }
+    if (summary.f13Atingido && !summary.f13Mensuravel) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["f13Atingido"],
+        message: "F13 não pode estar atingido se não for mensurável",
+      });
+    }
+    if (
+      summary.f13Atingido &&
+      (totais.passou !== summary.execucoesEsperadas ||
+        summary.taxaConsistenciaGeral.casosTodasAprovadas !==
+          summary.taxaConsistenciaGeral.casos)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["f13Atingido"],
+        message:
+          "F13 só está atingido com todas as execuções aprovadas em todos os casos",
       });
     }
   });
@@ -359,6 +382,7 @@ export function aggregateBattery(input: AggregateInput): BatterySummary {
   const modeloJuiz = sortedUnique(judgeModels);
   const complete = absent === 0;
   const partial = runs < F13_MIN_RUNS || plan.casos.length < input.catalogSize;
+  const measurable = !partial && complete;
 
   return {
     esquema: SUMMARY_SCHEMA_VERSION,
@@ -375,7 +399,8 @@ export function aggregateBattery(input: AggregateInput): BatterySummary {
     execucoesGravadas: lines.length,
     completa: complete,
     parcial: partial,
-    f13Atendido: !partial && complete,
+    f13Mensuravel: measurable,
+    f13Atingido: measurable && allApproved === porCaso.length,
     totais: { ...totals, ausentes: absent },
     taxaConsistenciaGeral: {
       casosTodasAprovadas: allApproved,

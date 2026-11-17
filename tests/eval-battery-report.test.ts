@@ -142,7 +142,8 @@ describe("runBattery: the summary and the report", () => {
       execucoesGravadas: 6,
       completa: true,
       parcial: false,
-      f13Atendido: true,
+      f13Mensuravel: true,
+      f13Atingido: true,
       juizMesmoModelo: false,
     });
     expect(summary.porCaso.map((caso) => caso.consistencia)).toEqual([
@@ -152,7 +153,9 @@ describe("runBattery: the summary and the report", () => {
     expect(summary.inicio).toBe("2026-11-20T14:31:01.000Z");
     const report = read(ready.root, "RELATORIO.md");
     expect(report).toContain(`# Relatório da bateria ${BATTERY_ID}`);
-    expect(report).toContain("- F13: atendido");
+    expect(report).toContain(
+      "- F13: atingido (todas as execuções aprovadas)",
+    );
     expect(report).toContain("### CT02 · execução 3 · passou");
     expect(exitCodeFor(result)).toBe(0);
     const printed = ready.printed.join("");
@@ -161,7 +164,7 @@ describe("runBattery: the summary and the report", () => {
     expect(printed).toContain(
       "Consistência geral: 2/2 casos com todas as execuções aprovadas (100,0%)",
     );
-    expect(printed).toContain("F13: atendido");
+    expect(printed).toContain("F13: atingido (todas as execuções aprovadas)");
     expect(printed).toContain(`Pasta: ${FOLDER}/`);
     expect(printed).toContain(`Relatório: ${FOLDER}/RELATORIO.md`);
   });
@@ -229,7 +232,11 @@ describe("runBattery: the summary and the report", () => {
       JSON.parse(read(ready.root, "resumo.json")),
     );
 
-    expect(summary).toMatchObject({ parcial: true, f13Atendido: false });
+    expect(summary).toMatchObject({
+      parcial: true,
+      f13Mensuravel: false,
+      f13Atingido: false,
+    });
     expect(read(ready.root, "RELATORIO.md")).toContain(
       "F13: não validado (parcial)",
     );
@@ -277,7 +284,7 @@ describe("runBattery: the summary and the report", () => {
     expect(report).toContain("### CT02 · execução 1 · sem execução");
     expect(
       summarySchema.parse(JSON.parse(read(ready.root, "resumo.json"))),
-    ).toMatchObject({ completa: false, f13Atendido: false });
+    ).toMatchObject({ completa: false, f13Mensuravel: false, f13Atingido: false });
   });
 
   it("writes nothing when there is no line", async () => {
@@ -463,7 +470,11 @@ describe("runEvalCli: the report", () => {
       JSON.parse(read(h.root, "resumo.json")),
     );
     // Both cases of the file, but one run: partial.
-    expect(summary).toMatchObject({ parcial: true, f13Atendido: false });
+    expect(summary).toMatchObject({
+      parcial: true,
+      f13Mensuravel: false,
+      f13Atingido: false,
+    });
     expect(h.stdout.join("")).toContain("  CT01  1/1  Primeiro");
     expect(h.stderr.join("")).toBe("");
   });
@@ -482,7 +493,9 @@ describe("runEvalCli: the report", () => {
     );
 
     expect(await runEvalCli(h.deps)).toBe(0);
-    expect(read(h.root, "RELATORIO.md")).toContain("- F13: atendido");
+    expect(read(h.root, "RELATORIO.md")).toContain(
+      "- F13: atingido (todas as execuções aprovadas)",
+    );
   });
 
   it("with --case the battery is partial, and exits 0 if what ran passed", async () => {
@@ -499,7 +512,8 @@ describe("runEvalCli: the report", () => {
       summarySchema.parse(JSON.parse(read(h.root, "resumo.json"))),
     ).toMatchObject({
       parcial: true,
-      f13Atendido: false,
+      f13Mensuravel: false,
+      f13Atingido: false,
       porCaso: [{ id: "CT01" }],
     });
   });
