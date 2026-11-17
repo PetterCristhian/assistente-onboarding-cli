@@ -20,6 +20,8 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - Teste de fumaça do cliente (ENG-48): `npm run smoke:llm` faz duas chamadas curtas à API real e imprime um relatório redigido (modelo pedido e devolvido, trechos, tempos, tokens, resumo do objeto estruturado e checagens). Usa a chave e gasta crédito: é rodado à mão, fora do `npm run check` e do CI.
 - Testes de arquitetura (ENG-48): o SDK `openai` só é importado e instanciado em `src/llm/client.ts`, com `maxRetries: 0`, e nenhum parâmetro de amostragem aparece em `src/llm/`.
 - Chat interativo (ENG-49): `npm run chat` abre o laço no terminal (`src/cli/chat-loop.ts`) com saudação pelo nome do perfil, resposta em streaming, histórico em memória, e os comandos `/sair`, `/limpar`, `/contexto` e `/ajuda`; Ctrl+C e fim da entrada encerram com código 0, sem stack trace. A sessão (`src/chat/session.ts`) não conhece o terminal nem o disco e recebe um destino de saída, para ser reutilizada pela bateria; um turno que falha não entra no histórico. Ainda sem opções de linha de comando (ENG-50), `/detalhes` (ENG-53), retry (ENG-51) e autoavaliação (ENG-53).
+- Limites conhecidos do chat (ENG-49): o texto do modelo é exibido e guardado no histórico sem redação de chave (a defesa é a autoavaliação e a redação de saída da ENG-53); o histórico não tem limite e o custo cresce a cada turno; Ctrl+C em TTY real não foi verificado. Ver `docs/ARQUITETURA.md`.
+- Saída do chat (ENG-49): caracteres de controle do terminal (ESC, C0, DEL, C1) na resposta e nos avisos são neutralizados só na exibição; erro de escrita em stdout/stderr (EPIPE) encerra o chat sem stack trace; o fim da entrada fecha a linha do prompt.
 
 ### Corrigido
 
