@@ -9,6 +9,10 @@ import {
   type FakeLlmStep,
 } from "./helpers/fake-llm-client.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
+import {
+  makeCritiqueDeps,
+  withApprovals,
+} from "./helpers/critique-fixtures.js";
 
 const KEY = fakeOpenAiKey();
 const layers = loadContextLayers({}, { now: () => new Date(2025, 0, 6) });
@@ -24,24 +28,27 @@ function recorder(): Recorder {
     events,
     chunk: (text) => void events.push(`chunk:${text}`),
     endAnswer: () => void events.push("end"),
+    retraction: (text) => void events.push(`retraction:${text}`),
     notice: (level, text) => void events.push(`${level}:${text}`),
   };
 }
 
 function setup(script: readonly FakeLlmStep[], llm?: LlmClient) {
-  const fake = createFakeLlmClient(script);
+  const fake = createFakeLlmClient(withApprovals(script));
   const output = recorder();
   const session = createChatSession({
     llm: llm ?? fake,
     instructions: context.text,
+    critique: makeCritiqueDeps(),
     output,
     redact: createRedactor([KEY]),
   });
   return { fake, output, session };
 }
 
+/** The last draft request: the calls of the evaluator come after it. */
 function lastRequest(fake: ReturnType<typeof createFakeLlmClient>) {
-  const call = fake.calls.at(-1);
+  const call = fake.calls.filter((entry) => entry.kind === "streamText").at(-1);
   if (call === undefined) {
     throw new Error("no call");
   }
@@ -229,14 +236,16 @@ describe("createChatSession turn state (ENG-51)", () => {
     let ends = 0;
     const events: string[] = [];
     const session = createChatSession({
-      llm: createFakeLlmClient([{ text: "R" }, { text: "R2" }]),
+      llm: createFakeLlmClient(withApprovals([{ text: "R" }, { text: "R2" }])),
       instructions: context.text,
+      critique: makeCritiqueDeps(),
       output: {
         chunk: (text) => void events.push(`chunk:${text}`),
         endAnswer: () => {
           ends += 1;
           throw new Error("closed pipe");
         },
+        retraction: (text) => void events.push(`retraction:${text}`),
         notice: (level, text) => void events.push(`${level}:${text}`),
       },
       redact: createRedactor([KEY]),
@@ -257,7 +266,7 @@ describe("createChatSession usage (ENG-50)", () => {
   it("hands on the usage that the provider reported", async () => {
     const { session } = setup([{ text: "R", usage: USAGE }]);
 
-    expect(await session.ask("P")).toEqual({
+    expect(await session.ask("P")).toMatchObject({
       status: "answered",
       text: "R",
       model: "fake-model",

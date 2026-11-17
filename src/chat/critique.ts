@@ -202,7 +202,7 @@ export function rulesOf(violations: readonly Violation[]): ViolationRule[] {
 }
 
 function describeRule(rule: ViolationRule): string {
-  return rule === UNKNOWN_RULE ? "regra não identificada" : rule;
+  return rule === UNKNOWN_RULE ? "regra não identificada" : `regra ${rule}`;
 }
 
 /** One line per violation, as the revision prompt and the screen read it. */

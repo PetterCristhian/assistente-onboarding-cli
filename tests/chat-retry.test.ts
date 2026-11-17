@@ -20,6 +20,10 @@ import {
   textDelta,
   type FakeFetchStep,
 } from "./helpers/fake-openai-fetch.js";
+import {
+  approvalFetchStep,
+  makeCritiqueDeps,
+} from "./helpers/critique-fixtures.js";
 
 const KEY = fakeOpenAiKey();
 
@@ -33,6 +37,7 @@ function recorder(): Recorder {
     events,
     chunk: (text) => void events.push(`chunk:${text}`),
     endAnswer: () => void events.push("end"),
+    retraction: (text) => void events.push(`retraction:${text}`),
     notice: (level, text) => void events.push(`${level}:${text}`),
   };
 }
@@ -74,7 +79,11 @@ function scripted(
       calls += 1;
       return handler(request, calls);
     },
-    generateStructured: () => Promise.reject(new Error("not used")),
+    generateStructured: (request) =>
+      Promise.resolve({
+        value: request.schema.parse({ aprovada: true, violacoes: [] }),
+        model: "fake-model",
+      }),
   };
 }
 
@@ -83,6 +92,7 @@ function open(llm: LlmClient) {
   const session = createChatSession({
     llm,
     instructions: "Context.",
+    critique: makeCritiqueDeps(),
     output,
     redact: createRedactor([KEY]),
   });
@@ -261,12 +271,13 @@ describe("with the real client over a fake fetch", () => {
       unavailable,
       unavailable,
       sseAnswer(["Hello ", "there"]),
+      approvalFetchStep(),
     ]);
 
     const result = await session.ask("Q");
 
     expect(result).toMatchObject({ status: "answered", text: "Hello there" });
-    expect(fake.requests).toHaveLength(3);
+    expect(fake.requests).toHaveLength(4);
     expect(output.events.filter((e) => e.startsWith("warning:"))).toHaveLength(
       2,
     );
@@ -277,6 +288,7 @@ describe("with the real client over a fake fetch", () => {
     const { output, session } = real([
       { kind: "sse", events: [textDelta("par"), textDelta("tial")] },
       sseAnswer(["whole"]),
+      approvalFetchStep(),
     ]);
 
     await session.ask("Q");
@@ -302,6 +314,7 @@ describe("with the real client over a fake fetch", () => {
       unavailable,
       unavailable,
       sseAnswer(["fine"]),
+      approvalFetchStep(),
     ]);
 
     const failed = await session.ask("Q1");

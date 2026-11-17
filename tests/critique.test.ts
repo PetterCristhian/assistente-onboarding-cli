@@ -21,6 +21,10 @@ import { createRedactor, REDACTED } from "../src/security/redact.js";
 import { fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const KEY = fakeOpenAiKey();
+// Written as code points: an invisible character in the source is easy to lose.
+const ESC = String.fromCodePoint(0x1b);
+const BIDI = String.fromCodePoint(0x202e);
+const TAG = String.fromCodePoint(0xe0041);
 const redact = createRedactor([KEY]);
 
 const SENTINELS = {
@@ -208,7 +212,7 @@ describe("cleanReason", () => {
   });
 
   it("flattens controls, format characters and angle brackets", () => {
-    const dirty = `linha um\r\nlinha\u001b[31m dois‮ <b>tag</b>\u{E0041}`;
+    const dirty = `linha um\r\nlinha${ESC}[31m dois${BIDI} <b>tag</b>${TAG}`;
     const cleaned = cleanReason(dirty, redact);
 
     expect(cleaned).toBe("linha um linha [31m dois btag/b");
@@ -216,7 +220,7 @@ describe("cleanReason", () => {
   });
 
   it("never returns an empty text", () => {
-    expect(cleanReason("   \n‮ ", redact)).not.toBe("");
+    expect(cleanReason(`   \n${BIDI} `, redact)).not.toBe("");
   });
 });
 
@@ -378,7 +382,7 @@ describe("buildRevisionRequest", () => {
     const last = build().input.at(-1)?.content ?? "";
 
     expect(last).toContain("<violacoes>");
-    expect(last).toContain("- P2: usou gíria");
+    expect(last).toContain("- regra P2: usou gíria");
     expect(last).toContain("- regra não identificada: motivo com $& e $1");
     expect(last).not.toContain(REVISION_VIOLATIONS_MARKER);
   });
@@ -395,6 +399,6 @@ describe("describeViolations", () => {
         { rule: "P2", reason: "gíria" },
         { rule: UNKNOWN_RULE, reason: "sem regra" },
       ]),
-    ).toBe("P2: gíria; regra não identificada: sem regra");
+    ).toBe("regra P2: gíria; regra não identificada: sem regra");
   });
 });

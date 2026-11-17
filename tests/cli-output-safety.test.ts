@@ -10,7 +10,10 @@ import {
   sanitizeForTerminal,
 } from "../src/cli/renderer.js";
 import { createRedactor } from "../src/security/redact.js";
-import { createFakeLlmClient } from "./helpers/fake-llm-client.js";
+import {
+  createApprovingFakeClient,
+  makeCritiqueDeps,
+} from "./helpers/critique-fixtures.js";
 
 const layers = loadContextLayers({}, { now: () => new Date(2025, 0, 6) });
 const context = buildContext(layers);
@@ -55,13 +58,14 @@ describe("sanitizeForTerminal", () => {
   it("sanitizes notices, but the history keeps the original text", async () => {
     const out = sink();
     const err = sink();
-    const fake = createFakeLlmClient([
+    const fake = createApprovingFakeClient([
       { text: "x\u001b[2Jy", chunks: ["x\u001b", "[2Jy"] },
       { error: new Error("falha\u001b]0;t\u0007") },
     ]);
     const session = createChatSession({
       llm: fake,
       instructions: context.text,
+      critique: makeCritiqueDeps(),
       output: createTerminalOutput(out.stream, err.stream),
       redact: createRedactor([]),
     });
@@ -91,8 +95,9 @@ describe("output failures", () => {
       shutdown.abort(),
     );
     const session = createChatSession({
-      llm: createFakeLlmClient([{ text: "R" }]),
+      llm: createApprovingFakeClient([{ text: "R" }]),
       instructions: context.text,
+      critique: makeCritiqueDeps(),
       output: createTerminalOutput(stdout, stderr),
       redact: createRedactor([]),
     });
@@ -147,8 +152,9 @@ describe("end of input", () => {
     const out = sink();
     const err = sink();
     const session = createChatSession({
-      llm: createFakeLlmClient([]),
+      llm: createApprovingFakeClient([]),
       instructions: context.text,
+      critique: makeCritiqueDeps(),
       output: createTerminalOutput(out.stream, err.stream),
       redact: createRedactor([]),
     });

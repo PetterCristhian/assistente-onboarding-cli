@@ -17,7 +17,12 @@ import {
   FAKE_FETCH_BLOCK_MESSAGE,
   FAKE_FETCH_MARKER,
 } from "./fake-fetch-constants.js";
-import { createFakeOpenAiFetch, sseAnswer } from "./fake-openai-fetch.js";
+import {
+  createFakeOpenAiFetch,
+  fakeResponseBody,
+  sseAnswer,
+  type FakeFetchStep,
+} from "./fake-openai-fetch.js";
 
 const API_PREFIX = "https://api.openai.com/v1/";
 
@@ -57,9 +62,18 @@ replace(dns.promises, [
 replace(http, ["request", "get"]);
 replace(https, ["request", "get"]);
 
-const script = Array.from({ length: 50 }, () =>
+// A turn takes two calls (ENG-53): the draft, streamed, and the evaluation of
+// it, structured, which here always approves.
+const turn: readonly FakeFetchStep[] = [
   sseAnswer([FAKE_FETCH_ANSWER], { text: FAKE_FETCH_ANSWER }),
-);
+  {
+    kind: "json",
+    body: fakeResponseBody({
+      text: JSON.stringify({ aprovada: true, violacoes: [] }),
+    }),
+  },
+];
+const script = Array.from({ length: 25 }, () => turn).flat();
 const fake = createFakeOpenAiFetch(script);
 
 globalThis.fetch = (input, init) => {

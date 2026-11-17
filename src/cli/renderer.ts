@@ -31,6 +31,9 @@ export function createTerminalOutput(
     endAnswer() {
       stdout.write("\n");
     },
+    retraction(text) {
+      stdout.write(`${sanitizeForTerminal(text)}\n`);
+    },
     notice(_level, text) {
       stderr.write(`${sanitizeForTerminal(text)}\n`);
     },

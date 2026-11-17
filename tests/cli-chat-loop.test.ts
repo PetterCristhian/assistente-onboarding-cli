@@ -6,10 +6,12 @@ import { createChatSession } from "../src/chat/session.js";
 import { runChat } from "../src/cli/chat-loop.js";
 import { createTerminalOutput } from "../src/cli/renderer.js";
 import { createRedactor } from "../src/security/redact.js";
+import { type FakeLlmStep } from "./helpers/fake-llm-client.js";
 import {
-  createFakeLlmClient,
-  type FakeLlmStep,
-} from "./helpers/fake-llm-client.js";
+  createApprovingFakeClient,
+  draftCalls,
+  makeCritiqueDeps,
+} from "./helpers/critique-fixtures.js";
 
 const layers = loadContextLayers({}, { now: () => new Date(2025, 0, 6) });
 const context = buildContext(layers);
@@ -36,10 +38,11 @@ function setup(
   const stderr = new PassThrough();
   const out = collect(stdout);
   const err = collect(stderr);
-  const fake = createFakeLlmClient(script);
+  const fake = createApprovingFakeClient(script);
   const session = createChatSession({
     llm: fake,
     instructions: context.text,
+    critique: makeCritiqueDeps(),
     output: createTerminalOutput(stdout, stderr),
     redact: createRedactor([]),
   });
@@ -77,7 +80,7 @@ describe("runChat", () => {
     input.end("/sair\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(2);
+    expect(draftCalls(fake)).toHaveLength(2);
     expect(out()).toContain("R1\n");
     expect(out()).toContain("R2\n");
   });
@@ -87,7 +90,7 @@ describe("runChat", () => {
     input.end("P\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(1);
+    expect(draftCalls(fake)).toHaveLength(1);
   });
 
   it("ignores empty lines and warns about unknown commands, without the model", async () => {
@@ -97,7 +100,7 @@ describe("runChat", () => {
     input.end("/sair\n");
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(0);
+    expect(draftCalls(fake)).toHaveLength(0);
     expect(err()).toContain("Comando desconhecido: /detalhes. Digite /ajuda.");
     expect(out()).not.toContain("Comando desconhecido");
   });
@@ -109,7 +112,7 @@ describe("runChat", () => {
 
     expect(await done).toBe(0);
     expect(out()).toContain("Histórico apagado.");
-    expect(fake.calls.at(-1)?.request.input).toEqual([
+    expect(draftCalls(fake).at(-1)?.request.input).toEqual([
       { role: "user", content: "P2" },
     ]);
   });
@@ -122,7 +125,7 @@ describe("runChat", () => {
     await done;
     expect(out()).toContain(`${context.text}\n`);
     expect(out().split("Comandos:")).toHaveLength(3);
-    expect(fake.calls).toHaveLength(0);
+    expect(draftCalls(fake)).toHaveLength(0);
   });
 
   it("keeps the chat open after a failed turn", async () => {
@@ -135,7 +138,7 @@ describe("runChat", () => {
 
     expect(await done).toBe(0);
     expect(err()).toContain("caiu");
-    expect(fake.calls.at(-1)?.request.input).toEqual([
+    expect(draftCalls(fake).at(-1)?.request.input).toEqual([
       { role: "user", content: "P2" },
     ]);
   });
@@ -148,7 +151,7 @@ describe("runChat", () => {
       controller.signal,
     );
     input.write("P\n");
-    while (fake.calls.length === 0) {
+    while (draftCalls(fake).length === 0) {
       await new Promise((resolve) => setImmediate(resolve));
     }
 
@@ -165,7 +168,7 @@ describe("runChat", () => {
     const { fake, done } = setup([], controller.signal);
 
     expect(await done).toBe(0);
-    expect(fake.calls).toHaveLength(0);
+    expect(draftCalls(fake)).toHaveLength(0);
   });
 });
 
