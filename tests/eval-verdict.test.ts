@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   EVALUATION_UNAVAILABLE,
   FALLBACK_REASON,
+  JUDGE_NOT_RUN,
+  JUDGE_UNAVAILABLE,
   buildVerdict,
   containsTerm,
   hasEmoji,
+  needsJudge,
   runChecks,
   type Outcome,
 } from "../evals/verdict.js";
+import type { JudgeResult } from "../evals/record.js";
 import type { Caso } from "../evals/schema.js";
 
 function makeCase(criterios: Partial<Caso["criterios"]> = {}): Caso {
@@ -138,46 +142,114 @@ describe("runChecks", () => {
   });
 });
 
+const JUDGE_PASSED: JudgeResult = {
+  situacao: "ok",
+  passou: true,
+  justificativa: "cumpre",
+  modelo: "modelo-juiz",
+  novasTentativas: 0,
+};
+const JUDGE_FAILED: JudgeResult = { ...JUDGE_PASSED, passou: false };
+const JUDGE_ERROR: JudgeResult = {
+  situacao: "erro",
+  resumo: { mensagem: "falha" },
+  novasTentativas: 3,
+};
+
+describe("needsJudge", () => {
+  it("is true only for an answer that is not the safe message and was evaluated", () => {
+    expect(needsJudge(answered("x"))).toBe(true);
+    expect(needsJudge(answered("x", { origin: "revisao" }))).toBe(true);
+    expect(needsJudge(answered("x", { origin: "fallback" }))).toBe(false);
+    expect(needsJudge(answered("x", { evaluationFailed: true }))).toBe(false);
+    expect(needsJudge({ kind: "error", motivo: "m" })).toBe(false);
+  });
+});
+
 describe("buildVerdict", () => {
   const caso = makeCase({ deveConter: [["alfa"]], naoDeveConter: ["delta"] });
 
-  it("passes when every check holds", () => {
-    const verdict = buildVerdict(caso, answered("alfa"));
+  it("passes when every check holds and the judge passed", () => {
+    const verdict = buildVerdict(caso, answered("alfa"), JUDGE_PASSED);
 
     expect(verdict.resultado).toBe("passou");
     expect(verdict.motivo).toBeUndefined();
-    expect(verdict.juiz).toBeNull();
+    expect(verdict.juiz).toEqual(JUDGE_PASSED);
     expect(verdict.checagens).toHaveLength(4);
   });
 
-  it("fails when a check does not hold", () => {
-    expect(buildVerdict(caso, answered("sem nada")).resultado).toBe("falhou");
-    expect(buildVerdict(caso, answered("alfa delta")).resultado).toBe("falhou");
-    expect(buildVerdict(caso, answered("alfa \u{1F600}")).resultado).toBe(
-      "falhou",
-    );
-  });
-
-  it("fails on the safe message even when every content check holds", () => {
-    const verdict = buildVerdict(
-      caso,
-      answered("alfa", { origin: "fallback" }),
-    );
+  it("fails when the judge failed, even with every check ok", () => {
+    const verdict = buildVerdict(caso, answered("alfa"), JUDGE_FAILED);
 
     expect(verdict.resultado).toBe("falhou");
-    expect(verdict.motivo).toBe(FALLBACK_REASON);
-    expect(verdict.checagens.at(-1)).toEqual({
-      tipo: "origem",
-      alvo: ["fallback"],
-      ok: false,
-    });
-    expect(verdict.checagens.slice(0, 2).every((check) => check.ok)).toBe(true);
+    expect(verdict.juiz).toEqual(JUDGE_FAILED);
+    expect(verdict.checagens.every((check) => check.ok)).toBe(true);
   });
 
-  it("is an error, with no checks, when the evaluation was unavailable", () => {
+  it("fails when a check does not hold, even if the judge passed, and keeps both parts", () => {
+    for (const text of ["sem nada", "alfa delta", "alfa \u{1F600}"]) {
+      const verdict = buildVerdict(caso, answered(text), JUDGE_PASSED);
+
+      expect(verdict.resultado).toBe("falhou");
+      expect(verdict.juiz).toEqual(JUDGE_PASSED);
+      expect(verdict.checagens.some((check) => !check.ok)).toBe(true);
+    }
+  });
+
+  it("fails when a check does not hold and the judge failed or erred", () => {
+    expect(buildVerdict(caso, answered("x"), JUDGE_FAILED).resultado).toBe(
+      "falhou",
+    );
+    const erred = buildVerdict(caso, answered("x"), JUDGE_ERROR);
+
+    expect(erred.resultado).toBe("falhou");
+    expect(erred.juiz).toEqual(JUDGE_ERROR);
+  });
+
+  it("is an error when the checks hold and the judge is unavailable", () => {
+    const verdict = buildVerdict(caso, answered("alfa"), JUDGE_ERROR);
+
+    expect(verdict.resultado).toBe("erro");
+    expect(verdict.motivo).toBe(JUDGE_UNAVAILABLE);
+    expect(verdict.juiz).toEqual(JUDGE_ERROR);
+    expect(verdict.checagens.every((check) => check.ok)).toBe(true);
+  });
+
+  it("never passes when the judge is needed and none came", () => {
+    const verdict = buildVerdict(caso, answered("alfa"));
+
+    expect(verdict.resultado).toBe("falhou");
+    expect(verdict.motivo).toBe(JUDGE_NOT_RUN);
+    expect(verdict.juiz).toBeNull();
+  });
+
+  it("fails on the safe message even when every check holds, with no judge", () => {
+    for (const juiz of [undefined, JUDGE_PASSED]) {
+      const verdict = buildVerdict(
+        caso,
+        answered("alfa", { origin: "fallback" }),
+        juiz,
+      );
+
+      expect(verdict.resultado).toBe("falhou");
+      expect(verdict.motivo).toBe(FALLBACK_REASON);
+      expect(verdict.juiz).toBeNull();
+      expect(verdict.checagens.at(-1)).toEqual({
+        tipo: "origem",
+        alvo: ["fallback"],
+        ok: false,
+      });
+      expect(verdict.checagens.slice(0, 2).every((check) => check.ok)).toBe(
+        true,
+      );
+    }
+  });
+
+  it("is an error, with no checks and no judge, when the evaluation was unavailable", () => {
     const verdict = buildVerdict(
       caso,
       answered("alfa", { origin: "fallback", evaluationFailed: true }),
+      JUDGE_PASSED,
     );
 
     expect(verdict).toEqual({
@@ -188,7 +260,7 @@ describe("buildVerdict", () => {
     });
   });
 
-  it("is an error, with no checks, for an infrastructure failure", () => {
+  it("is an error, with no checks and no judge, for an infrastructure failure", () => {
     expect(
       buildVerdict(caso, { kind: "error", motivo: "falha de teste" }),
     ).toEqual({

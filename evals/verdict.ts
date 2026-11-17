@@ -1,8 +1,9 @@
-// The deterministic layer of the verdict (ADR 0006): objective checks over the
-// final text of the LAST turn of an execution. Pure: no model, no disk, no
-// clock. The judge (ENG-57) is a later layer; until then `juiz` is null.
+// The verdict (ADR 0006): objective checks over the final text of the LAST
+// turn of an execution, and the answer of the judge (ENG-57), which is passed
+// in. Pure: no model, no disk, no clock.
 import type { Origin } from "../src/chat/critique.js";
 import { normalizeForMatch } from "./normalize.js";
+import type { JudgeResult } from "./record.js";
 import type { Caso } from "./schema.js";
 
 export type CheckType = "deveConter" | "naoDeveConter" | "semEmoji" | "origem";
@@ -22,8 +23,8 @@ export interface Verdict {
   readonly motivo?: string;
   /** Empty for `erro`: there is no text to check. */
   readonly checagens: readonly Check[];
-  /** The judge of ENG-57 is not part of this delivery. */
-  readonly juiz: null;
+  /** `null`: the judge was not run (see `needsJudge`); `motivo` says why. */
+  readonly juiz: JudgeResult | null;
 }
 
 /** What one execution produced, as far as the verdict is concerned. */
@@ -39,6 +40,8 @@ export type Outcome =
   | { readonly kind: "error"; readonly motivo: string };
 
 export const EVALUATION_UNAVAILABLE = "autoavaliação indisponível";
+export const JUDGE_UNAVAILABLE = "juiz indisponível";
+export const JUDGE_NOT_RUN = "o juiz não foi executado";
 export const FALLBACK_REASON =
   "a resposta final é a mensagem segura (a autoavaliação não aprovou nenhuma versão)";
 
@@ -84,12 +87,27 @@ export function runChecks(
   ];
 }
 
+/** Whether the judge is called: there is a final text that is not the safe message. */
+export function needsJudge(outcome: Outcome): boolean {
+  return (
+    outcome.kind === "answered" &&
+    !outcome.evaluationFailed &&
+    outcome.origin !== "fallback"
+  );
+}
+
 /**
- * Precedence: error > safe message (fails) > the checks. An execution whose
- * final text is the safe message always fails, whatever the checks say, but
- * the checks are still computed and recorded.
+ * Precedence: error > safe message (fails) > the checks and the judge. An
+ * execution whose final text is the safe message always fails, whatever the
+ * checks say, but the checks are still computed and recorded; the judge is not
+ * asked about it. A pass needs every check AND the judge: when the judge is
+ * needed and did not answer, the execution never passes.
  */
-export function buildVerdict(caso: Caso, outcome: Outcome): Verdict {
+export function buildVerdict(
+  caso: Caso,
+  outcome: Outcome,
+  juiz?: JudgeResult,
+): Verdict {
   if (outcome.kind === "error") {
     return {
       resultado: "erro",
@@ -115,9 +133,23 @@ export function buildVerdict(caso: Caso, outcome: Outcome): Verdict {
       juiz: null,
     };
   }
+  if (juiz === undefined) {
+    return {
+      resultado: "falhou",
+      motivo: JUDGE_NOT_RUN,
+      checagens,
+      juiz: null,
+    };
+  }
+  const checksOk = checagens.every((check) => check.ok);
+  if (juiz.situacao === "erro") {
+    return checksOk
+      ? { resultado: "erro", motivo: JUDGE_UNAVAILABLE, checagens, juiz }
+      : { resultado: "falhou", checagens, juiz };
+  }
   return {
-    resultado: checagens.every((check) => check.ok) ? "passou" : "falhou",
+    resultado: checksOk && juiz.passou ? "passou" : "falhou",
     checagens,
-    juiz: null,
+    juiz,
   };
 }
