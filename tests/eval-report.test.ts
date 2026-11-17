@@ -126,6 +126,9 @@ describe("the text of the report", () => {
     expect(text).toContain(
       "- Rascunhos reprovados pela autoavaliação: 1 de 5 turnos respondidos",
     );
+    expect(text).toContain(
+      "- Turnos com autoavaliação indisponível (falha da própria avaliação) não entram na contagem de rascunhos reprovados.",
+    );
     expect(text).toContain("- Revisões reprovadas: 1");
     expect(text).toContain(
       "- Origem da resposta final: rascunho 4, revisão 0, mensagem segura 1",

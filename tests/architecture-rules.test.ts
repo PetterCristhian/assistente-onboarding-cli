@@ -57,6 +57,13 @@ function domainTerms(): { company: string[]; people: string[] } {
   return { company: [...labels, ...domains], people };
 }
 
+/** Drops block comments and the comments that start a line or follow a space. */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|\s)\/\/.*$/gm, "$1");
+}
+
 function filesMatching(files: string[], pattern: RegExp): string[] {
   return files.filter((file) =>
     pattern.test(readFileSync(join(PROJECT_ROOT, file), "utf8")),
@@ -342,6 +349,23 @@ describe("architecture rules", () => {
         expect(source, file).not.toMatch(/safe-writer|SafeWriter|node:/);
         expect(source, file).not.toMatch(/\bsleep\b|Math\.random/);
       }
+      // The whole family of pure pieces: no clock, no environment, no disk.
+      // A mention in a comment does not count; Date.parse is allowed (it reads
+      // a string, not the clock), and node:crypto is the hashes' one import.
+      for (const file of [
+        ...pure,
+        "evals/context-hash.ts",
+        "evals/verdict.ts",
+        "evals/record.ts",
+      ]) {
+        const source = withoutComments(readSource(file));
+        expect(source, file).not.toMatch(
+          /new\s+Date\s*\(|Date\s*\.\s*now|performance\s*\.\s*now/,
+        );
+        expect(source, file).not.toMatch(/\bprocess\s*\.\s*env\b/);
+        expect(source, file).not.toMatch(/node:(?!crypto["'])/);
+        expect(source, file).not.toMatch(/safe-writer|SafeWriter/);
+      }
       // No regeneration: nothing reads the files back to render them again.
       expect(filesMatching(files, /readFile|readdir|existsSync/)).toEqual([]);
     });
@@ -361,6 +385,30 @@ describe("architecture rules", () => {
       expect(entry).toMatch(/\brunEvalCli\b/);
       expect(entry).not.toMatch(/\bcreateSafeWriter\b|\bwithRetry\b/);
       expect(entry).not.toMatch(/\bprocess\s*\.\s*env\b|loadEnvFile/);
+    });
+
+    // The writer is used by its name only where it is meant to be: taking a
+    // method out of it (a destructuring or a string key) would slip past the
+    // `.writeJson(` checks above.
+    it("does not take a method out of the writer outside the runner and the CLIs", () => {
+      const methods = "writeJson|writeText|appendJsonLine|appendText";
+      const holders = filesMatching(
+        files,
+        new RegExp(
+          `\\{[^}]*\\b(?:${methods})\\b[^}]*\\}\\s*=[^=>]|\\[\\s*["'\`](?:${methods})["'\`]\\s*\\]`,
+        ),
+      );
+
+      expect(
+        holders.filter(
+          (file) =>
+            ![
+              "evals/cases-doc-cli.ts",
+              "evals/cli.ts",
+              "evals/runner.ts",
+            ].includes(file),
+        ),
+      ).toEqual([]);
     });
 
     // ENG-57 part 3: the one exception to "the writer only writes outputs/ and

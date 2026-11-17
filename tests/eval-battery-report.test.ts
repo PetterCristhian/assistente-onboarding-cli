@@ -93,6 +93,7 @@ function batteryDeps(
       hashContexto: `sha256:${"1".repeat(64)}`,
       hashCasos: `sha256:${"2".repeat(64)}`,
     },
+    catalogSize: cases.length,
     contexts: new Map([
       ["dora-teixeira", { instructions: "I", critique: makeCritiqueDeps() }],
     ]),
@@ -321,13 +322,68 @@ describe("runBattery: the summary and the report", () => {
 });
 
 describe("runBattery: an invariant of the lines", () => {
-  it("rejects, instead of writing a report, when the plan repeats a case", async () => {
+  it("keeps the result and writes no report when the plan repeats a case", async () => {
     const dup = makeCase("CT01");
     const ready = batteryDeps(turns(2), { cases: [dup, dup], runs: 1 });
 
-    await expect(runBattery(ready.deps)).rejects.toThrow(/duas vezes/);
+    const result = await runBattery(ready.deps);
+
+    expect(result.reportError).toMatch(/duas vezes/);
+    expect(result.summary).toBeNull();
+    expect(result.lines).toHaveLength(2);
+    expect(existsSync(join(ready.root, FOLDER, "execucoes.jsonl"))).toBe(true);
     expect(existsSync(join(ready.root, FOLDER, "RELATORIO.md"))).toBe(false);
     expect(existsSync(join(ready.root, FOLDER, "resumo.json"))).toBe(false);
+  });
+});
+
+describe("runBattery: a report that cannot be built", () => {
+  /** The context hash changes from one line to the next: the aggregator refuses. */
+  function divergentHashes(): BatteryDeps["fingerprints"] {
+    let calls = 0;
+    return {
+      get hashContexto() {
+        calls += 1;
+        return `sha256:${String(calls % 10).repeat(64)}`;
+      },
+      hashCasos: `sha256:${"2".repeat(64)}`,
+    };
+  }
+
+  it("says so, keeps the lines and exits 2 when every execution passed", async () => {
+    const ready = batteryDeps(turns(2), {
+      runs: 1,
+      fingerprints: divergentHashes(),
+    });
+
+    const result = await runBattery(ready.deps);
+
+    const output = ready.printed.join("");
+    expect(result.reportError).toMatch(/hashes de context\/ diferentes/);
+    expect(output).toMatch(
+      /relatório não gerado: .*hashes de context\/ diferentes.*; execucoes\.jsonl está completo/,
+    );
+    expect(output).not.toContain("Pasta:");
+    expect(result.counts).toEqual({ passou: 2, falhou: 0, erro: 0 });
+    expect(
+      read(ready.root, "execucoes.jsonl").trimEnd().split("\n"),
+    ).toHaveLength(2);
+    expect(readdirSync(join(ready.root, FOLDER))).toEqual(["execucoes.jsonl"]);
+    expect(exitCodeFor(result)).toBe(2);
+  });
+
+  it("never masks a failed execution: the code stays 1", async () => {
+    const ready = batteryDeps(turns(2), {
+      runs: 1,
+      fingerprints: divergentHashes(),
+      judge: () => Promise.resolve(passed(false)),
+    });
+
+    const result = await runBattery(ready.deps);
+
+    expect(result.reportError).not.toBeNull();
+    expect(result.counts.falhou).toBe(2);
+    expect(exitCodeFor(result)).toBe(1);
   });
 });
 
@@ -563,9 +619,9 @@ describe("runEvalCli: the report", () => {
     expect(await runEvalCli(h.deps)).toBe(2);
 
     const stderr = h.stderr.join("");
-    expect(stderr).toContain(
-      `Não foi possível gravar o resumo da bateria em ${FOLDER}/resumo.json`,
-    );
+    expect(stderr).toContain(`Não foi possível gravar ${FOLDER}/resumo.json`);
+    expect(stderr).not.toContain("o resumo da bateria");
+    expect(stderr).toContain("resumo.json pode existir sem RELATORIO.md");
     expect(stderr.trimEnd().split("\n")).toHaveLength(1);
     expect(stderr).not.toMatch(/^\s+at /m);
     expect(stderr).not.toContain(KEY);

@@ -510,6 +510,91 @@ describe("summarySchema", () => {
     );
   });
 
+  describe("refuses each incoherence between the parts", () => {
+    const [first, ...others] = base.porCaso;
+    const twoRuns = aggregate(fullBattery([CT01, CT02, CT03], 2), {
+      plan: { runs: 2, casos: [CT01, CT02, CT03] },
+    });
+
+    function messages(value: unknown): string[] {
+      const result = summarySchema.safeParse(value);
+      return result.success
+        ? []
+        : result.error.issues.map((issue) => issue.message);
+    }
+
+    it("accepts the coherent summaries used below", () => {
+      expect(summarySchema.safeParse(base).success).toBe(true);
+      expect(summarySchema.safeParse(twoRuns).success).toBe(true);
+    });
+
+    it.each([
+      [
+        "the sum of the cases is not the total",
+        {
+          ...base,
+          porCaso: [
+            { ...first, passou: 2, falhou: 1, consistencia: "2/3" },
+            ...others,
+          ].map((caso, index) =>
+            index === 0 ? { ...caso, todasAprovadas: false } : caso,
+          ),
+        },
+        "a soma de passou por caso não fecha com o total",
+      ],
+      [
+        "consistencia is not passou/esperadas",
+        {
+          ...base,
+          porCaso: [{ ...first, consistencia: "2/3" }, ...others],
+        },
+        "consistencia deve ser passou/esperadas",
+      ],
+      [
+        "todasAprovadas disagrees with passou",
+        {
+          ...base,
+          porCaso: [{ ...first, todasAprovadas: false }, ...others],
+        },
+        "todasAprovadas deve ser verdadeiro só com passou = esperadas",
+      ],
+      [
+        "the expected executions are not cases x runs",
+        { ...base, execucoesEsperadas: base.execucoesEsperadas + 1 },
+        "execucoesEsperadas deve ser casos x execuções por caso",
+      ],
+      [
+        "the count of fully approved cases is wrong",
+        {
+          ...base,
+          taxaConsistenciaGeral: {
+            ...base.taxaConsistenciaGeral,
+            casosTodasAprovadas: base.taxaConsistenciaGeral.casos - 1,
+          },
+        },
+        "a taxa de consistência geral não fecha com os casos",
+      ],
+      [
+        "the number of cases of the rate is wrong",
+        {
+          ...base,
+          taxaConsistenciaGeral: {
+            ...base.taxaConsistenciaGeral,
+            casos: base.taxaConsistenciaGeral.casos + 1,
+          },
+        },
+        "a taxa de consistência geral não fecha com os casos",
+      ],
+      [
+        "F13 is measurable with fewer than 3 runs per case",
+        { ...twoRuns, parcial: false, f13Mensuravel: true },
+        "F13 exige ao menos 3 execuções por caso",
+      ],
+    ])("%s", (_label, value, message) => {
+      expect(messages(value)).toContain(message);
+    });
+  });
+
   it("refuses totals that do not add up and an F13 that cannot hold", () => {
     expect(
       summarySchema.safeParse({

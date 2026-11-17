@@ -120,6 +120,7 @@ function setup(
       hashContexto: `sha256:${"1".repeat(64)}`,
       hashCasos: `sha256:${"2".repeat(64)}`,
     },
+    catalogSize: cases.length,
     contexts: new Map(
       cases.map((c): [string, BatteryContext] => [c.perfil, CONTEXT]),
     ),

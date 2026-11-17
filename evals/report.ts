@@ -136,6 +136,7 @@ function summarySection(summary: BatterySummary): string[] {
     `- Consistência geral: ${describeGeneralConsistency(summary)}`,
     `- Execuções aprovadas: ${taxaExecucoesAprovadas.passou}/${taxaExecucoesAprovadas.esperadas} (${formatPercent(taxaExecucoesAprovadas.passou, taxaExecucoesAprovadas.esperadas)})`,
     `- Rascunhos reprovados pela autoavaliação: ${autoavaliacao.rascunhosReprovados} de ${autoavaliacao.turnosRespondidos} turnos respondidos`,
+    "- Turnos com autoavaliação indisponível (falha da própria avaliação) não entram na contagem de rascunhos reprovados.",
     `- Revisões reprovadas: ${autoavaliacao.revisoesReprovadas}`,
     `- Origem da resposta final: rascunho ${origemFinal.rascunho}, revisão ${origemFinal.revisao}, mensagem segura ${origemFinal.fallback}`,
     `- Violações apontadas pela autoavaliação: ${violations}`,

@@ -556,6 +556,7 @@ describe("runBattery with a judge that throws", () => {
         hashContexto: `sha256:${"1".repeat(64)}`,
         hashCasos: `sha256:${"2".repeat(64)}`,
       },
+      catalogSize: 1,
       contexts: new Map([
         ["p", { instructions: "I", critique: makeCritiqueDeps() }],
       ]),

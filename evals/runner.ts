@@ -100,8 +100,8 @@ export interface BatteryDeps {
   readonly nowMs: () => number;
   /** Receives whole lines, line break included. */
   readonly print: (text: string) => void;
-  /** How many cases evals/casos.json has (F13 needs all of them). Default: `cases`. */
-  readonly catalogSize?: number;
+  /** How many cases evals/casos.json has (F13 needs all of them selected). */
+  readonly catalogSize: number;
   readonly signal?: AbortSignal;
 }
 
@@ -121,21 +121,31 @@ export interface BatteryResult {
   readonly expected: number;
   readonly interrupted: boolean;
   readonly counts: BatteryCounts;
-  /** What went to resumo.json; `null` when no line was written. */
+  /** What went to resumo.json; `null` when no line was written or no report. */
   readonly summary: BatterySummary | null;
+  /** Why the report was not built (one line); `null` when it was or was not due. */
+  readonly reportError: string | null;
 }
 
-/** 0 = every execution passed; 1 = one failed or erred; 130 = interrupted. */
+/**
+ * 0 = every execution passed, and the report exists; 1 = one failed, erred or
+ * is missing (this wins over a failed report: a failure is never masked);
+ * 2 = every execution passed but the report could not be built (never green
+ * without a report); 130 = interrupted.
+ */
 export function exitCodeFor(result: BatteryResult): number {
   if (result.interrupted) {
     return 130;
   }
   const { counts } = result;
-  return counts.falhou === 0 &&
-    counts.erro === 0 &&
-    result.lines.length === result.expected
-    ? 0
-    : 1;
+  if (
+    counts.falhou !== 0 ||
+    counts.erro !== 0 ||
+    result.lines.length !== result.expected
+  ) {
+    return 1;
+  }
+  return result.reportError === null ? 0 : 2;
 }
 
 function formatSeconds(milliseconds: number): string {
@@ -394,6 +404,7 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
     show("Bateria interrompida antes do fim.");
   }
   let summary: BatterySummary | null = null;
+  let reportError: string | null = null;
   if (lines.length === 0) {
     // Nothing to report: the folder is born with the first line.
     show("Nenhuma execução foi gravada.");
@@ -401,26 +412,49 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
     // Written once, at the end, and never regenerated (rule 7). The lines are
     // redacted first: the Markdown escapes would hide a key from the writer.
     const safeLines = redactLines(lines, deps.redact);
-    summary = summarySchema.parse(
-      aggregateBattery({
-        lines: safeLines,
-        plan: { runs: deps.runs, casos: deps.cases },
-        batteryId: deps.batteryId,
-        catalogSize: deps.catalogSize ?? deps.cases.length,
-      }),
-    );
-    for (const text of describeConsistencyLines(summary)) {
-      show(text);
+    let reportText = "";
+    // Building the report is the part that can be wrong (an invariant of the
+    // lines, the schema, the renderer). It must not take the result of the
+    // battery with it: the lines are already on the disk. Nothing of the
+    // report is written when it fails, so there is no half report.
+    try {
+      const built = summarySchema.parse(
+        aggregateBattery({
+          lines: safeLines,
+          plan: { runs: deps.runs, casos: deps.cases },
+          batteryId: deps.batteryId,
+          catalogSize: deps.catalogSize,
+        }),
+      );
+      reportText = renderReport(built, safeLines);
+      summary = built;
+    } catch (error) {
+      const message = summarizeError(error, deps.redact).message;
+      reportError = message.replace(/\s+/g, " ").trim();
+      show(
+        `relatório não gerado: ${reportError}; ${EXECUTIONS_FILE} está completo`,
+      );
     }
-    // Not caught: a battery that cannot write its report ends with an error.
-    await deps.writer.writeJson(`${folder}/${SUMMARY_FILE}`, summary);
-    await deps.writer.writeText(
-      `${folder}/${REPORT_FILE}`,
-      renderReport(summary, safeLines),
-    );
-    show(`Pasta: ${folder}/`);
-    show(`Relatório: ${folder}/${REPORT_FILE}`);
+    if (summary !== null) {
+      for (const text of describeConsistencyLines(summary)) {
+        show(text);
+      }
+      // Not caught: a battery that cannot write its report ends with an error.
+      await deps.writer.writeJson(`${folder}/${SUMMARY_FILE}`, summary);
+      await deps.writer.writeText(`${folder}/${REPORT_FILE}`, reportText);
+      show(`Pasta: ${folder}/`);
+      show(`Relatório: ${folder}/${REPORT_FILE}`);
+    }
   }
 
-  return { folder, file, lines, expected: total, interrupted, counts, summary };
+  return {
+    folder,
+    file,
+    lines,
+    expected: total,
+    interrupted,
+    counts,
+    summary,
+    reportError,
+  };
 }

@@ -10,7 +10,8 @@
 //
 // Exit codes: 0 = every execution passed; 1 = one failed or erred; 2 = the
 // battery did not run (invalid use, configuration, context, an unexpected
-// error, a failure to write); 130 = interrupted.
+// error, a failure to write) or every execution passed but the report could
+// not be built (see exitCodeFor); 130 = interrupted.
 import { createRateLimiter } from "../src/chat/rate-limiter.js";
 import { sanitizeForTerminal, type TextSink } from "../src/cli/renderer.js";
 import { ConfigError, type AppConfig } from "../src/config/env.js";
@@ -125,7 +126,7 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
     const config = deps.loadConfig();
     redactText = createRedactor([config.openaiApiKey]);
     const reportFailure = (path: string, error: unknown): string =>
-      `Não foi possível gravar o resumo da bateria em ${path}: ${summarizeError(error, redactText).message} As execuções já gravadas em execucoes.jsonl ficam na pasta.`;
+      `Não foi possível gravar ${path}: ${summarizeError(error, redactText).message} As execuções já gravadas em execucoes.jsonl ficam na pasta; resumo.json pode existir sem RELATORIO.md.`;
     const redactStream = () => createStreamRedactor([config.openaiApiKey]);
 
     // One limiter for the whole battery, and it waits (the chat refuses).

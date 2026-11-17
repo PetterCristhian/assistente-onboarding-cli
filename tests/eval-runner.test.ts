@@ -144,6 +144,7 @@ function setup(
     llm,
     judge: stubJudge().judge,
     fingerprints: { hashContexto: HASH_CONTEXT, hashCasos: HASH_CASES },
+    catalogSize: cases.length,
     contexts: new Map(
       cases.map((caso): [string, BatteryContext] => [caso.perfil, CONTEXT]),
     ),
@@ -1110,6 +1111,7 @@ describe("exitCodeFor", () => {
       interrupted: false,
       counts: { passou: 0, falhou: 0, erro: 0 },
       summary: null,
+      reportError: null,
       ...overrides,
     };
   }
@@ -1155,6 +1157,43 @@ describe("exitCodeFor", () => {
         }),
       ),
     ).toBe(1);
+  });
+
+  it("is 2 when everything passed but the report could not be built", () => {
+    expect(
+      exitCodeFor(
+        result({
+          lines: [line, line],
+          expected: 2,
+          counts: { passou: 2, falhou: 0, erro: 0 },
+          reportError: "invariante quebrada",
+        }),
+      ),
+    ).toBe(2);
+  });
+
+  it("keeps 1 for a failure and 130 for an interruption, report or not", () => {
+    expect(
+      exitCodeFor(
+        result({
+          lines: [line],
+          expected: 1,
+          counts: { passou: 0, falhou: 1, erro: 0 },
+          reportError: "invariante quebrada",
+        }),
+      ),
+    ).toBe(1);
+    expect(
+      exitCodeFor(
+        result({
+          lines: [line],
+          expected: 2,
+          interrupted: true,
+          counts: { passou: 1, falhou: 0, erro: 0 },
+          reportError: "invariante quebrada",
+        }),
+      ),
+    ).toBe(130);
   });
 
   it("is 130 when interrupted, even if what ran passed", () => {
