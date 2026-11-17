@@ -1,6 +1,7 @@
 // The only path to the provider (CLAUDE.md, architecture rule 2): the
-// LlmClient interface that the rest of the project depends on.
-// See docs/adr/0002-modelo-e-api-openai.md.
+// LlmClient interface that the rest of the project depends on. Every call
+// goes through `runCall`, which wraps it in the retry of src/llm/retry.ts.
+// See docs/adr/0002-modelo-e-api-openai.md and docs/adr/0005-*.md.
 import OpenAI, {
   APIConnectionTimeoutError,
   APIUserAbortError,
@@ -10,6 +11,13 @@ import { zodTextFormat } from "openai/helpers/zod";
 import type { EasyInputMessage } from "openai/resources/responses/responses";
 import { z } from "zod";
 import type { AppConfig } from "../config/env.js";
+import { classifyError } from "./errors.js";
+import {
+  createRetryPolicy,
+  defaultSleep,
+  withRetry,
+  type RetryEvent,
+} from "./retry.js";
 
 // The errors of the SDK pass through this client as they are. They are
 // exported here so that whoever tells them apart (the retry, the tests) does
@@ -35,6 +43,11 @@ export interface LlmRequest {
   /** Default: the model of the configuration. */
   readonly model?: string;
   readonly signal?: AbortSignal;
+  /**
+   * Called before each new try of THIS request, after a failure that is worth
+   * another try and before the wait. An error that it throws ends the call.
+   */
+  readonly onRetry?: (event: RetryEvent) => void;
 }
 
 export interface LlmUsage {
@@ -136,7 +149,12 @@ export class LlmResponseError extends Error {
 
 export type LlmClientConfig = Pick<
   AppConfig,
-  "openaiApiKey" | "openaiModel" | "openaiReasoningEffort" | "requestTimeoutMs"
+  | "openaiApiKey"
+  | "openaiModel"
+  | "openaiReasoningEffort"
+  | "requestTimeoutMs"
+  | "retryMaxAttempts"
+  | "retryBaseDelayMs"
 >;
 
 export interface OpenAiClientDeps {
@@ -144,6 +162,13 @@ export interface OpenAiClientDeps {
   fetch?: typeof fetch;
   /** Default: the public address of the API. The local stub passes its own. */
   baseURL?: string;
+  /** Default: the real timer, clock and random number, and a ceiling of 30 s. */
+  retry?: {
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+    random?: () => number;
+    now?: () => number;
+    maxDelayMs?: number;
+  };
 }
 
 // Written out so that the SDK never falls back to OPENAI_BASE_URL.
@@ -469,10 +494,16 @@ export function createOpenAiLlmClient(
     "x-api-key": null,
   };
 
+  const retryPolicy = createRetryPolicy(
+    config.retryMaxAttempts,
+    config.retryBaseDelayMs,
+    deps.retry?.maxDelayMs,
+  );
+
   /**
-   * Runs one call under the total deadline (REQUEST_TIMEOUT_MS), which also
-   * covers the body of a stream: the timeout of the SDK ends when the headers
-   * arrive. When the deadline or the caller interrupts the call, the SDK may
+   * Runs one try under the deadline (REQUEST_TIMEOUT_MS, for each try), which
+   * also covers the body of a stream: the timeout of the SDK ends when the
+   * headers arrive. When the deadline or the caller interrupts the call, the SDK may
    * just end the stream in silence, so the outcome is decided here: a timeout
    * error for the deadline, an abort error for the caller.
    */
@@ -522,6 +553,27 @@ export function createOpenAiLlmClient(
       // long as the signal of the caller lives.
       stopListening();
     }
+  }
+
+  /**
+   * The only place that retries (architecture rule 2): every call, of either
+   * kind, runs here. A call cancelled by the caller always ends with the abort
+   * error, also when it was cancelled while waiting for a new try.
+   */
+  function runCall<T>(
+    request: LlmRequest,
+    run: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    return withRetry(() => withDeadline(request.signal, run), retryPolicy, {
+      sleep: deps.retry?.sleep ?? defaultSleep,
+      random: deps.retry?.random ?? Math.random,
+      now: deps.retry?.now ?? Date.now,
+      classify: classifyError,
+      ...(request.onRetry === undefined ? {} : { onRetry: request.onRetry }),
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+    }).catch((error: unknown) => {
+      throw request.signal?.aborted === true ? new APIUserAbortError() : error;
+    });
   }
 
   async function streamTextUnder(
@@ -661,7 +713,7 @@ export function createOpenAiLlmClient(
   function streamText(request: StreamTextRequest): Promise<LlmTextResult> {
     try {
       const input = toInput(request.input);
-      return withDeadline(request.signal, (signal) =>
+      return runCall(request, (signal) =>
         streamTextUnder(request, input, signal),
       );
     } catch (error) {
@@ -738,7 +790,7 @@ export function createOpenAiLlmClient(
   ): Promise<LlmStructuredResult<z.infer<S>>> {
     try {
       const input = toInput(request.input);
-      return withDeadline(request.signal, (signal) =>
+      return runCall(request, (signal) =>
         generateStructuredUnder(request, input, signal),
       );
     } catch (error) {

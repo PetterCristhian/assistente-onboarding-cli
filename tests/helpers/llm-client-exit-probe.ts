@@ -31,6 +31,8 @@ const client = createOpenAiLlmClient(
     openaiModel: "probe-model",
     openaiReasoningEffort: "low",
     requestTimeoutMs: 600_000,
+    retryMaxAttempts: 0,
+    retryBaseDelayMs: 1,
   },
   { fetch: fake.fetch },
 );

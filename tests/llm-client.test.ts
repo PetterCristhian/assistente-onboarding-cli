@@ -39,6 +39,8 @@ const CONFIG: LlmClientConfig = {
   openaiModel: "configured-model",
   openaiReasoningEffort: "low",
   requestTimeoutMs: 5_000,
+  retryMaxAttempts: 0,
+  retryBaseDelayMs: 1,
 };
 const INSTRUCTIONS = "Assembled context goes here.";
 const HISTORY: readonly LlmMessage[] = [

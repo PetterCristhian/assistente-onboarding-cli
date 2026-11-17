@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HELP_TEXT, parseCliArgs } from "../src/cli/args.js";
 import { userProfileSchema } from "../src/context/types.js";
 import {
@@ -86,8 +86,7 @@ describe("architecture rules", () => {
     expect(holders).toEqual(["src/config/env.ts"]);
   });
 
-  // Architecture rule 2: one path to the provider. The half of the rule about
-  // withRetry comes with the retry itself (ENG-51).
+  // Architecture rule 2: one path to the provider, always inside withRetry.
   it("imports the SDK of the provider only in src/llm/client.ts", () => {
     const importers = filesMatching(
       listTypeScriptFiles("src", "evals", "scripts"),
@@ -108,6 +107,58 @@ describe("architecture rules", () => {
     expect(client.match(/\bnew\s+OpenAI\b/g)).toHaveLength(1);
     expect(client).toMatch(/\bmaxRetries: 0,/);
     expect(client.match(/\bmaxRetries\b/g)).toHaveLength(1);
+  });
+
+  /** The text of a function of client.ts, from its header to its closing brace. */
+  function functionBody(source: string, header: RegExp): string {
+    const start = header.exec(source);
+    expect(start).not.toBeNull();
+    const from = start?.index ?? 0;
+    const end = source.indexOf("\n  }\n", from);
+    expect(end).toBeGreaterThan(from);
+    return source.slice(from, end);
+  }
+
+  it("wraps every call of the SDK client in withRetry, in one place (runCall)", () => {
+    const client = readSource("src/llm/client.ts");
+    const runCall = functionBody(client, /\n {2}function runCall</);
+
+    expect(client.match(/\bwithRetry\(/g)).toHaveLength(1);
+    expect(runCall).toMatch(/\bwithRetry\(/);
+    expect(
+      client.match(/\bsdk\s*\.\s*responses\s*\.\s*create\b/g),
+    ).toHaveLength(2);
+    for (const header of [
+      /\n {2}function streamText\(/,
+      /\n {2}function generateStructured</,
+    ]) {
+      const body = functionBody(client, header);
+
+      expect(body).toMatch(/\brunCall\(/);
+      expect(body).not.toMatch(/\bwithRetry\(|\bwithDeadline\(|\bsdk\b/);
+    }
+  });
+
+  // The smoke test is the registered exception to withRetry (ADR 0002,
+  // decision 11): it makes one try per call, on purpose.
+  it("creates the real client only in the chat entry point and in the smoke test", () => {
+    const callers = filesMatching(
+      listTypeScriptFiles("src", "evals", "scripts"),
+      /\bcreateOpenAiLlmClient\s*\(/,
+    ).filter((file) => file !== "src/llm/client.ts");
+
+    expect(callers).toEqual(["scripts/smoke-llm.ts", "src/cli/main.ts"]);
+    expect(readSource("scripts/smoke-llm.ts")).toMatch(/retryMaxAttempts: 0\b/);
+  });
+
+  it("imports errors.ts before client.ts without breaking the cycle between them", async () => {
+    vi.resetModules();
+    const errors = await import("../src/llm/errors.js");
+    const client = await import("../src/llm/client.js");
+
+    expect(errors.classifyError(new client.APIUserAbortError()).kind).toBe(
+      "cancelled",
+    );
   });
 
   // ADR 0002, decision 6: the model does not document these parameters.
