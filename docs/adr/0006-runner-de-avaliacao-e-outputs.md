@@ -158,3 +158,11 @@ O formato do exemplo acima continua a referência. A implementação difere assi
 - A linha de cada execução é gravada logo ao fim dela, em `outputs/<AAAA-MM-DDTHH-mm-ssZ>/execucoes.jsonl`, pelo escritor único (que redige). A pasta só nasce com a primeira linha; se já existir uma de mesmo nome, o sufixo `-2`, `-3`... evita sobrescrever.
 - Falha ao gravar aborta a bateria (código 2, mensagem redigida); o que já foi gravado fica. Ctrl+C (código 130) descarta a execução em curso, que não é gravada, e deixa a pasta parcial: ela não é apagada.
 - `novasTentativas` é contado por turno por um decorador do `LlmClient` (`evals/retry-count.ts`) que só encadeia o `onRetry` da sessão; não há retry próprio em `evals/`.
+
+## Nota de implementação (ENG-57, parte 1)
+
+O juiz e o veredito completo entram em `evals/judge.ts`, `evals/verdict.ts` e `evals/record.ts`; o prompt está em `context/juiz.md`. O agregador, `resumo.json`, `RELATORIO.md` e `npm run casos:doc` ficam para as partes 2 e 3.
+
+- O juiz usa o mesmo `LlmClient` do chatbot (regra de arquitetura 2), com o modelo de `EVAL_JUDGE_MODEL` (padrão: o do chatbot), saída estruturada `{ justificativa, passou }` (a justificativa vem antes) e uma vaga do mesmo limitador da bateria. Recebe o comportamento esperado, a rubrica e todos os turnos; o último é o avaliado. A conversa vai em blocos com `&`, `<` e `>` escapados e sem caracteres de formato, e o `passou` só é lido do JSON validado.
+- `veredito.juiz` é `null` (não executado: erro de infraestrutura, autoavaliação indisponível ou mensagem segura), `{ situacao: "ok", passou, justificativa, modelo, novasTentativas }` ou `{ situacao: "erro", resumo, novasTentativas }`. `passou` exige checagens todas ok e juiz com `passou` verdadeiro. Juiz reprovando, ou checagem falhando, é `falhou` (a linha guarda as duas partes). Juiz indisponível com checagens ok é `erro` ("juiz indisponível"); com checagem falhando, `falhou`.
+- Cada linha ganha `esquema: 1`, `hashContexto` (sha256 dos arquivos `.md` e `.json` da raiz de `context/`, de `03-usuario/` e de `04-empresa/`, incluindo perfis não usados e `juiz.md`, com BOM e quebras de linha normalizados; fora dele a data injetada no contexto) e `hashCasos` (sha256 de `evals/casos.json`). Linha sem `esquema` (formato da ENG-56) ou com outro valor é recusada.
