@@ -254,6 +254,26 @@ describe("architecture rules", () => {
     expect(critique).not.toMatch(/\bDate\b|Math\s*\.\s*random|\bawait\b/);
   });
 
+  // The log is written by the single safe writer; this folder has no disk and
+  // no clock of its own.
+  it("keeps src/logging/ free of the disk and of the clock", () => {
+    const files = listTypeScriptFiles("src").filter((file) =>
+      file.startsWith("src/logging/"),
+    );
+
+    expect(files).toContain("src/logging/session-log.ts");
+    expect(
+      filesMatching(
+        files,
+        /node:fs|from\s+["']fs["']|writeFile|appendFile|createWriteStream|new\s+Date\s*\(|Date\s*\.\s*now|performance\s*\.\s*now/,
+      ),
+    ).toEqual([]);
+    expect(filesMatching(files, /\bprocess\b|\bconsole\b/)).toEqual([]);
+    expect(readSource("src/logging/session-log.ts")).toMatch(
+      /\bwriter\s*\.\s*appendJsonLine\(/,
+    );
+  });
+
   // The limiter has no clock, no timer and no import: all of it is a parameter.
   it("keeps the rate limiter pure: no clock, no timer, no environment, no import", () => {
     const limiter = readSource("src/chat/rate-limiter.ts");

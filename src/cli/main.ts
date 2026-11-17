@@ -18,13 +18,19 @@ import {
 import { ContextError } from "../context/types.js";
 import { createOpenAiLlmClient } from "../llm/client.js";
 import { defaultSleep } from "../llm/retry.js";
+import { createSessionLog } from "../logging/session-log.js";
 import { createRedactor, type Redactor } from "../security/redact.js";
+import { createSafeWriter } from "../security/safe-writer.js";
 import { createStreamRedactor } from "../security/stream-redact.js";
 import { HELP_TEXT, parseCliArgs, toContextOptions } from "./args.js";
 import { createInterruptHandler } from "./interrupt.js";
 import { guardOutputStreams } from "./output-guard.js";
 import { runChat } from "./chat-loop.js";
-import { createTerminalOutput, sanitizeForTerminal } from "./renderer.js";
+import {
+  createTerminalOutput,
+  sanitizeForTerminal,
+  sanitizeUntrusted,
+} from "./renderer.js";
 
 const USAGE_HINT = "Use --help para ver as opções.";
 
@@ -109,6 +115,18 @@ async function main(): Promise<number> {
       sleep: defaultSleep,
     });
 
+    // One line per turn in logs/, through the single safe writer. A failure
+    // to write is told once and never stops the chat.
+    const sessionLog = createSessionLog({
+      writer: createSafeWriter({ redact: redactText }),
+      now: () => new Date(),
+      profile: layers.userProfile.nome,
+      redact: redactText,
+      warn: (text) => {
+        process.stderr.write(`${sanitizeUntrusted(redactText(text))}\n`);
+      },
+    });
+
     const session = createChatSession({
       llm: createOpenAiLlmClient(config),
       instructions: context.text,
@@ -117,6 +135,7 @@ async function main(): Promise<number> {
       redact: redactText,
       redactStream: () => createStreamRedactor([config.openaiApiKey]),
       now: () => new Date(),
+      onTurn: (record) => sessionLog.append(record),
       rateLimit: { limiter, mode: "refuse" },
     });
 
