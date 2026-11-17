@@ -10,8 +10,10 @@
 //
 // Exit codes: 0 = every execution passed; 1 = one failed or erred; 2 = the
 // battery did not run (invalid use, configuration, context, an unexpected
-// error, a failure to write) or every execution passed but the report could
-// not be built (see exitCodeFor); 130 = interrupted.
+// error, a failure to write a line) or every execution passed but the report
+// could not be built or written (see exitCodeFor); 130 = interrupted. A
+// failure to write resumo.json or RELATORIO.md follows exitCodeFor: 130, then 1
+// if an execution failed or is missing, and 2 only when all of them passed.
 import { createRateLimiter } from "../src/chat/rate-limiter.js";
 import { sanitizeForTerminal, type TextSink } from "../src/cli/renderer.js";
 import { ConfigError, type AppConfig } from "../src/config/env.js";
@@ -60,6 +62,27 @@ export interface EvalCliDeps {
 /** The disk refused a line: the battery stops, with a message of its own. */
 class EvidenceWriteError extends Error {
   override readonly name = "EvidenceWriteError";
+  constructor(
+    message: string,
+    /** "report" = resumo.json or RELATORIO.md, written after every line. */
+    readonly kind: "line" | "report" = "line",
+  ) {
+    super(message);
+  }
+}
+
+/** The line is the one of runner.ts: the result is in `veredito.resultado`. */
+function isNotPassed(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || !("veredito" in value)) {
+    return true;
+  }
+  const { veredito } = value;
+  return !(
+    typeof veredito === "object" &&
+    veredito !== null &&
+    "resultado" in veredito &&
+    veredito.resultado === "passou"
+  );
 }
 
 function oneLine(text: string): string {
@@ -85,6 +108,11 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
   const printError = (message: string): void => {
     deps.stderr.write(`${sanitizeForTerminal(redactText(message))}\n`);
   };
+  // What was written, to give the exit code of exitCodeFor when only the
+  // summary or the report could not be written (the result is lost then).
+  let linesWritten = 0;
+  let linesNotPassed = 0;
+  let linesExpected = 0;
 
   try {
     const parsed = parseEvalArgs(deps.argv);
@@ -145,7 +173,12 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
       ...realWriter,
       appendJsonLine: async (path, value) => {
         try {
-          return await realWriter.appendJsonLine(path, value);
+          const written = await realWriter.appendJsonLine(path, value);
+          linesWritten += 1;
+          if (isNotPassed(value)) {
+            linesNotPassed += 1;
+          }
+          return written;
         } catch (error) {
           throw new EvidenceWriteError(
             `Não foi possível gravar o resultado em ${path}: ${summarizeError(error, redactText).message} A bateria foi interrompida; o que já foi gravado fica na pasta.`,
@@ -156,18 +189,19 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
         try {
           return await realWriter.writeJson(path, value);
         } catch (error) {
-          throw new EvidenceWriteError(reportFailure(path, error));
+          throw new EvidenceWriteError(reportFailure(path, error), "report");
         }
       },
       writeText: async (path, content) => {
         try {
           return await realWriter.writeText(path, content);
         } catch (error) {
-          throw new EvidenceWriteError(reportFailure(path, error));
+          throw new EvidenceWriteError(reportFailure(path, error), "report");
         }
       },
     };
 
+    linesExpected = selected.length * options.runs;
     const batteryId = uniqueBatteryId(deps.now(), deps.folderExists);
     // One client for the chatbot and for the judge: one path to the provider.
     const llm = deps.createClient(config);
@@ -202,6 +236,16 @@ export async function runEvalCli(deps: EvalCliDeps): Promise<number> {
       printError(`contexto: ${error.message}`);
     } else if (error instanceof EvidenceWriteError) {
       printError(oneLine(error.message));
+      if (error.kind === "report") {
+        // Same order as exitCodeFor: an interruption, then a failed or
+        // missing execution, win over a failure to write the report (2).
+        if (deps.signal?.aborted === true) {
+          return 130;
+        }
+        if (linesNotPassed !== 0 || linesWritten !== linesExpected) {
+          return 1;
+        }
+      }
     } else {
       // Only the message, in one line: never the error itself nor its stack.
       const message = error instanceof Error ? error.message : String(error);

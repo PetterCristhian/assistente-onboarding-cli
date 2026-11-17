@@ -629,6 +629,41 @@ describe("runEvalCli: the report", () => {
     expect(existsSync(join(h.root, FOLDER, "execucoes.jsonl"))).toBe(true);
   });
 
+  it("exits 1, not 2, when resumo.json cannot be written and an execution failed", async () => {
+    const h = cliHarness(
+      ["--runs", "1"],
+      [...turn("alfa", false), ...turn("beta")],
+      { folderExists: () => false },
+    );
+    mkdirSync(join(h.root, FOLDER, "resumo.json"), { recursive: true });
+
+    expect(await runEvalCli(h.deps)).toBe(1);
+    expect(h.stderr.join("")).toContain(`${FOLDER}/resumo.json`);
+  });
+
+  it("exits 1, not 2, when RELATORIO.md cannot be written and an execution failed", async () => {
+    const h = cliHarness(
+      ["--runs", "1"],
+      [...turn("alfa", false), ...turn("beta")],
+      { folderExists: () => false },
+    );
+    mkdirSync(join(h.root, FOLDER, "RELATORIO.md"), { recursive: true });
+
+    expect(await runEvalCli(h.deps)).toBe(1);
+  });
+
+  it("exits 130 when interrupted and the summary cannot be written", async () => {
+    const controller = new AbortController();
+    const h = cliHarness(
+      ["--runs", "1"],
+      [...turn("alfa"), { text: "beta", wait: () => controller.abort() }],
+      { signal: controller.signal, folderExists: () => false },
+    );
+    mkdirSync(join(h.root, FOLDER, "resumo.json"), { recursive: true });
+
+    expect(await runEvalCli(h.deps)).toBe(130);
+  });
+
   it("exits 2 when RELATORIO.md cannot be written", async () => {
     const h = cliHarness(["--runs", "1"], [...turn("alfa"), ...turn("beta")], {
       folderExists: () => false,
