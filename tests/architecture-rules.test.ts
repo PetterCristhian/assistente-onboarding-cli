@@ -189,6 +189,7 @@ describe("architecture rules", () => {
     );
 
     expect(files).toContain("src/chat/session.ts");
+    expect(files).toContain("src/chat/rate-limiter.ts");
     expect(filesMatching(files, /readline|process|console|node:/)).toEqual([]);
     expect(
       filesMatching(
@@ -196,6 +197,16 @@ describe("architecture rules", () => {
         /writeFile|appendFile|createWriteStream/,
       ),
     ).toEqual([]);
+  });
+
+  // The limiter has no clock, no timer and no import: all of it is a parameter.
+  it("keeps the rate limiter pure: no clock, no timer, no environment, no import", () => {
+    const limiter = readSource("src/chat/rate-limiter.ts");
+
+    expect(limiter).not.toMatch(
+      /\bprocess|\bDate\b|\bperformance\b|\bsetTimeout\b|\bsetInterval\b/,
+    );
+    expect(limiter).not.toMatch(/\bimport\b|\brequire\s*\(/);
   });
 
   it("reads the terminal input only in src/cli/", () => {
