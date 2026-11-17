@@ -2,6 +2,7 @@
 // 127.0.0.1, in the shortest timing: the retry that runs is the real one.
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRedactor } from "../src/security/redact.js";
@@ -11,7 +12,12 @@ import {
   type DemoTiming,
 } from "../scripts/demo-falhas/config.js";
 import { EVIDENCE_PATH, runDemo } from "../scripts/demo-falhas/run.js";
-import { isPortRefused } from "../scripts/demo-falhas/stub-server.js";
+import {
+  STUB_HOST,
+  isPortRefused,
+  startStubServer,
+  type StubServer,
+} from "../scripts/demo-falhas/stub-server.js";
 
 const TIMING: DemoTiming = {
   maxRetries: 3,
@@ -36,7 +42,12 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function deps(extra: { signal?: AbortSignal } = {}) {
+function deps(
+  extra: {
+    signal?: AbortSignal;
+    startServer?: typeof startStubServer;
+  } = {},
+) {
   return {
     timing: TIMING,
     writer: createSafeWriter({
@@ -144,5 +155,66 @@ describe("runDemo", () => {
 
     expect(result.exitCode).toBe(130);
     expect(existsSync(evidenceFile())).toBe(false);
+  });
+
+  it("judges the shutdown by the server, not by the port: a stranger on the freed port does not matter", async () => {
+    const strangers: ReturnType<typeof createServer>[] = [];
+    const startServer = async (key: string): Promise<StubServer> => {
+      const real = await startStubServer(key);
+      return {
+        ...real,
+        async stop() {
+          await real.stop();
+          if (strangers.length > 0) {
+            return;
+          }
+          const stranger = createServer();
+          strangers.push(stranger);
+          await new Promise<void>((resolve) =>
+            stranger.listen(real.port, STUB_HOST, resolve),
+          );
+        },
+      };
+    };
+
+    try {
+      const result = await runDemo(deps({ startServer }));
+
+      expect(strangers.length).toBeGreaterThan(0);
+      expect(strangers[0]?.listening).toBe(true);
+      expect(result.exitCode).toBe(0);
+      expect(result.transcript).toContain(
+        "Servidor local encerrado ao final: esperado sim, obtido sim | CONFERE",
+      );
+      expect(result.transcript).toContain("5 de 5 cenários conferem");
+      expect(result.transcript).not.toContain("DIVERGE");
+    } finally {
+      await Promise.all(
+        strangers.map(
+          (stranger) =>
+            new Promise<void>((resolve) => stranger.close(() => resolve())),
+        ),
+      );
+    }
+  });
+
+  it("still diverges when the server did not close", async () => {
+    let real: StubServer | undefined;
+    const startServer = async (key: string): Promise<StubServer> => {
+      real = await startStubServer(key);
+      return { ...real, stop: () => Promise.resolve() };
+    };
+
+    try {
+      const result = await runDemo(deps({ startServer }));
+
+      expect(result.exitCode).toBe(1);
+      expect(result.written).toBeUndefined();
+      expect(result.transcript).toContain(
+        "Servidor local encerrado ao final: esperado sim, obtido não | DIVERGE",
+      );
+    } finally {
+      await real?.stop();
+    }
   });
 });

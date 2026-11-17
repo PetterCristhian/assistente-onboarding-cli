@@ -40,6 +40,8 @@ export interface DemoDeps {
   readonly now: () => number;
   /** Aborts the demonstration (Ctrl+C): exit code 130 and nothing written. */
   readonly signal?: AbortSignal;
+  /** The simulated server; a test passes its own to watch the shutdown. */
+  readonly startServer?: typeof startStubServer;
 }
 
 export interface DemoResult {
@@ -68,7 +70,7 @@ export async function runDemo(deps: DemoDeps): Promise<DemoResult> {
 
   emit(`${formatHeader(timing)}\n\n`);
 
-  const stub = await startStubServer(DEMO_API_KEY);
+  const stub = await (deps.startServer ?? startStubServer)(DEMO_API_KEY);
   const rows: SummaryRow[] = [];
 
   /** Builds a client of its own for the scenario, so that its numbers are its own. */
@@ -153,8 +155,9 @@ ${INTERRUPTED_MESSAGE}
       await observe(spec, `http://${STUB_HOST}:${closedPort}/${spec.id}/v1`);
     }
 
-    const serverClosed =
-      (await isPortRefused(freedPort)) && stub.openConnections() === 0;
+    // Closed is judged by the server itself: the port may have been taken by
+    // another process after it was freed, which says nothing about this server.
+    const serverClosed = !stub.isListening() && stub.openConnections() === 0;
     const withinTimeLimit = deps.now() - started < TIME_LIMIT_SECONDS * 1000;
     const summary = formatSummary(rows, {
       serverClosed,

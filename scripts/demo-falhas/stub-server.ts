@@ -45,6 +45,8 @@ export interface StubServer {
   script(id: string, steps: readonly StubStep[]): void;
   stats(id: string): StubStats;
   openConnections(): number;
+  /** True while the listener of this server is open (not the state of the port). */
+  isListening(): boolean;
   /** Idempotent: closes the open connections and the listener. */
   stop(): Promise<void>;
 }
@@ -193,6 +195,7 @@ export async function startStubServer(apiKey: string): Promise<StubServer> {
       };
     },
     openConnections: () => sockets.size,
+    isListening: () => server.listening,
     stop() {
       stopping ??= new Promise<void>((resolve) => {
         // The server reports itself closed only after every connection ended.
