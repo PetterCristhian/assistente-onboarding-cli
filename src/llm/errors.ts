@@ -287,7 +287,15 @@ const FATAL_TEXT: Readonly<
  */
 export function describeFailure(
   error: unknown,
-  context: { retries: number; maxRetries: number },
+  context: {
+    retries: number;
+    maxRetries: number;
+    /**
+     * Added to the message of an error that is none of the provider's. The
+     * caller passes it already redacted. Never given for an error of the SDK.
+     */
+    unknownMessage?: string;
+  },
 ): string {
   const detail = where(error);
   const attempts = context.retries + 1;
@@ -304,9 +312,12 @@ export function describeFailure(
       return `O provedor continua limitando as requisições${detail} depois de ${tries}. Aguarde um pouco e tente de novo.`;
     case "transient": {
       // The message of this error is already written for the user.
-      const own = error instanceof LlmResponseError ? error.message : undefined;
-      const cause = own ?? `${describeTransient(kind, false)}${detail}.`;
-      return `${cause} Desisti depois de ${tries}; verifique a conexão e tente de novo.`;
+      if (error instanceof LlmResponseError) {
+        return context.retries === 0
+          ? error.message
+          : `${error.message} Desisti depois de ${tries}; tente de novo.`;
+      }
+      return `${describeTransient(kind, false)}${detail}. Desisti depois de ${tries}; verifique a conexão e tente de novo.`;
     }
     case "fatal":
       switch (kind.reason) {
@@ -315,7 +326,7 @@ export function describeFailure(
             ? error.message
             : "A resposta do provedor não pôde ser usada.";
         case "unknown":
-          return "Não foi possível obter a resposta (erro inesperado).";
+          return `Não foi possível obter a resposta${detail}.${context.unknownMessage === undefined ? "" : ` ${context.unknownMessage}`}`;
         case "http_status":
           return `O provedor recusou a requisição${detail}.`;
         default:

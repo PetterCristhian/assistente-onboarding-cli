@@ -3,13 +3,15 @@
 // is shown goes to the ChatOutput that the caller passes in, so that the
 // chat and the test battery can share it.
 import {
+  APIError,
   APIUserAbortError,
-  LlmResponseError,
   type LlmClient,
   type LlmMessage,
   type LlmTextResult,
   type LlmUsage,
 } from "../llm/client.js";
+import { describeFailure, formatRetryNotice } from "../llm/errors.js";
+import type { RetryEvent } from "../llm/retry.js";
 import {
   summarizeError,
   type ErrorSummary,
@@ -58,34 +60,26 @@ export interface ChatSession {
 
 const BUSY_MESSAGE = "turno em andamento";
 
-function failureText(error: unknown, summary: ErrorSummary): string {
-  // The message of this error is already written for the user.
-  if (error instanceof LlmResponseError) {
-    return summary.message;
-  }
-  const details = [
-    summary.status === undefined ? undefined : `status ${summary.status}`,
-    summary.code === undefined ? undefined : `código ${summary.code}`,
-  ].filter((part) => part !== undefined);
-  const where = details.length === 0 ? "" : ` (${details.join(", ")})`;
-  return `Não foi possível obter a resposta${where}. ${summary.message}`;
-}
-
 export function createChatSession(deps: ChatSessionDeps): ChatSession {
   const history: LlmMessage[] = [];
   let busy = false;
+  // Whether a line of the answer is open on the output: some text was
+  // streamed and the line was not closed yet.
+  let open = false;
 
   /** The draft of the answer: the model streams it to the output. */
   function draftAnswer(
     input: readonly LlmMessage[],
     signal: AbortSignal | undefined,
     onChunk: (chunk: string) => void,
+    onRetry: (event: RetryEvent) => void,
   ): Promise<LlmTextResult> {
     return deps.llm.streamText({
       instructions: deps.instructions,
       input,
       ...(signal === undefined ? {} : { signal }),
       onChunk,
+      onRetry,
     });
   }
 
@@ -95,11 +89,14 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
    * only an approved text, or the safe message, may get here.
    */
   function commitTurn(question: string, text: string): void {
+    // Before the history changes: if closing the line fails, the turn is not
+    // kept. Cleared first, so that the failure path does not close it twice.
+    open = false;
+    deps.output.endAnswer();
     history.push(
       { role: "user", content: question },
       { role: "assistant", content: text },
     );
-    deps.output.endAnswer();
   }
 
   async function ask(
@@ -110,17 +107,39 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       throw new Error(BUSY_MESSAGE);
     }
     busy = true;
+    open = false;
     const { signal } = options;
-    let streamed = false;
+    let retries = 0;
+    let maxRetries = 0;
     try {
       const input: LlmMessage[] = [
         ...history,
         { role: "user", content: question },
       ];
-      const result = await draftAnswer(input, signal, (chunk) => {
-        streamed = true;
-        deps.output.chunk(chunk);
-      });
+      const result = await draftAnswer(
+        input,
+        signal,
+        (chunk) => {
+          open = true;
+          deps.output.chunk(chunk);
+        },
+        (event) => {
+          // What was streamed by this try is thrown away: the line is closed,
+          // the user is told, and the next try writes below it. Only the text
+          // of the try that wins reaches the history.
+          const partial = open;
+          if (open) {
+            open = false;
+            deps.output.endAnswer();
+          }
+          retries = event.retry;
+          maxRetries = event.maxRetries;
+          deps.output.notice(
+            "warning",
+            formatRetryNotice(event, { partialText: partial }),
+          );
+        },
+      );
       commitTurn(question, result.text);
       return {
         status: "answered",
@@ -130,17 +149,32 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       };
     } catch (error) {
-      if (streamed) {
+      const hadText = open;
+      if (open) {
+        open = false;
         deps.output.endAnswer();
       }
       if (error instanceof APIUserAbortError || signal?.aborted === true) {
         return { status: "cancelled" };
       }
       const summary = summarizeError(error, deps.redact);
-      if (streamed) {
+      if (hadText) {
         deps.output.notice("warning", "Resposta interrompida.");
       }
-      deps.output.notice("error", failureText(error, summary));
+      deps.output.notice(
+        "error",
+        deps.redact(
+          describeFailure(error, {
+            retries,
+            maxRetries,
+            // The message of an error of the SDK is never shown: the one of
+            // a 401 quotes the key. Any other error keeps its own message.
+            ...(error instanceof APIError
+              ? {}
+              : { unknownMessage: summary.message }),
+          }),
+        ),
+      );
       return { status: "failed", summary };
     } finally {
       busy = false;
@@ -153,6 +187,9 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     },
     ask,
     clear(): void {
+      if (busy) {
+        throw new Error(BUSY_MESSAGE);
+      }
       history.length = 0;
     },
   };
