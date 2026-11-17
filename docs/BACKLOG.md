@@ -333,7 +333,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 - [x] Cada caso é executado no mínimo 3 vezes e o relatório mostra, por caso, quantas execuções respeitaram o comportamento esperado, no formato `n/3` (F13).
 - [x] `RELATORIO.md` contém: data, modelo, hash do conteúdo de `context/`, tabela por caso, tabela por regra, taxa de consistência geral, número de rascunhos reprovados pela autoavaliação e transcrição de cada execução.
 - [x] `resumo.json` contém os mesmos agregados em formato legível por máquina.
-- [x] O processo termina com código 0 somente se todos os casos tiverem todas as execuções aprovadas (meta de F13).
+- [x] O processo termina com código 0 somente se todos os casos tiverem todas as execuções aprovadas (meta de F13; vale para a bateria completa; parcial: ver ADR 0006).
 - [x] `npm run casos:doc` gera `docs/CASOS-DE-TESTE.md` a partir de `evals/casos.json`, com os campos exigidos por F11.
 - [x] Testes unitários do agregador com execuções fabricadas: 3/3, 2/3 e uma execução com `erro`.
 

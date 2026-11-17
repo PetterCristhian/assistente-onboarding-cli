@@ -36,7 +36,7 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Corrigido
 
-- Se o relatório da bateria não puder ser montado (agregar, validar o resumo ou renderizar), o resultado da bateria é mantido: o terminal diz `relatório não gerado: ...`, `execucoes.jsonl` fica completo, nenhum dos dois arquivos do relatório é gravado e o código de saída é 2 quando tudo passou (1 se algo falhou), em vez de a bateria terminar com erro inesperado (ENG-57).
+- Se o relatório da bateria não puder ser montado (agregar, validar o resumo ou renderizar), o resultado da bateria é mantido: o terminal diz `relatório não gerado: ...`, `execucoes.jsonl` fica completo (ou, se a bateria foi interrompida, contém as execuções gravadas até a interrupção), nenhum dos dois arquivos do relatório é gravado e o código de saída é 2 quando tudo passou (1 se algo falhou), em vez de a bateria terminar com erro inesperado (ENG-57).
 - A falha ao gravar `resumo.json` ou `RELATORIO.md` cita o arquivo que falhou, em vez de falar do "resumo" para os dois (ENG-57).
 - `summarySchema` passa a conferir a soma dos casos com os totais, `consistencia`, `todasAprovadas`, `execucoesEsperadas`, a contagem de casos aprovados e o mínimo de 3 execuções de `f13Mensuravel`; `catalogSize` é obrigatório em `BatteryDeps`; o relatório diz que turnos com autoavaliação indisponível não entram nos rascunhos reprovados (ENG-57).
 - `normalizeForMatch` passa a usar NFKD, descartar caracteres de formato (`\p{Cf}`, como espaço de largura zero) e converter `ß` em `ss`, para que o veredito não seja contornado por texto invisível ou de largura total (ENG-56).

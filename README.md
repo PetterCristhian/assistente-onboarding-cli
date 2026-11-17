@@ -140,7 +140,7 @@ O terminal mostra o progresso (`[ 3/36] CT03 execução 1/3 ... passou | origem 
 
 **Custo aproximado.** Uma bateria completa tem 36 execuções (12 casos x 3). Cada execução faz de 2 a 4 chamadas do chat por turno (rascunho e autoavaliação, mais revisão e nova autoavaliação quando a primeira reprova) e mais 1 do juiz. A conta é da chave do `.env`: **gasta crédito**, então rode uma bateria completa só quando for usar o resultado, e use `--case` e `--runs 1` para testes rápidos.
 
-Código de saída: 0 todas as execuções passaram e o relatório foi gerado; 1 alguma falhou ou deu erro; 2 a bateria não rodou (uso inválido, configuração, contexto, falha ao gravar) ou tudo passou mas o relatório não pôde ser montado; 130 interrompida com Ctrl+C (a execução em curso é descartada; a pasta parcial fica, com relatório marcado "INCOMPLETA", sem ser apagada). Se `outputs/` for versionado, **confira o conteúdo de uma pasta antes de dar commit**: ela é pública e o texto vem do modelo (a chave é redigida ao gravar).
+Código de saída: 0 todas as execuções passaram e o relatório foi gerado (na bateria completa isso é a meta de F13; com `--case` ou `--runs` menor que 3 a bateria é parcial e o 0 só diz que as execuções rodadas passaram, sem validar F13: ver ADR 0006); 1 alguma falhou ou deu erro; 2 a bateria não rodou (uso inválido, configuração, contexto, falha ao gravar) ou tudo passou mas o relatório não pôde ser montado; 130 interrompida com Ctrl+C (a execução em curso é descartada; a pasta parcial fica, com relatório marcado "INCOMPLETA", sem ser apagada). Se `outputs/` for versionado, **confira o conteúdo de uma pasta antes de dar commit**: ela é pública e o texto vem do modelo (a chave é redigida ao gravar).
 
 ### Documento dos casos (`npm run casos:doc`)
 
