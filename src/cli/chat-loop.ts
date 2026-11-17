@@ -2,7 +2,7 @@
 // questions to the session. The only module that reads the terminal input.
 import { createInterface } from "node:readline/promises";
 import type { Readable } from "node:stream";
-import type { ChatSession } from "../chat/session.js";
+import type { ChatSession, TurnResult } from "../chat/session.js";
 import { HELP_LINES, parseInput } from "./commands.js";
 import { sanitizeForTerminal, type TextSink } from "./renderer.js";
 
@@ -19,11 +19,30 @@ export interface ChatLoopDeps {
   readonly profileName: string;
   /** Aborted when the program is told to stop (Ctrl+C). */
   readonly shutdown?: AbortSignal;
+  /** Prints one technical line per answered turn to stderr. Provisional. */
+  readonly verbose?: boolean;
+  /** Milliseconds, monotonic. Default: performance.now. */
+  readonly now?: () => number;
+}
+
+/** Never the question, the answer or the context: only counts and names. */
+function turnDetails(
+  result: Extract<TurnResult, { status: "answered" }>,
+  elapsedMs: number,
+): string {
+  const tokens =
+    result.usage === undefined
+      ? "?/?"
+      : `${result.usage.inputTokens}/${result.usage.outputTokens}`;
+  return sanitizeForTerminal(
+    `[detalhes] modelo=${result.model} trechos=${result.chunks} tokens=${tokens} tempo=${Math.round(elapsedMs)}ms\n`,
+  );
 }
 
 /** Runs until /sair, end of input or Ctrl+C. Returns the exit code. */
 export async function runChat(deps: ChatLoopDeps): Promise<number> {
   const { stdout, stderr, session } = deps;
+  const now = deps.now ?? (() => performance.now());
   const rl = createInterface({ input: deps.input, terminal: false });
   let turn: AbortController | undefined;
   let stopped = false;
@@ -77,7 +96,13 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
         case "question": {
           turn = new AbortController();
           try {
-            await session.ask(parsed.text, { signal: turn.signal });
+            const startedAt = now();
+            const result = await session.ask(parsed.text, {
+              signal: turn.signal,
+            });
+            if (deps.verbose === true && result.status === "answered") {
+              stderr.write(turnDetails(result, now() - startedAt));
+            }
           } finally {
             turn = undefined;
           }

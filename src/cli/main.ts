@@ -95,6 +95,7 @@ async function main(): Promise<number> {
         contextText: context.text,
         profileName: layers.userProfile.nome,
         shutdown: shutdown.signal,
+        verbose: options.verbose,
       });
       return outputs.exitCode() ?? code;
     } finally {
