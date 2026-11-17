@@ -104,7 +104,7 @@ O limite local conta **perguntas do usuário**, numa janela deslizante: ao ating
 | `npm run check` | Portão de qualidade: lint + typecheck + testes unitários + varredura de segredos | Não |
 | `npm run demo:falhas` | Demonstração de retry e rate limit contra um servidor local simulado; regrava `outputs/evidencias/retry-rate-limit.txt` | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real (streaming e saída estruturada) | **Sim, e consome crédito** |
-| `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real | **Sim, e consome crédito** |
+| `npm run eval` | Bateria de 12 casos x 3 execuções contra o modelo real (`--runs <n>`, `--case <id>`); grava `outputs/<data-hora>/execucoes.jsonl` | **Sim, e consome crédito** |
 
 ### Teste de fumaça do cliente (`npm run smoke:llm`)
 
@@ -119,6 +119,23 @@ Mostra, em poucos segundos (menos de 10 no Windows, e o limite é de 60), o trat
 Cinco cenários, cada um identificado na saída: (1) 429 com `Retry-After` e depois sucesso; (2) 429 sem cabeçalho e depois sucesso; (3) 500 repetido até esgotar as tentativas; (4) 401, sem nova tentativa; (5) conexão recusada até esgotar. Para cada um, a saída traz o roteiro do servidor, os avisos de nova tentativa (as mesmas linhas do chat), a espera planejada e a sua origem, o desfecho e uma lista de checagens `[ok]` com esperado x obtido. O resumo final tem uma linha por cenário (`CONFERE` ou `DIVERGE`). O código de saída é 0 só se todos conferem; com Ctrl+C o código é 130 e nada é gravado.
 
 Os cenários usam `maxRetries: 3`, base de 100 ms e `Retry-After: 1`, sem jitter, para que a saída seja sempre a mesma. A transcrição é gravada, pelo escritor único, em [`outputs/evidencias/retry-rate-limit.txt`](outputs/evidencias/retry-rate-limit.txt), **somente se todos os cenários conferem**. O texto gravado não tem data, porta, tempo medido nem caminho; a duração total e o caminho do arquivo aparecem só no terminal. **Atenção: o comando reescreve esse arquivo, que é versionado.** Como o conteúdo é determinístico, rodar de novo não deve gerar diferença no `git diff`; se gerar, algo mudou no comportamento do cliente.
+
+### Bateria de avaliação (`npm run eval`)
+
+Executa os casos de `evals/casos.json` contra o **modelo real**, pelo mesmo pipeline do chat (contexto, streaming, autoavaliação e retry), e grava uma linha por execução em `outputs/<AAAA-MM-DDTHH-mm-ssZ>/execucoes.jsonl` (hora UTC, uma pasta nova a cada bateria; nada é apagado nem sobrescrito). **Usa a chave do `.env` e gasta crédito: rode à mão e nunca em laço.** Não faz parte do `npm run check` nem do CI. A cada execução a sessão é nova; casos com vários turnos enviam as perguntas em ordem na mesma sessão.
+
+```
+npm run eval                        # 12 casos x 3 execuções
+npm run eval -- --runs 1            # uma execução de cada caso (de 1 a 10)
+npm run eval -- --case CT03         # só um caso
+npm run eval -- --case CT03 --runs 1
+```
+
+O terminal mostra o progresso (`[ 3/36] CT03 execução 1/3 ... passou | origem rascunho | 12,4 s`) e um resumo com a contagem de `passou`, `falhou` e `erro`. As perguntas acima do limite local (`RATE_LIMIT_MAX_REQUESTS`) **esperam** em vez de falhar (`aguardando N s (limite local)`). Cada linha traz, por turno, o rascunho, a autoavaliação, a origem e o texto da resposta final, o modelo devolvido pela API, as novas tentativas e os avisos, e o veredito.
+
+Veredito desta etapa: só as checagens determinísticas (termos de `deveConter` e `naoDeveConter` sem diferenciar maiúsculas e acentos, ausência de emoji e resposta final que não seja a mensagem segura), sobre o texto final do último turno. `erro` é falha de infraestrutura depois do retry (ou autoavaliação indisponível), distinta de `falhou`. O juiz com rubrica, `resumo.json` e `RELATORIO.md` virão na ENG-57. **Atenção:** sem o juiz, os casos CT05, CT06 e CT11 ficam `passou` mesmo que o modelo vaze o que deveria recusar; o código de saída 0 não prova o comportamento esperado.
+
+Código de saída: 0 todas as execuções passaram; 1 alguma falhou ou deu erro; 2 a bateria não rodou (uso inválido, configuração, contexto, falha ao gravar); 130 interrompida com Ctrl+C (a execução em curso é descartada e a pasta parcial fica, sem ser apagada). Se `outputs/` for versionado, **confira o conteúdo de uma pasta antes de dar commit**: ela é pública e o texto vem do modelo (a chave é redigida ao gravar).
 
 ### Roteiro manual: falhas do provedor
 
