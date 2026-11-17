@@ -146,6 +146,13 @@ describe("architecture rules", () => {
     ).toEqual([]);
   });
 
+  it("reads the terminal input only in src/cli/", () => {
+    const readers = filesMatching(listTypeScriptFiles("src"), /readline/);
+
+    expect(readers.length).toBeGreaterThan(0);
+    expect(readers.every((file) => file.startsWith("src/cli/"))).toBe(true);
+  });
+
   // The key is not accepted through a command-line argument. For now no file
   // of src/ reads the arguments at all. Issue 8 replaces this check by "the
   // parser declares no option for the key" and by the test of --help.
