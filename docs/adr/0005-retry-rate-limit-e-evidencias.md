@@ -43,6 +43,13 @@ O relógio e a função de espera são injetados em `withRetry` e no limitador, 
 17. **Mensagens ao usuário.** Textos fixos em português mais o status e um código curto (identificador de até 40 caracteres); nunca o `error.message` do SDK, cujo texto de um 401 cita a chave mascarada. A mensagem final ainda passa por `redact()` na sessão. Um erro que não é do SDK (por exemplo, o de um `onChunk` do chamador) mantém a própria mensagem, já redigida.
 18. **Exceção da fumaça.** `npm run smoke:llm` cria o cliente com `retryMaxAttempts: 0` (ADR 0002, decisão 11).
 
+### Decisões da implementação (ENG-52)
+
+19. **O limite é por pergunta aceita.** Uma vaga é tomada quando a pergunta é aceita, uma só vez. As novas tentativas do `withRetry` e a autoavaliação futura (ENG-53) não tomam vaga: o usuário limita o que ele pergunta, e não quantas chamadas o programa faz por pergunta. Comandos (`/ajuda`, `/limpar`, `/contexto`, `/sair`, desconhecidos) e linhas vazias nunca chegam à sessão e não contam. Um turno recusado por "turno em andamento" também não toma vaga: a checagem do limite vem depois dele.
+20. **A vaga não é devolvida.** Um turno que falha ou é cancelado depois de ter ganhado a vaga continua com ela gasta. É a regra mais simples de explicar e de testar, e não deixa um erro repetido do provedor virar rajada de novas perguntas. Um cancelamento durante a espera do modo de espera, ou com o sinal já abortado, não toma vaga.
+21. **Janela deslizante com relógio monotônico.** O limitador guarda os instantes das perguntas aceitas (no máximo `RATE_LIMIT_MAX_REQUESTS`) e libera uma vaga quando o instante mais antigo sai da janela (na borda exata, ela já está livre). O chat o alimenta com `performance.now()`: uma mudança da hora do sistema, para a frente ou para trás, não libera nem bloqueia vagas. Mesmo assim, o limitador nunca deixa o instante recuar. A mensagem mostra segundos inteiros, arredondados para cima e nunca 0. Não há teto superior para as duas variáveis; `RATE_LIMIT_MAX_REQUESTS=0` continua sendo erro de configuração. O limite vale por processo e não é guardado em disco.
+22. **Recusar ou aguardar é política injetada na sessão.** `createChatSession` recebe `rateLimit: { limiter, mode }`, opcional. Com `"refuse"` (o chat, em `src/cli/main.ts`, único lugar que cria o limitador), a pergunta excedente não vai ao modelo nem ao histórico, a sessão mostra a mensagem e devolve `rate_limited`. Com `"wait"` (a bateria, ENG-56), a sessão aguarda a vaga, abortável, e avisa com uma linha informativa. Sem `rateLimit`, nada muda. Duas esperas que acordam juntas não formam fila: a primeira toma a vaga, a segunda confere de novo e volta a dormir.
+
 ### Evidência em três níveis
 
 | Nível | O que prova | Como |

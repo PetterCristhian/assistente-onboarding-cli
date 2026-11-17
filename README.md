@@ -79,9 +79,13 @@ As demais variáveis são opcionais e estão descritas em `.env.example` e na se
 | `REQUEST_TIMEOUT_MS` | `60000` | Prazo de **cada tentativa**, não da pergunta inteira |
 | `RETRY_MAX_ATTEMPTS` | `3` | Novas tentativas após a primeira falha (0 desliga o retry) |
 | `RETRY_BASE_DELAY_MS` | `1000` | Base da espera exponencial (cerca de 1 s, 2 s, 4 s, com até 20% de variação; no máximo 30 s) |
+| `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas aceitas por janela (limite local, inteiro de pelo menos 1; `0` é erro de configuração) |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local, em segundos (inteiro de pelo menos 1) |
 | `OPENAI_CUSTOM_HEADERS` | — | **Recusada**: se existir no ambiente ou no `.env`, o programa encerra com erro de configuração. Não a defina |
 
 Quando o provedor falha de forma passageira (sem conexão, tempo esgotado, erro 5xx, limite de requisições), o chat mostra uma linha por nova tentativa, com o motivo, a espera e o número da tentativa. Erros que não adiantam repetir (chave inválida, sem crédito, requisição recusada) aparecem na hora, com orientação. Se as tentativas acabam, o chat continua aberto e o histórico fica como estava.
+
+O limite local conta **perguntas do usuário**, numa janela deslizante: ao atingi-lo, a pergunta não vai ao modelo, não entra no histórico e o chat mostra quantos segundos aguardar (`Limite de perguntas atingido (2 perguntas a cada 60 s). Aguarde 37 segundos e envie de novo.`); o chat continua aberto e a janela libera as vagas aos poucos. Comandos (`/ajuda`, `/limpar`, `/contexto`, `/sair`) e linhas vazias não contam. As novas tentativas de uma chamada e a futura autoavaliação não consomem vagas, e um turno que falha ou é cancelado depois de aceito não devolve a sua. Se várias linhas chegam de uma vez (por exemplo, por um pipe), as que excedem o limite são descartadas, cada uma com a sua mensagem em stderr; nada fica em fila.
 
 ## Como testar
 
@@ -107,6 +111,7 @@ Sem gastar crédito além de uma pergunta e sem alterar o código. Se preferir n
 
 - **(a) Rede desconectada.** Com o chat aberto (`npm run chat`), desligue a rede (Wi-Fi ou cabo) e faça uma pergunta. Aparecem linhas como `Falha de conexão com o provedor. Nova tentativa 1 de 3, em 1 s.`, depois 2 s e 4 s, e por fim a mensagem de que não foi possível obter a resposta depois de 4 tentativas. O chat continua aberto: religue a rede e pergunte de novo. Para ver o fim mais depressa, use `RETRY_MAX_ATTEMPTS=1` no `.env`.
 - **(b) Chave inválida.** Troque o valor de `OPENAI_API_KEY` no `.env` por um texto qualquer com o formato de chave, abra o chat e faça uma pergunta. A resposta é uma única mensagem orientando a conferir `OPENAI_API_KEY` e gerar uma chave nova no painel, sem nova tentativa e sem repetir a chave. Restaure o `.env` depois.
+- **(c) Limite local de perguntas.** Abra o chat com `RATE_LIMIT_MAX_REQUESTS=2` (por exemplo, `RATE_LIMIT_MAX_REQUESTS=2 npm run chat` em shell POSIX, ou a linha no `.env`) e faça três perguntas seguidas. As duas primeiras são respondidas; a terceira não vai ao modelo e mostra em stderr a mensagem com os segundos de espera. Passada a janela (60 s por padrão), uma nova pergunta é aceita.
 - **Ctrl+C.** Durante a espera de uma nova tentativa, o primeiro Ctrl+C cancela a pergunta e encerra o chat; um segundo Ctrl+C, se algo travar, encerra o programa na hora.
 
 ## Integração contínua

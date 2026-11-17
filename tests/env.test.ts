@@ -245,6 +245,33 @@ describe("parseConfig: invalid values", () => {
     },
   );
 
+  it.each([
+    ["RATE_LIMIT_MAX_REQUESTS", "0"],
+    ["RATE_LIMIT_MAX_REQUESTS", "-1"],
+    ["RATE_LIMIT_MAX_REQUESTS", "1.5"],
+    ["RATE_LIMIT_MAX_REQUESTS", "abc"],
+    ["RATE_LIMIT_WINDOW_SECONDS", "0"],
+    ["RATE_LIMIT_WINDOW_SECONDS", "-1"],
+    ["RATE_LIMIT_WINDOW_SECONDS", "1.5"],
+    ["RATE_LIMIT_WINDOW_SECONDS", "abc"],
+  ])("rejects %s=%s as a configuration error", (name, value) => {
+    const message = configErrorMessage({ OPENAI_API_KEY: KEY, [name]: value });
+
+    expect(message).toContain(`${name} deve ser um número inteiro`);
+    expect(message).toContain("maior ou igual a 1");
+  });
+
+  it("puts no upper limit on the rate limit variables", () => {
+    const config = parseConfig({
+      OPENAI_API_KEY: KEY,
+      RATE_LIMIT_MAX_REQUESTS: "1000000",
+      RATE_LIMIT_WINDOW_SECONDS: "86400",
+    });
+
+    expect(config.rateLimitMaxRequests).toBe(1_000_000);
+    expect(config.rateLimitWindowSeconds).toBe(86_400);
+  });
+
   it("cites the variable and the accepted values for an invalid effort", () => {
     const message = configErrorMessage({
       OPENAI_API_KEY: KEY,

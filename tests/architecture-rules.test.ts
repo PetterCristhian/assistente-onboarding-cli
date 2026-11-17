@@ -151,6 +151,17 @@ describe("architecture rules", () => {
     expect(readSource("scripts/smoke-llm.ts")).toMatch(/retryMaxAttempts: 0\b/);
   });
 
+  // The limiter is created in one place, so that the policy (refuse or wait) is
+  // chosen by the entry point and not by the pipeline.
+  it("creates the rate limiter only in the chat entry point", () => {
+    const creators = filesMatching(
+      listTypeScriptFiles("src", "evals", "scripts"),
+      /\bcreateRateLimiter\s*\(/,
+    ).filter((file) => file !== "src/chat/rate-limiter.ts");
+
+    expect(creators).toEqual(["src/cli/main.ts"]);
+  });
+
   it("imports errors.ts before client.ts without breaking the cycle between them", async () => {
     vi.resetModules();
     const errors = await import("../src/llm/errors.js");
@@ -189,6 +200,7 @@ describe("architecture rules", () => {
     );
 
     expect(files).toContain("src/chat/session.ts");
+    expect(files).toContain("src/chat/rate-limiter.ts");
     expect(filesMatching(files, /readline|process|console|node:/)).toEqual([]);
     expect(
       filesMatching(
@@ -196,6 +208,16 @@ describe("architecture rules", () => {
         /writeFile|appendFile|createWriteStream/,
       ),
     ).toEqual([]);
+  });
+
+  // The limiter has no clock, no timer and no import: all of it is a parameter.
+  it("keeps the rate limiter pure: no clock, no timer, no environment, no import", () => {
+    const limiter = readSource("src/chat/rate-limiter.ts");
+
+    expect(limiter).not.toMatch(
+      /\bprocess|\bDate\b|\bperformance\b|\bsetTimeout\b|\bsetInterval\b/,
+    );
+    expect(limiter).not.toMatch(/\bimport\b|\brequire\s*\(/);
   });
 
   it("reads the terminal input only in src/cli/", () => {
