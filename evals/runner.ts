@@ -430,10 +430,17 @@ export async function runBattery(deps: BatteryDeps): Promise<BatteryResult> {
       summary = built;
     } catch (error) {
       const message = summarizeError(error, deps.redact).message;
-      reportError = message.replace(/\s+/g, " ").trim();
-      show(
-        `relatório não gerado: ${reportError}; ${EXECUTIONS_FILE} está completo`,
-      );
+      // No trailing period: the notice below appends "; ..." to it.
+      reportError = message
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[.\s]+$/, "");
+      // "Complete" is only true when every planned execution was written.
+      const fileState =
+        interrupted || lines.length < total
+          ? `${EXECUTIONS_FILE} contém as execuções gravadas até a interrupção`
+          : `${EXECUTIONS_FILE} está completo`;
+      show(`relatório não gerado: ${reportError}; ${fileState}`);
     }
     if (summary !== null) {
       for (const text of describeConsistencyLines(summary)) {

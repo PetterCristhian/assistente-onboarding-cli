@@ -322,40 +322,55 @@ describe("runBattery: the report fails", () => {
     expect(result.reportError ?? "").not.toMatch(/\n/);
   });
 
-  it.fails(
-    "says what the interrupted battery has, not that the file is complete",
-    async () => {
-      const controller = new AbortController();
-      let calls = 0;
-      const ready = harness(
-        {
-          runs: 1,
-          fingerprints: {
-            get hashContexto() {
-              calls += 1;
-              return `sha256:${String(calls % 9)}${"1".repeat(63)}`;
-            },
-            hashCasos: `sha256:${"2".repeat(64)}`,
+  it("says that a complete battery has a complete file, without a doubled period", async () => {
+    const dup = makeCase("CT01");
+    const ready = harness({ cases: [dup, { ...dup }], runs: 1 }, twoTurns());
+
+    const result = await runBattery(ready.deps);
+
+    expect(result.interrupted).toBe(false);
+    expect(result.lines.length).toBe(result.expected);
+    const output = ready.printed.join("");
+    expect(output).toMatch(
+      /relatório não gerado: .*; execucoes\.jsonl está completo/,
+    );
+    expect(output).not.toContain(".;");
+    expect(result.reportError ?? "").not.toMatch(/[.\s]$/);
+  });
+
+  it("says what the interrupted battery has, not that the file is complete", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const ready = harness(
+      {
+        runs: 1,
+        fingerprints: {
+          get hashContexto() {
+            calls += 1;
+            return `sha256:${String(calls % 9)}${"1".repeat(63)}`;
           },
-          cases: [makeCase("CT01"), makeCase("CT02"), makeCase("CT03")],
-          catalogSize: 3,
-          signal: controller.signal,
+          hashCasos: `sha256:${"2".repeat(64)}`,
         },
-        [...twoTurns(), { text: "tres", wait: () => controller.abort() }],
-      );
+        cases: [makeCase("CT01"), makeCase("CT02"), makeCase("CT03")],
+        catalogSize: 3,
+        signal: controller.signal,
+      },
+      [...twoTurns(), { text: "tres", wait: () => controller.abort() }],
+    );
 
-      const result = await runBattery(ready.deps);
+    const result = await runBattery(ready.deps);
 
-      expect(result.interrupted).toBe(true);
-      expect(exitCodeFor(result)).toBe(130);
-      const output = ready.printed.join("");
-      expect(result.lines.length).toBeLessThan(result.expected);
-      expect(result.reportError).not.toBeNull();
-      // With 2 of 3 executions written, "está completo" would be untrue.
-      expect(output).not.toMatch(/execucoes\.jsonl está completo/);
-      expect(readdirSync(join(ready.root, FOLDER))).toContain(
-        "execucoes.jsonl",
-      );
-    },
-  );
+    expect(result.interrupted).toBe(true);
+    expect(exitCodeFor(result)).toBe(130);
+    const output = ready.printed.join("");
+    expect(result.lines.length).toBeLessThan(result.expected);
+    expect(result.reportError).not.toBeNull();
+    // With 2 of 3 executions written, "está completo" would be untrue.
+    expect(output).not.toMatch(/execucoes\.jsonl está completo/);
+    expect(output).toContain(
+      "execucoes.jsonl contém as execuções gravadas até a interrupção",
+    );
+    expect(output).not.toContain(".;");
+    expect(readdirSync(join(ready.root, FOLDER))).toContain("execucoes.jsonl");
+  });
 });
