@@ -32,6 +32,8 @@ export interface ScenarioSpec {
   readonly script: string;
   readonly steps: readonly StubStep[] | "closed-port";
   readonly expected: Expected;
+  /** A fixed line of explanation, written after the message to the user. */
+  readonly note?: string;
 }
 
 /** base, 2 * base, 4 * base, ...: one wait for each new try allowed. */
@@ -110,6 +112,7 @@ export function buildScenarios(t: DemoTiming): ScenarioSpec[] {
       number: 4,
       title: "401 sem nova tentativa",
       script: "401 na primeira chamada.",
+      note: "(Mensagem do chat; na demonstração a chave é falsa de propósito e nenhum arquivo .env é lido.)",
       steps: [{ status: 401, body: { code: "invalid_api_key" } }],
       expected: {
         calls: 1,

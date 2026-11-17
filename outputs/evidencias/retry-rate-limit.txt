@@ -60,11 +60,11 @@ Roteiro do servidor: 401 na primeira chamada.
   Nenhum aviso: o cliente não tentou de novo.
 Desfecho: falha depois de 1 chamada (status HTTP 401).
 Mensagem ao usuário: A chave da OpenAI foi recusada. Confira o valor de OPENAI_API_KEY no arquivo ".env" e, se preciso, gere uma chave nova no painel da OpenAI. (status 401, código invalid_api_key)
+(Mensagem do chat; na demonstração a chave é falsa de propósito e nenhum arquivo .env é lido.)
   [ok] Chamadas do cliente: esperado 1, obtido 1
   [ok] Requisições recebidas pelo servidor: esperado 1, obtido 1
   [ok] Esperas planejadas (ms): esperado [], obtido []
   [ok] Origem da espera: esperado nenhuma, obtido nenhuma
-  [ok] Espera real de pelo menos a planejada (tolerância de 15 ms): esperado sim, obtido sim
   [ok] Avisos de nova tentativa: esperado 0, obtido 0
   [ok] Desfecho: esperado falha, obtido falha
   [ok] Status HTTP da falha: esperado 401, obtido 401

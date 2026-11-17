@@ -96,12 +96,15 @@ export function compare(spec: ScenarioSpec, obs: Observed): Check[] {
     obs.waitSources.length === want.waitsMs.length &&
       obs.waitSources.every((source) => source === want.waitSource),
   );
-  add(
-    `Espera real de pelo menos a planejada (tolerância de ${WAIT_TOLERANCE_MS} ms)`,
-    "sim",
-    yesNo(realWaitsReachPlanned(obs)),
-    realWaitsReachPlanned(obs),
-  );
+  // With no wait planned there is nothing to measure: the check is left out.
+  if (want.waitsMs.length > 0) {
+    add(
+      `Espera real de pelo menos a planejada (tolerância de ${WAIT_TOLERANCE_MS} ms)`,
+      "sim",
+      yesNo(realWaitsReachPlanned(obs)),
+      realWaitsReachPlanned(obs),
+    );
+  }
   add(
     "Avisos de nova tentativa",
     String(want.waitsMs.length),
@@ -203,6 +206,9 @@ export function formatScenarioBlock(
   lines.push(outcomeLine(obs));
   if (obs.userMessage !== undefined) {
     lines.push(`Mensagem ao usuário: ${obs.userMessage}`);
+    if (spec.note !== undefined) {
+      lines.push(spec.note);
+    }
   }
   for (const check of checks) {
     lines.push(

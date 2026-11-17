@@ -143,6 +143,59 @@ describe("compare", () => {
   });
 });
 
+describe("the check of the real wait", () => {
+  const labelsOf = (checks: ReturnType<typeof compare>) =>
+    checks.map((check) => check.label);
+
+  it("is left out of a scenario with no planned wait", () => {
+    const labels = labelsOf(compare(spec(4), FOUR));
+
+    expect(labels.some((label) => label.startsWith("Espera real"))).toBe(false);
+    expect(
+      formatScenarioBlock(spec(4), FOUR, compare(spec(4), FOUR)),
+    ).not.toContain("Espera real");
+  });
+
+  it("stays in every scenario that waits", () => {
+    for (const number of [1, 2, 3, 5]) {
+      const labels = labelsOf(
+        compare(spec(number), {
+          ...ONE,
+          waitsMs: spec(number).expected.waitsMs,
+        }),
+      );
+      expect(labels.some((label) => label.startsWith("Espera real"))).toBe(
+        true,
+      );
+    }
+  });
+});
+
+describe("the note of scenario 4", () => {
+  const NOTE =
+    "(Mensagem do chat; na demonstração a chave é falsa de propósito e nenhum arquivo .env é lido.)";
+
+  it("comes right after the message to the user, as a fixed line", () => {
+    const lines = formatScenarioBlock(
+      spec(4),
+      FOUR,
+      compare(spec(4), FOUR),
+    ).split("\n");
+    const at = lines.findIndex((line) =>
+      line.startsWith("Mensagem ao usuário"),
+    );
+
+    expect(lines[at + 1]).toBe(NOTE);
+  });
+
+  it("is only in scenario 4", () => {
+    for (const number of [1, 2, 3, 5]) {
+      expect(spec(number).note).toBeUndefined();
+    }
+    expect(spec(4).note).toBe(NOTE);
+  });
+});
+
 describe("formatSummary", () => {
   const rows = (oks: boolean[]) =>
     oks.map((ok, index) => ({
