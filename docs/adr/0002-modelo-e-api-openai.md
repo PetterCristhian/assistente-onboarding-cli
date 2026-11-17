@@ -67,7 +67,13 @@ Preços por 1M de tokens (entrada / saída), camada padrão, e situação:
 
 ## Verificação
 
-**Situação: pendente.** O teste de fumaça contra a API real ainda não foi executado. Ele é rodado somente pelo dono da chave, no terminal dele, com `npm run smoke:llm` (duas chamadas curtas, sem retry; usa a chave e gasta crédito). Nenhum resultado é registrado aqui antes dessa execução.
+**Situação: verificada em 2026-11-16, com uma ressalva (`phase` e `output_index` não observados).** O dono da chave rodou `npm run smoke:llm` no terminal dele, com a chave real. Resultado: **APROVADO**, com as cinco checagens `[ok]` e nenhuma divergência da API em relação a esta ADR.
+
+Resumo da execução (único dado disponível; nada além dele é afirmado):
+
+- Modelo pedido `gpt-6-luna`; modelo devolvido `gpt-6-luna` nas duas chamadas.
+- [1] Streaming: 52 trechos, 240 caracteres, 1226 ms até o primeiro trecho, 1948 ms no total; tokens 37 de entrada, 56 de saída, 93 no total.
+- [2] Saída estruturada: 1211 ms; tokens 79 de entrada, 27 de saída, 106 no total; objeto com os campos `resposta` e `confianca` (`confianca` = `alta`), válido no schema.
 
 O que os testes unitários já confirmam, com o SDK real (versão 7.57.0) e um `fetch` falso, sem rede: o corpo enviado (`model`, `instructions`, `input`, `store: false`, `reasoning.effort`, `stream: true`; nenhum parâmetro de amostragem), a leitura dos trechos e do evento final, o formato de `text.format` gerado por `zodTextFormat`, a separação entre resposta ilegível (`interrupted`), resposta fora do contrato (`malformed`), falha informada pelo provedor (`failed`) e saída inválida do modelo (`invalid_output`), a leitura de `output` por fase e trecho a trecho, com o primeiro trecho de resposta final decidindo, o descarte dos trechos de comentário no streaming, a regra de status no evento final, o encerramento da leitura e da conexão no evento final (com um servidor local em 127.0.0.1 que mantém a conexão aberta), o prazo total, o cancelamento e a ausência de novas tentativas do SDK. Isso prova o que o projeto envia e como interpreta as respostas, não que a API aceita o pedido.
 
@@ -75,12 +81,12 @@ O que só a fumaça confirma:
 
 | Item | Resultado |
 |---|---|
-| O modelo configurado é aceito pela Responses API | pendente |
-| `reasoning.effort` com o valor padrão é aceito | pendente |
-| O texto chega em mais de um trecho | pendente |
-| `responses.create` com o `text.format` de `zodTextFormat` devolve um objeto válido no schema | pendente |
-| O schema enviado, com a chave `$schema` (draft-07), é aceito | pendente |
-| Campo `model` devolvido pela API | pendente |
-| O item anunciado em `response.output_item.added` traz `phase`, e os trechos trazem `output_index` (base do filtro de comentário no streaming) | pendente |
+| O modelo configurado é aceito pela Responses API | ok |
+| `reasoning.effort` com o valor padrão é aceito | ok |
+| O texto chega em mais de um trecho | ok: 52 trechos |
+| `responses.create` com o `text.format` de `zodTextFormat` devolve um objeto válido no schema | ok |
+| O schema enviado, com a chave `$schema` (draft-07), é aceito | ok |
+| Campo `model` devolvido pela API | ok: `gpt-6-luna` nas duas chamadas |
+| O item anunciado em `response.output_item.added` traz `phase`, e os trechos trazem `output_index` (base do filtro de comentário no streaming) | não observado: a saída da fumaça não informa se o provedor envia esses campos; continua coberto só por testes com `fetch` falso |
 
-Se a saída estruturada for recusada, o plano B é montar `text.format` à mão com `z.toJSONSchema`, e esta ADR é corrigida antes de seguir.
+A saída estruturada foi aceita, então o plano B não foi necessário. Se ela for recusada no futuro, o plano B é montar `text.format` à mão com `z.toJSONSchema`, e esta ADR é corrigida antes de seguir.
