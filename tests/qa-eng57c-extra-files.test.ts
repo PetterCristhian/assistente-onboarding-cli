@@ -157,24 +157,15 @@ describe("extraFiles: validation when the writer is created", () => {
   });
 
   // On Windows "C:docs/x.md" is relative to the current directory of the drive
-  // C, so it is not "absolute" for node, yet resolve() leaves rootDir.
-  (process.platform === "win32" ? it.fails : it.skip)(
-    "refuses a drive-relative path, which resolves outside the root",
-    async () => {
-      // Drive Y: does not exist, so nothing can be written by accident; the
-      // error tells whether the writer tried (ENOENT) or refused.
-      const extra = "Y:docs/x.md";
-      let writer;
-      try {
-        writer = create([extra]);
-      } catch {
-        return; // refused at creation: the expected behavior
-      }
-      await expect(writer.writeText(extra, "x")).rejects.toThrow(
-        /extraFiles|Caminho de escrita não permitido/,
-      );
-    },
-  );
+  // C, so it is not "absolute" for node, yet resolve() leaves rootDir. Any ":"
+  // (drive, alternate data stream) is refused at creation, on every platform.
+  it.each([
+    ["drive-relative", "Y:docs/x.md"],
+    ["alternate data stream", "docs/x.md:stream"],
+    ["default data stream", "docs/x.md::$DATA"],
+  ])("refuses a colon: %s", (_label, extra) => {
+    expect(() => create([extra])).toThrow("extraFiles");
+  });
 
   it("an extra inside outputs/ or logs/ is accepted and harmless", async () => {
     const writer = create(["outputs/x/y.md", "logs/a.md"]);

@@ -104,6 +104,9 @@ export function createSafeWriter(options: SafeWriterOptions): SafeWriter {
     if (
       extra === "" ||
       isAbsolute(extra) ||
+      // A drive ("Y:docs/x.md", relative to the drive's cwd) or an alternate
+      // data stream: neither stays inside the root.
+      extra.includes(":") ||
       parts.length < 2 ||
       parts.some((part) => part === "" || part === "." || part === "..")
     ) {
