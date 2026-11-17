@@ -115,6 +115,8 @@ sequenceDiagram
     end
 ```
 
+Retry (ENG-51): cada chamada do `LlmClient` passa por `withRetry` (em `runCall`, dentro de `src/llm/client.ts`). Antes de cada nova tentativa, o cliente chama o `onRetry` da própria requisição, e a sessão mostra uma linha com o motivo, a tentativa e a espera; só depois a espera começa (abortável). Se já havia texto parcial na tela, a sessão fecha a linha, avisa que o texto acima será descartado e deixa a nova geração começar logo abaixo; o parcial nunca entra no histórico. `REQUEST_TIMEOUT_MS` vale por tentativa. Detalhes: `docs/adr/0005-retry-rate-limit-e-evidencias.md`.
+
 Invariante do sistema: **só entra no histórico e só é rotulado como resposta final um texto aprovado pela autoavaliação ou a mensagem segura fixa.** Detalhes e alternativas em `docs/adr/0004-streaming-e-self-critique.md`.
 
 ## 5. Como os quatro pontos em aberto do PRD foram resolvidos
@@ -171,8 +173,8 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   ├── llm/
 │   │   ├── client.ts             # interface LlmClient + implementação OpenAI
 │   │   ├── smoke.ts              # lógica do teste de fumaça usada por smoke-llm.ts
-│   │   ├── errors.ts             # classificação: transitório / rate limit / fatal
-│   │   └── retry.ts              # withRetry(): backoff, retry-after, avisos
+│   │   ├── errors.ts             # classifyError(): transitório / rate limit / fatal; textos de falha e de aviso
+│   │   └── retry.ts              # withRetry(): backoff exponencial, jitter, retry-after, onRetry, espera abortável
 │   ├── chat/
 │   │   ├── session.ts            # histórico em memória + pipeline do turno
 │   │   ├── critique.ts           # autoavaliação com saída estruturada
@@ -256,3 +258,6 @@ Contexto fixo estimado em 4 a 6 mil tokens. Cada execução da bateria faz gera�
 - O texto do modelo é exibido e guardado no histórico sem redação de chave: se o modelo repetir a chave, ela pode ser impressa. A chave só chega ao modelo se estiver no contexto, o que as regras proíbem. A defesa é a autoavaliação e a redação de saída da ENG-53.
 - O histórico não tem limite: o custo e o tamanho da entrada crescem a cada turno (use `/limpar`).
 - Ctrl+C em um terminal real (TTY) não foi verificado à mão; os testes cobrem o sinal e o cancelamento do turno, não o terminal.
+- O primeiro Ctrl+C cancela o turno (inclusive durante a espera de uma nova tentativa) e encerra o chat; o segundo encerra o programa na hora (`process.exit` com o código de saída de um erro de escrita, ou 0). Mantém-se o código 0.
+- Não há limite de tempo total para uma pergunta: o prazo vale por tentativa, e o pior caso é `(RETRY_MAX_ATTEMPTS + 1) x REQUEST_TIMEOUT_MS` mais esperas de até 30 s cada. Um `Retry-After` maior que 30 s faz a chamada falhar na hora, com a orientação de tentar mais tarde.
+- `OPENAI_CUSTOM_HEADERS` é recusada na configuração (ver ADR 0002, decisão 9).
