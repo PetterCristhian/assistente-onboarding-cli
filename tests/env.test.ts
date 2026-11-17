@@ -372,6 +372,50 @@ describe("parseConfig: invalid values", () => {
   });
 });
 
+describe("OPENAI_CUSTOM_HEADERS is refused (ENG-51)", () => {
+  const SECRET_HEADER = `Authorization: Bearer ${KEY}`;
+
+  it("refuses it in parseConfig, without echoing the value", () => {
+    const message = configErrorMessage({
+      OPENAI_API_KEY: KEY,
+      OPENAI_CUSTOM_HEADERS: SECRET_HEADER,
+    });
+
+    expect(message).toContain("OPENAI_CUSTOM_HEADERS");
+    expect(message).toContain("não suportada");
+    expect(message).not.toContain(KEY);
+    expect(message).not.toContain("Bearer");
+  });
+
+  it("refuses it before the other problems", () => {
+    const message = configErrorMessage({ OPENAI_CUSTOM_HEADERS: "X: y" });
+
+    expect(message).not.toContain("OPENAI_API_KEY");
+    expect(message).toContain("OPENAI_CUSTOM_HEADERS");
+  });
+
+  it("refuses it in loadConfig, also when it comes from the env file", () => {
+    const env: EnvSource = { OPENAI_API_KEY: KEY };
+    const loadEnvFile = vi.fn(() => {
+      env.OPENAI_CUSTOM_HEADERS = SECRET_HEADER;
+    });
+
+    expect(() =>
+      loadConfig({ env, loadEnvFile, envFilePath: "/x/.env" }),
+    ).toThrow(/OPENAI_CUSTOM_HEADERS/);
+    expect(() => loadConfig({ env: { ...env } })).toThrow(ConfigError);
+  });
+
+  it("accepts it empty or blank", () => {
+    for (const value of ["", "   ", undefined]) {
+      expect(
+        parseConfig({ OPENAI_API_KEY: KEY, OPENAI_CUSTOM_HEADERS: value })
+          .openaiApiKey,
+      ).toBe(KEY);
+    }
+  });
+});
+
 describe("loadConfig", () => {
   it("loads the env file into the injected env before validating", () => {
     const env: EnvSource = {};

@@ -239,8 +239,17 @@ function describeProblem(name: string, source: EnvSource): string {
   return `Configuração inválida: ${name} tem um valor que não pode ser usado. Corrija o valor no ".env" ou na variável de ambiente.`;
 }
 
+// The SDK reads this variable by itself and applies it after its own
+// authentication headers (ADR 0002, decision 9). It is refused, and its
+// value is never shown: it may hold a credential.
+const UNSUPPORTED_VARIABLE = "OPENAI_CUSTOM_HEADERS";
+const UNSUPPORTED_VARIABLE_MESSAGE = `Configuração inválida: ${UNSUPPORTED_VARIABLE} é uma variável não suportada; remova-a do ambiente e do arquivo ".env".`;
+
 /** Pure: validates the given variables and applies the defaults. */
 export function parseConfig(source: EnvSource): AppConfig {
+  if (normalize(source[UNSUPPORTED_VARIABLE]) !== undefined) {
+    throw new ConfigError(UNSUPPORTED_VARIABLE_MESSAGE);
+  }
   const parsed = envSchema.safeParse(source);
 
   if (!parsed.success) {
