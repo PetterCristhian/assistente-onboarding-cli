@@ -11,6 +11,7 @@ import {
   untrustedBlock,
   visibleControls,
 } from "../evals/markdown.js";
+import { redact } from "../src/security/redact.js";
 
 const cp = String.fromCodePoint;
 
@@ -176,6 +177,39 @@ describe("inlineText", () => {
     expect(inlineText("http://x e https://y e www.z.com")).not.toMatch(
       /:\/\/|www\./i,
     );
+  });
+
+  it.each([
+    ["a@b.co", "a\\@b.co"],
+    ["MAILTO:a@b.co", "MAILTO\\:a\\@b.co"],
+    ["mailto:a@b.co", "mailto\\:a\\@b.co"],
+    ["xmpp:a@b.c", "xmpp\\:a\\@b.c"],
+    ["a@b.co.uk", "a\\@b.co.uk"],
+    ["x\\@y", "x\\\\\\@y"],
+  ])("neutralizes the e-mail and scheme autolinks of %s", (input, expected) => {
+    expect(inlineText(input)).toBe(expected);
+    expect(tableCell(input)).toBe(expected);
+  });
+
+  it("does not break the other escapes when it escapes e-mails", () => {
+    expect(inlineText("http://x www.y a@b.co")).toBe(
+      "http:\\//x www\\.y a\\@b.co",
+    );
+  });
+
+  it("keeps an e-mail inside a fenced block as it was", () => {
+    expect(untrustedBlock("a@b.co mailto:a@b.co xmpp:a@b.c")).toBe(
+      "````\na@b.co mailto:a@b.co xmpp:a@b.c\n````",
+    );
+  });
+
+  it("does not bring back a key that was redacted before the escape", () => {
+    const key = "sk-proj-AbC_dEf-1234567890abcdefGHIJ_klm-NOP";
+    const redacted = redact(`a@${key}@b.co mailto:${key}`, [key]);
+    const escaped = inlineText(redacted);
+    expect(escaped).not.toContain("AbC");
+    expect(escaped).not.toContain("1234567890abcdef");
+    expect(escaped).toContain("\\[REDACTED\\]");
   });
 
   it("leaves only escaped signs, on one line (fuzz)", () => {
