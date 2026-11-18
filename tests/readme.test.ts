@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EVAL_HELP_TEXT } from "../evals/args.js";
 import { HELP_TEXT } from "../src/cli/args.js";
-import { ENV_VARIABLE_NAMES } from "../src/config/env.js";
+import {
+  ENV_VARIABLE_NAMES,
+  REASONING_EFFORTS,
+  parseConfig,
+  type AppConfig,
+} from "../src/config/env.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
@@ -21,7 +26,25 @@ const PRD = read("docs/PRD.md");
 const ENV_EXAMPLE = read(".env.example");
 const PACKAGE = JSON.parse(read("package.json")) as {
   scripts: Record<string, string>;
+  engines: { node: string };
 };
+const KEY = "x".repeat(20);
+const DEFAULTS = parseConfig({ OPENAI_API_KEY: KEY });
+
+// Battery folders, as in tests/analise-numeros.test.ts.
+const FOLDERS = {
+  B1: "2026-11-17T22-48-43Z",
+  B2: "2026-11-18T11-46-47Z",
+};
+
+interface Summary {
+  totais: { passou: number };
+  autoavaliacao: { rascunhosReprovados: number; turnosRespondidos: number };
+}
+
+function summaryOf(folder: string): Summary {
+  return JSON.parse(read(`outputs/${folder}/resumo.json`)) as Summary;
+}
 
 const SCRIPT_NAMES = Object.keys(PACKAGE.scripts);
 const UNSUPPORTED_VARIABLE = "OPENAI_CUSTOM_HEADERS";
@@ -137,6 +160,86 @@ describe("README: environment variables", () => {
   });
 });
 
+const NUMERIC_VARIABLES: Record<string, keyof AppConfig> = {
+  REQUEST_TIMEOUT_MS: "requestTimeoutMs",
+  RETRY_MAX_ATTEMPTS: "retryMaxAttempts",
+  RETRY_BASE_DELAY_MS: "retryBaseDelayMs",
+  RATE_LIMIT_MAX_REQUESTS: "rateLimitMaxRequests",
+  RATE_LIMIT_WINDOW_SECONDS: "rateLimitWindowSeconds",
+};
+
+function variableRow(name: string): string[] {
+  const rows = tableRows(sectionOf(README, "### Variáveis de ambiente"));
+  const row = rows.find((cells) => cells[0] === `\`${name}\``);
+  expect(row, `row not found: ${name}`).toBeDefined();
+  return row ?? [];
+}
+
+function unquote(cell: string | undefined): string {
+  return (cell ?? "").replaceAll("`", "");
+}
+
+describe("README: defaults and minimums of the variables", () => {
+  it.each(Object.entries(NUMERIC_VARIABLES))(
+    "%s: default and minimum match env.ts",
+    (name, field) => {
+      const row = variableRow(name);
+      expect(Number(unquote(row[1]))).toBe(DEFAULTS[field]);
+
+      const minimum = Number(/pelo menos (\d+)/.exec(row[2] ?? "")?.[1]);
+      expect(Number.isInteger(minimum), `no minimum for ${name}`).toBe(true);
+      expect(() =>
+        parseConfig({ OPENAI_API_KEY: KEY, [name]: String(minimum) }),
+      ).not.toThrow();
+      expect(() =>
+        parseConfig({ OPENAI_API_KEY: KEY, [name]: String(minimum - 1) }),
+      ).toThrow();
+    },
+  );
+
+  it("OPENAI_MODEL: the default is the one of env.ts", () => {
+    expect(unquote(variableRow("OPENAI_MODEL")[1])).toBe(DEFAULTS.openaiModel);
+  });
+
+  it("OPENAI_REASONING_EFFORT: default and accepted values match env.ts", () => {
+    const row = variableRow("OPENAI_REASONING_EFFORT");
+    expect(unquote(row[1])).toBe(DEFAULTS.openaiReasoningEffort);
+    const listed = [...(row[2] ?? "").matchAll(/`([a-z]+)`/g)].map(
+      (match) => match[1] ?? "",
+    );
+    expect(listed).toEqual([...REASONING_EFFORTS]);
+  });
+});
+
+describe("README: Node version and result numbers", () => {
+  it("cites the Node major version of engines.node", () => {
+    const required = /(\d+)/.exec(PACKAGE.engines.node)?.[1];
+    const cited = /Node\.js (\d+)/.exec(README)?.[1];
+    expect(cited).toBeDefined();
+    expect(cited).toBe(required);
+  });
+
+  it("cites the battery numbers found in the resumo.json files", () => {
+    const b1 = summaryOf(FOLDERS.B1);
+    const b2 = summaryOf(FOLDERS.B2);
+    const phrases = [
+      `${b1.totais.passou} de 36`,
+      `${b2.totais.passou} de 36`,
+      `${b1.autoavaliacao.rascunhosReprovados} de ${b1.autoavaliacao.turnosRespondidos}`,
+      `${b2.autoavaliacao.rascunhosReprovados} de ${b2.autoavaliacao.turnosRespondidos}`,
+    ];
+    for (const phrase of phrases) {
+      expect(README, `README should say "${phrase}"`).toContain(phrase);
+    }
+    // Every "N de 36" and "N de 39" of the README must be one of them.
+    const cited = README.match(/\b\d+ de (?:36|39)\b/g) ?? [];
+    expect(cited.length).toBeGreaterThanOrEqual(4);
+    for (const text of cited) {
+      expect(phrases, `unexpected number: ${text}`).toContain(text);
+    }
+  });
+});
+
 describe("README: command-line options", () => {
   it("lists exactly the options of the two help texts", () => {
     expect(optionsIn(README)).toEqual(
@@ -175,28 +278,52 @@ describe("README: command-line options", () => {
   });
 });
 
+// The reuse guide names the files of a context folder without the prefix
+// (`avaliador.md`, `03-usuario/`) and `casos.json` of evals/.
+const REUSO_BASES = [ROOT, join(ROOT, "context"), join(ROOT, "evals")];
+
+function citedPaths(text: string): string[] {
+  return [...withoutFences(text).matchAll(/`([^`\n]+)`/g)]
+    .map((match) => match[1] ?? "")
+    .filter(looksLikeRepositoryPath);
+}
+
 describe("README: paths and links", () => {
   it("only cites repository paths that exist", () => {
-    const spans = [...withoutFences(README).matchAll(/`([^`\n]+)`/g)].map(
-      (match) => match[1] ?? "",
-    );
-    const paths = spans.filter(looksLikeRepositoryPath);
+    const paths = citedPaths(README);
     expect(paths.length).toBeGreaterThan(10);
     for (const path of paths) {
       expect(existsSync(join(ROOT, path)), `missing: ${path}`).toBe(true);
     }
   });
 
+  it("docs/REUSO.md only cites paths that exist", () => {
+    const paths = citedPaths(REUSO);
+    expect(paths.length).toBeGreaterThan(8);
+    for (const path of paths) {
+      const found = REUSO_BASES.some((base) => existsSync(join(base, path)));
+      expect(found, `missing: ${path}`).toBe(true);
+    }
+  });
+
   it("links only to files that exist", () => {
-    const targets = [...README.matchAll(/\]\(([^)\s]+)\)/g)]
-      .map((match) => match[1] ?? "")
-      .filter((target) => !/^[a-z]+:/.test(target))
-      .map((target) => target.split("#")[0] ?? "");
-    expect(targets.length).toBeGreaterThan(10);
-    for (const target of targets) {
-      expect(existsSync(join(ROOT, target)), `broken link: ${target}`).toBe(
-        true,
-      );
+    for (const [name, text, dir] of [
+      ["README.md", README, ROOT],
+      ["docs/REUSO.md", REUSO, join(ROOT, "docs")],
+    ] as const) {
+      const targets = [...text.matchAll(/\]\(([^)\s]+)\)/g)]
+        .map((match) => match[1] ?? "")
+        .filter((target) => !/^[a-z]+:/.test(target))
+        .map((target) => target.split("#")[0] ?? "");
+      if (name === "README.md") {
+        expect(targets.length).toBeGreaterThan(10);
+      }
+      for (const target of targets) {
+        expect(
+          existsSync(join(dir, target)),
+          `${name}: broken link: ${target}`,
+        ).toBe(true);
+      }
     }
   });
 
@@ -246,8 +373,9 @@ describe("README: content that must not come back", () => {
 });
 
 describe("docs: size and secrets", () => {
-  it("keeps the reuse guide within 130 lines", () => {
-    expect(REUSO.trimEnd().split("\n").length).toBeLessThanOrEqual(130);
+  it("keeps the reuse guide within about two pages", () => {
+    expect(REUSO.trimEnd().split("\n").length).toBeLessThanOrEqual(100);
+    expect(REUSO.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(1200);
   });
 
   it("has no sequence shaped like a real key", () => {

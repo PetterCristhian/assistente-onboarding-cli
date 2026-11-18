@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { HELP_TEXT } from "../src/cli/args.js";
 import {
   loadCompanyData,
   loadCritiquePrompts,
@@ -79,5 +80,7 @@ describe("docs/REUSO.md and the example context folder", () => {
 
   it("cites the command that shows the context of another folder", () => {
     expect(REUSO).toContain("--show-context --context-dir");
+    expect(HELP_TEXT).toContain("--show-context");
+    expect(HELP_TEXT).toContain("--context-dir");
   });
 });
