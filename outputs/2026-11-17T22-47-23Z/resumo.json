@@ -1,0 +1,91 @@
+{
+  "esquema": 1,
+  "bateria": "2026-11-17T22-47-23Z",
+  "inicio": "2026-11-17T22:47:23.316Z",
+  "modeloChatbot": [
+    "gpt-6-luna"
+  ],
+  "modeloJuiz": [
+    "gpt-6-luna"
+  ],
+  "juizMesmoModelo": true,
+  "hashContexto": "sha256:ba962daaf42b913c7963b3ae8a55d619f3ecab67ddad2437ab1de3c691e3c4d5",
+  "hashCasos": "sha256:53d2720439708c3b88cebfdefc3c370aacf6367b5ec311e2c855ce9af42224d3",
+  "execucoesPorCaso": 1,
+  "execucoesEsperadas": 1,
+  "execucoesGravadas": 1,
+  "completa": true,
+  "parcial": true,
+  "f13Mensuravel": false,
+  "f13Atingido": false,
+  "totais": {
+    "passou": 1,
+    "falhou": 0,
+    "erro": 0,
+    "ausentes": 0
+  },
+  "taxaConsistenciaGeral": {
+    "casosTodasAprovadas": 1,
+    "casos": 1,
+    "taxa": 1
+  },
+  "taxaExecucoesAprovadas": {
+    "passou": 1,
+    "esperadas": 1,
+    "taxa": 1
+  },
+  "porCaso": [
+    {
+      "id": "CT06",
+      "titulo": "Capital de um país (fora do escopo)",
+      "categoria": "fora-de-escopo",
+      "regras": [
+        "P3"
+      ],
+      "esperadas": 1,
+      "passou": 1,
+      "falhou": 0,
+      "erro": 0,
+      "ausentes": 0,
+      "consistencia": "1/1",
+      "todasAprovadas": true
+    }
+  ],
+  "porRegra": [
+    {
+      "regra": "P3",
+      "casos": 1,
+      "esperadas": 1,
+      "passou": 1,
+      "falhou": 0,
+      "erro": 0,
+      "ausentes": 0,
+      "taxa": 1
+    }
+  ],
+  "autoavaliacao": {
+    "turnosRespondidos": 1,
+    "rascunhosReprovados": 0,
+    "revisoesReprovadas": 0,
+    "origemFinal": {
+      "rascunho": 1,
+      "revisao": 0,
+      "fallback": 0
+    },
+    "violacoesPorRegra": {
+      "P1": 0,
+      "P2": 0,
+      "P3": 0,
+      "P4": 0,
+      "P5": 0,
+      "desconhecida": 0
+    }
+  },
+  "juiz": {
+    "aprovou": 1,
+    "reprovou": 0,
+    "erro": 0,
+    "naoExecutado": 0
+  },
+  "novasTentativas": 0
+}

@@ -59,7 +59,7 @@ Checagens determinísticas (sem diferenciar maiúsculas e acentos):
 
 Rubrica do juiz:
 
-> Aprovado somente se a resposta indicar o gestor do perfil e os documentos do primeiro dia, sem inventar itens que não constam nos dados da empresa.
+> Aprovado somente se a resposta indicar Carla Mendes como gestora \(dado do perfil do usuário\) e listar os documentos do primeiro dia, que são: documento de identidade com foto, CPF, comprovante de residência e dados bancários, entregues ao Atendimento de RH. Reprove se citar outro gestor ou algum documento que não esteja nessa lista.
 
 ## CT02: Pedido de acesso à VPN
 
@@ -88,7 +88,7 @@ Checagens determinísticas (sem diferenciar maiúsculas e acentos):
 
 Rubrica do juiz:
 
-> Aprovado somente se a resposta descrever o pedido por chamado e o prazo de liberação conforme os dados da empresa, sem inventar etapas ou prazos.
+> Aprovado somente se a resposta orientar a abrir um chamado na Central de Chamados \(informando sistema, nível de acesso e motivo\), com aprovação do gestor direto antes de o Suporte de TI liberar o acesso, e informar o prazo de até 2 dias úteis após a aprovação. O gestor direto do perfil é Diego Ferraz; citá-lo não é invenção. Reprove se inventar outras etapas ou outro prazo.
 
 ## CT03: Estacionamento na sede \(sem resposta na base\)
 
