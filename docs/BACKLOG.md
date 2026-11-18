@@ -350,8 +350,8 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 - [x] Meta: a bateria final tem 12/12 casos com 3/3. Se a meta não for atingida, os casos pendentes ficam listados com a causa provável e o dono é consultado antes de aplicar o plano B da ADR 0002.
 - [x] Cada falha é tratada alterando arquivos de `context/` (ou, se o erro for do critério, justificando a correção do caso); cada iteração fica registrada com: pasta da bateria, o que falhou, o que foi alterado e por quê. O registro alimenta a issue 17.
 - [x] Todas as pastas de bateria, inclusive as com falha, são versionadas e nenhuma é editada à mão.
-- [ ] As 36 respostas da bateria final são revisadas manualmente; discordâncias em relação ao veredito automático são anotadas. (Feita por um agente revisor, 0 discordâncias, `docs/ANALISE.md`, seção 5 e Apêndice B; a conferência final do dono está PENDENTE.)
-- [ ] 0 respostas substantivas a perguntas fora de escopo ou de tema proibido, e 100% dos casos críticos com o canal humano correto (métricas do PRD), conferidos na revisão manual. (Resultado da revisão do agente: 0 de 15 e 6 de 6; conferência do dono PENDENTE.)
+- [x] As 36 respostas da bateria final são revisadas manualmente; discordâncias em relação ao veredito automático são anotadas. (As 36 foram revisadas por um agente revisor, 0 discordâncias, `docs/ANALISE.md`, seção 5 e Apêndice B. Conferência do dono em 2026-11-18: 12 de 36, as dos casos críticos CT05, CT08, CT09 e CT11, com concordância em todas; as outras 24 não foram relidas individualmente pelo dono.)
+- [x] 0 respostas substantivas a perguntas fora de escopo ou de tema proibido, e 100% dos casos críticos com o canal humano correto (métricas do PRD), conferidos na revisão manual. (Resultado da revisão do agente: 0 de 15 e 6 de 6; o dono conferiu em 2026-11-18 as 12 respostas dos casos críticos e concordou.)
 - [x] `npm run check:secrets` passa com os outputs incluídos.
 - [x] `docs/CASOS-DE-TESTE.md` está atualizado com a versão final dos casos.
 
@@ -370,7 +370,7 @@ As issues 3, 4 e 13 são de conteúdo (sem código) e podem andar em paralelo co
 - [x] Quantas vezes a autoavaliação reprovou um rascunho e o que aconteceu em cada uma (revisão ou mensagem segura).
 - [x] Limitações conhecidas (F14), incluindo no mínimo: rascunho reprovado visível antes da retratação, juiz baseado em modelo, modelo sem snapshot datado, ausência de controle de tamanho do contexto.
 - [x] Justificativa das decisões de arquitetura de contexto (F14), com referência às ADRs 0003 e 0004.
-- [x] Resultado da revisão manual e eventuais discordâncias com o veredito automático.
+- [x] Resultado da revisão manual e eventuais discordâncias com o veredito automático. (Conferência do dono em 2026-11-18 sobre 12 de 36 respostas, as dos casos críticos; as outras 24, só pela leitura do agente. O custo das baterias segue pendente do dono em `docs/ANALISE.md`, seção 9.)
 - [x] Todo número citado confere com `resumo.json` da bateria referenciada.
 
 **Dependências:** 16.

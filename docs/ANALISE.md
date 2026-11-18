@@ -16,7 +16,7 @@ Ressalvas que devem acompanhar qualquer leitura desses números:
 - O critério (rubricas de CT01 e CT02) foi corrigido depois de ver o resultado de B1.
 - A amostra é de 3 execuções por caso, e o juiz é do mesmo modelo do chatbot.
 - O resultado não mostra que o contexto foi necessário nem quanto cada camada contribuiu: não há bateria de comparação (seção 6.3).
-- Conferência final do dono sobre a revisão manual: PENDENTE (seção 5).
+- Conferência final do dono: feita em 2026-11-18 sobre as 12 respostas dos casos críticos (CT05, CT08, CT09, CT11): concordância com o veredito de todas, nenhuma discordância; as outras 24 respostas seguem como revisadas pela leitura independente de agente (28 aprovadas, 8 com ressalva), sem releitura individual do dono (seção 5).
 
 ## 1. Escopo e método
 
@@ -151,7 +151,7 @@ Tom: 9 das 36 primeiras respostas não chamam o usuário pelo nome (CT05 x3, CT0
 
 CT05, CT06 e CT11 dependem só do juiz, com checagens determinísticas fracas; a leitura humana é a verificação principal deles e confirmou o juiz, que é do mesmo modelo avaliado.
 
-Conferência final do dono: PENDENTE. A preencher, com a data, quando o dono confirmar as discordâncias (nenhuma apontada) e uma amostra dos casos críticos CT05, CT08, CT09 e CT11 diretamente no `RELATORIO.md` de `outputs/2026-11-18T11-46-47Z`.
+Conferência final do dono: feita em 2026-11-18 sobre as 12 respostas dos casos críticos (CT05, CT08, CT09, CT11): concordância com o veredito de todas, nenhuma discordância; as outras 24 respostas seguem como revisadas pela leitura independente de agente (28 aprovadas, 8 com ressalva), sem releitura individual do dono. O dono concordou em resposta direta ao pedido de conferência, sobre a bateria `outputs/2026-11-18T11-46-47Z`.
 
 ## 6. Decisões de arquitetura de contexto e justificativa
 
@@ -300,13 +300,13 @@ Trabalho futuro e limitações (sem alterar os casos desta bateria; as ressalvas
 - No contexto: exigir a elegibilidade de 12 meses ao tratar de férias (e, se o desvio de CT06 se repetir, reforçar a distinção que a P3 já traz).
 - Reforçar as rubricas de CT04, CT10 e CT12 só se oscilarem.
 
-Decisão do dono (2026-11-18): a bateria `outputs/2026-11-18T11-46-47Z` foi aceita como bateria final, sem nova iteração. As 8 ressalvas da revisão manual não são reprovações e ficam registradas como limitações e trabalho futuro; o contexto não foi alterado. A conferência final do dono sobre as discordâncias e a amostra dos casos críticos (CT05, CT08, CT09 e CT11) continua pendente (ver seção 5).
+Decisão do dono (2026-11-18): a bateria `outputs/2026-11-18T11-46-47Z` foi aceita como bateria final, sem nova iteração. As 8 ressalvas da revisão manual não são reprovações e ficam registradas como limitações e trabalho futuro; o contexto não foi alterado. A conferência final do dono, feita depois desta decisão, em 2026-11-18, cobriu as 12 respostas dos casos críticos (CT05, CT08, CT09 e CT11) e não apontou discordância (ver seção 5).
 
 ## Apêndice B. Revisão manual da bateria final (36 respostas)
 
 Pasta da bateria final: `outputs/2026-11-18T11-46-47Z` (B2, 36/36).
 
-Como foi feita: a revisão foi feita por leitura independente de um agente revisor, que leu as 36 respostas ANTES de ver os vereditos automáticos. Não é revisão do dono. A CONFERÊNCIA FINAL é do dono: conferir as discordâncias (nenhuma apontada) e uma amostra dos casos críticos CT05, CT08, CT09 e CT11 diretamente no `RELATORIO.md` da pasta.
+Como foi feita: a revisão foi feita por leitura independente de um agente revisor, que leu as 36 respostas ANTES de ver os vereditos automáticos. Não é revisão do dono. A conferência final do dono (2026-11-18) leu as 12 respostas dos casos críticos CT05, CT08, CT09 e CT11 e concordou com o veredito de todas, sem discordância; as outras 24 respostas não foram relidas individualmente pelo dono.
 
 Critérios:
 
