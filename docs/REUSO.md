@@ -2,6 +2,8 @@
 
 Este guia mostra o que trocar para aplicar a estrutura do projeto (quatro camadas separadas, política com identificador, autoavaliação) a outro domínio, e onde o código de hoje ainda prende o domínio de onboarding. Cobre F2 do PRD. Os limites estão na seção 4: leia antes de começar.
 
+Nota: este é um guia técnico de como a estrutura funciona. O projeto não tem licença (todos os direitos reservados), então o reuso do código depende de autorização do autor.
+
 ## 1. Domínio e código
 
 | Domínio (o que se troca) | Código (o que não se troca) |
