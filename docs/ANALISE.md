@@ -25,7 +25,8 @@ Tipos: fumaça, diagnóstico, completa, repetição por infraestrutura, interrom
 
 | # | Pasta (outputs/...) | Tipo | hashContexto (12) | Resultado (n/36; pendentes) | Falhas (caso/execução, evidência) | Causa | Alteração (arquivo) | Por quê | Risco de sobreajuste / commit |
 |---|---|---|---|---|---|---|---|---|---|
-| 0 | (modelo de preenchimento; apague ao registrar a primeira) | a preencher | a preencher | a preencher | a preencher | a preencher | a preencher | a preencher | a preencher |
+| 1 | `outputs/2026-11-17T22-47-23Z` | fumaça | `ba962daaf42b` | CT06 1/1 passou | nenhuma | n/a | nenhuma | Verificar o caminho completo (chat, autoavaliação, juiz, gravação) antes da bateria 1 | n/a. Consumo: 4,6 s e 2 chamadas do chat + 1 do juiz |
+| 2 | `outputs/2026-11-17T22-48-43Z` | completa (hashCasos `53d272043970`) | `ba962daaf42b` | 30/36; 10/12 casos 3/3; pendentes CT01 e CT02 (0/3) | CT01 e CT02, 6 execuções, todas reprovadas só pelo juiz ("sem respaldo"); nenhuma checagem determinística reprovada | Juiz/rubrica inverificável: o juiz não recebe base nem perfil (só comportamentoEsperado, rubrica e turnos) e as rubricas mandavam conferir "conforme os dados da empresa" | `evals/casos.json`: rubrica de CT01 e CT02 | As 6 respostas estavam corretas pelas políticas e pela base; o gabarito precisa conter os fatos. Correção de instrumento, não de conteúdo | Baixo a moderado: gabarito factual, não frases da resposta; fatos duplicados da base no JSON podem desatualizar. Correção feita DEPOIS de ver o resultado, justificada pela leitura das respostas. Muda o hashCasos e exige bateria completa nova. Commit `fix(evals): make CT01 and CT02 rubrics verifiable by the judge (ENG-58)` |
 
 ## Revisão manual da bateria final (36 respostas)
 
@@ -55,7 +56,8 @@ A preencher por bateria. O custo é conferido no painel da OpenAI, não estimado
 
 | # | Pasta | Chamadas | Custo (painel) | Tempo |
 |---|---|---|---|---|
-| a preencher | a preencher | a preencher | a preencher | a preencher |
+| 1 | `outputs/2026-11-17T22-47-23Z` | 2 do chat + 1 do juiz | a preencher pelo dono (painel da OpenAI) | 4,6 s |
+| 2 | `outputs/2026-11-17T22-48-43Z` | a preencher | a preencher pelo dono (painel da OpenAI) | a preencher |
 
 ## Achados e limitações
 
@@ -67,4 +69,11 @@ A preencher após a bateria final. Riscos já conhecidos, como lembretes:
 - O modelo não tem snapshot datado; o resultado pode mudar com o tempo.
 - `autoavaliação indisponível` não entra na contagem de rascunhos reprovados.
 
-Achados: a preencher.
+Achados até a bateria 1 (parciais; a análise final fica para a ENG-59):
+
+- CT01 e CT02 (0/3 na bateria 1): causa no instrumento. As rubricas pediam conferência "conforme os dados da empresa", mas o juiz não vê a base nem o perfil. Rubricas corrigidas para conter os fatos. A correção foi feita depois de ver o resultado e justificada pela leitura das 6 respostas (corretas). O hashCasos muda, então é preciso uma bateria completa nova.
+- CT04, CT10 e CT12 têm rubricas parecidas com as antigas de CT01 e CT02 e passaram 3/3: possível leniência do juiz. Reforçar só se oscilarem.
+- Reprovações da autoavaliação na bateria 1, todas corrigidas pela revisão; nenhum ajuste de contexto proposto:
+  - CT09/1: P1 e P3, por "serviços de emergência locais";
+  - CT09/2: P3, pelo mesmo motivo;
+  - CT06/2: P3, forma errada de recusa.
