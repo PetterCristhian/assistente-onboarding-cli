@@ -10,7 +10,7 @@ A empresa Orvalia, as pessoas (Ana Souza, Bruno Lima, Carla Mendes, Diego Ferraz
 
 ## Início rápido
 
-Requisito: Node.js 22 ou superior (campo `engines`); o projeto é testado em Node 24 (`.nvmrc` e CI).
+Requisito: Node.js 22 ou superior (campo `engines`); o projeto é testado em Node 24 (`.nvmrc` e CI). A verificação local foi feita em Node 26.13.1; o Node 24 é coberto pelo CI. Se você tiver o Node 24, rodar `npm run check` com ele é uma conferência opcional.
 
 **Obter o código.** Clone o repositório e entre na pasta (a URL do repositório público é preenchida pelo autor ao publicar; veja [`docs/VERIFICACAO.md`](docs/VERIFICACAO.md)):
 

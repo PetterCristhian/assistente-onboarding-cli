@@ -10,7 +10,7 @@ Registro da verificação final do projeto (issue 19 do backlog). Cada linha diz
 | Commit verificado | `d261f41` (ponta da `main` antes desta issue). O PR da ENG-61 muda só documentação; o squash do PR gera outro SHA, que não foi verificado aqui |
 | Onde | Clone limpo do repositório local, em pasta de caminho só com caracteres ASCII, fora da pasta do projeto |
 | Sistema | Windows 11, Git 2.56.0, Git Bash |
-| Node e npm | Node v26.13.1, npm 11.20.0. O `.nvmrc` e o CI usam Node 24; o `engines` pede Node >= 22. Nenhuma execução local com Node 24 ou 22: só o CI cobre o Node 24 |
+| Node e npm | Node v26.13.1, npm 11.20.0. O `.nvmrc` e o CI usam Node 24; o `engines` pede Node >= 22. A verificação local foi feita em Node 26.13.1; o Node 24 (`.nvmrc`) é coberto pelo CI, e nenhuma execução local usou Node 24 ou 22. Recomendação opcional ao dono: rodar `npm run check` com Node 24 antes de publicar, se tiver essa versão |
 | Sem chave | O clone não tinha `.env`, e `OPENAI_API_KEY` não estava definida no ambiente da verificação. Nenhuma chamada à OpenAI foi feita |
 | Quem executou | "agente": tudo o que está marcado como feito. "dono/pessoa externa": tudo o que está marcado como PENDENTE |
 
@@ -144,9 +144,13 @@ Marcas para o dono, ao publicar:
 
 - [ ] Preencher `<URL-DESTE-REPOSITORIO>` no passo "Obter o código" do README.
 - [ ] Trocar, no README, a frase "O repositório será público" por uma forma no presente que não use a expressão "repositório é público" (por exemplo, "O repositório está público"), porque `tests/readme.test.ts` recusa essa expressão (o teste existe para barrar um resquício da primeira versão). Se preferir a expressão proibida, o teste também precisa mudar.
-- [ ] Empurrar ao repositório novo só `main` e os branches (`refs/heads`), nunca uma cópia espelho (`--mirror`) feita a partir de um clone que tenha as referências de pull request.
-- [ ] Conferir depois, com `git ls-remote` no repositório novo, que não há `refs/pull`.
-- [ ] Rodar a busca de S8 e a busca pelo nome "Orvalia".
+- [ ] Empurrar ao repositório novo só `main` e os branches (`refs/heads`), com refspec explícito: `git push <novo> 'refs/heads/*:refs/heads/*'`. Nunca `--all`, `--mirror` nem referências de pull request.
+- [ ] Depois do push, no repositório NOVO: repetir `git log -p --all | grep -cE 'sk-[A-Za-z0-9_-]{20,}'` (esperado 22, as mesmas falsas positivas de S1) e a busca do valor da chave real (S8).
+- [ ] No repositório novo, conferir autores e committers com `git log --all --format='%ae %ce'` (olhar só os domínios: devem ser os de endereço oculto do GitHub, como em S5) e, com `git ls-remote <novo>`, que aparece só `refs/heads` (nenhum `refs/pull`).
+- [ ] Conferir que o repositório novo não é um fork e não tem pull requests nem issues importadas.
+- [ ] Manter o repositório atual como Private (não torná-lo público depois) e, se couber, pedir ao suporte do GitHub a remoção de caches de referências órfãs.
+- [ ] Cruzar com S9: o agente não buscou as referências de pull request (`refs/pull`); esta lista é o que garante que elas não chegam ao repositório novo.
+- [ ] Rodar a busca pelo nome "Orvalia".
 - [ ] Registrar abaixo a URL e a data.
 
 | Campo | Valor |

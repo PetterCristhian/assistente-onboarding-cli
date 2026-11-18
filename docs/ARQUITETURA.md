@@ -175,8 +175,8 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │
 ├── src/
 │   ├── cli/
-│   │   ├── main.ts               # entrada do chat: liga as peças, trata Ctrl+C e define o código de saída (único que lê process.argv)
-│   │   ├── args.ts               # opções de linha de comando (único que usa parseArgs; sem opção de chave)
+│   │   ├── main.ts               # entrada do chat: liga as peças, trata Ctrl+C e define o código de saída (dentro de `src/`, o único que lê process.argv)
+│   │   ├── args.ts               # opções de linha de comando (dentro de `src/`, o único que usa parseArgs; sem opção de chave)
 │   │   ├── chat-loop.ts          # laço readline: lê linhas, executa comandos, encerra com Ctrl+C
 │   │   ├── commands.ts           # /sair /limpar /contexto /detalhes /ajuda
 │   │   ├── interrupt.ts          # Ctrl+C: o primeiro cancela o turno, o segundo encerra na hora
@@ -287,7 +287,7 @@ Variáveis de ambiente (todas documentadas em `.env.example`; só `OPENAI_API_KE
 | `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas permitidas por janela (limite local; inteiro >= 1, sem teto superior) |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local (inteiro >= 1, sem teto superior) |
 
-Opções de linha de comando do chat (`src/cli/args.ts`, o único arquivo que usa `parseArgs`; `src/cli/main.ts` é o único que lê `process.argv`): `--system-prompt <arquivo>` (substitui só a camada 1; `.md` ou `.txt`), `--perfil <nome|arquivo>` (escolhe a camada 3: nome de `03-usuario/` ou caminho de um `.json`), `--context-dir <pasta>` (troca o domínio), `--verbose` (detalhes técnicos e resultado da autoavaliação em stderr, a cada resposta; o mesmo que começar com `/detalhes` ligado), `--show-context` (imprime o contexto montado e sai antes de ler a configuração: sem chave, sem `.env`, sem rede) e `-h`/`--help`. A chave da API não é opção, e um teste confere que o parser não declara nenhuma. Opção repetida e argumento posicional são erro de uso. Códigos de saída: 0 normal, ajuda e `--show-context`; 1 uso inválido, configuração ou contexto; 2 erro inesperado. Todo arquivo de camada tem no máximo 64 KiB e precisa ser um arquivo comum.
+Opções de linha de comando do chat (`src/cli/args.ts`, o único arquivo de `src/` que usa `parseArgs`; `src/cli/main.ts` é o único de `src/` que lê `process.argv`; a bateria tem o seu próprio `evals/args.ts` e `scripts/eval.ts`, fora do chat): `--system-prompt <arquivo>` (substitui só a camada 1; `.md` ou `.txt`), `--perfil <nome|arquivo>` (escolhe a camada 3: nome de `03-usuario/` ou caminho de um `.json`), `--context-dir <pasta>` (troca o domínio), `--verbose` (detalhes técnicos e resultado da autoavaliação em stderr, a cada resposta; o mesmo que começar com `/detalhes` ligado), `--show-context` (imprime o contexto montado e sai antes de ler a configuração: sem chave, sem `.env`, sem rede) e `-h`/`--help`. A chave da API não é opção, e um teste confere que o parser não declara nenhuma. Opção repetida e argumento posicional são erro de uso. Códigos de saída: 0 normal, ajuda e `--show-context`; 1 uso inválido, configuração ou contexto; 2 erro inesperado. Todo arquivo de camada tem no máximo 64 KiB e precisa ser um arquivo comum.
 
 Comandos dentro do chat: `/sair`, `/limpar`, `/contexto`, `/detalhes`, `/ajuda`.
 
