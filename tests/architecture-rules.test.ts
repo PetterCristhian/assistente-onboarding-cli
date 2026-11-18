@@ -157,6 +157,7 @@ describe("architecture rules", () => {
     ).filter((file) => file !== "src/llm/client.ts");
 
     expect(callers).toEqual([
+      "scripts/comparacao-memoria.ts",
       "scripts/demo-falhas/run.ts",
       "scripts/eval.ts",
       "scripts/smoke-llm.ts",

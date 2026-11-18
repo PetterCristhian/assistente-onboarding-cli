@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m02-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:22.622Z",
+  "atualizadaEm": "2026-11-18T18:30:26.843Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:26.843Z",
+      "pergunta": "Uma preferência minha: gostaria de ser tratada sempre como Dra. Ana nas respostas.",
+      "resposta": "Entendido, Dra. Ana. Vou me dirigir a você dessa forma nas próximas respostas.",
+      "origem": "rascunho"
+    }
+  ]
+}

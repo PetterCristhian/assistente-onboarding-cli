@@ -45,7 +45,9 @@ function spawnNode(
       "--import",
       "tsx",
       ...preloads.flatMap((preload) => ["--import", preload]),
-      ...args,
+      ...args.flatMap((arg) =>
+        arg === "src/cli/main.ts" ? [arg, "--efemera"] : [arg],
+      ),
     ],
     {
       cwd: PROJECT_ROOT,

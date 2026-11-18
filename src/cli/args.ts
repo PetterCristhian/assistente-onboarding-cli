@@ -14,6 +14,14 @@ export interface CliOptions {
   readonly contextDir?: string;
   readonly showContext: boolean;
   readonly verbose: boolean;
+  /** Resumes the session with this identifier. */
+  readonly sessionId?: string;
+  /** Lists the saved sessions and leaves. */
+  readonly listSessions: boolean;
+  /** The memory is neither read nor written. */
+  readonly noMemory: boolean;
+  /** Nothing is kept: no session file and no memory. */
+  readonly ephemeral: boolean;
 }
 
 export type ParsedArgs =
@@ -27,6 +35,10 @@ const OPTION_DEFINITIONS = {
   "context-dir": { type: "string" },
   "show-context": { type: "boolean" },
   verbose: { type: "boolean" },
+  sessao: { type: "string" },
+  sessoes: { type: "boolean" },
+  "sem-memoria": { type: "boolean" },
+  efemera: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 } as const;
 
@@ -34,6 +46,7 @@ const STRING_OPTIONS: ReadonlySet<string> = new Set([
   "system-prompt",
   "perfil",
   "context-dir",
+  "sessao",
 ]);
 
 // A name that is safe to quote in a message: short, lower case, hyphens.
@@ -48,6 +61,10 @@ export const HELP_TEXT = [
   "  --context-dir <pasta>      lê as quatro camadas de outra pasta, no lugar de context/",
   "  --show-context             imprime o contexto montado e sai; não chama o modelo nem exige chave",
   "  --verbose                  detalhes técnicos e resultado da autoavaliação por turno, em stderr",
+  "  --sessao <id>              retoma a sessão gravada com esse identificador",
+  "  --sessoes                  lista as sessões gravadas e sai; não chama o modelo nem exige chave",
+  "  --sem-memoria              não lê nem grava a memória do perfil (para comparação)",
+  "  --efemera                  não grava a sessão nem usa memória: nada fica em disco",
   "  -h, --help                 mostra esta ajuda",
   "",
   "A chave vem de OPENAI_API_KEY (.env ou ambiente); nunca é argumento.",
@@ -179,6 +196,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   const systemPrompt = values["system-prompt"];
   const profile = values.perfil;
   const contextDir = values["context-dir"];
+  const sessionId = values.sessao;
   return {
     kind: "run",
     options: {
@@ -187,6 +205,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...(contextDir === undefined ? {} : { contextDir }),
       showContext: values["show-context"] === true,
       verbose: values.verbose === true,
+      ...(sessionId === undefined ? {} : { sessionId }),
+      listSessions: values.sessoes === true,
+      noMemory: values["sem-memoria"] === true,
+      ephemeral: values.efemera === true,
     },
   };
 }

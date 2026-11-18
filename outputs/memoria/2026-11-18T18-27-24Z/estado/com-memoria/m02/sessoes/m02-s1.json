@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m02-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:27:44.730Z",
+  "atualizadaEm": "2026-11-18T18:27:55.401Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:27:55.401Z",
+      "pergunta": "Uma preferência minha: gostaria de ser tratada sempre como Dra. Ana nas respostas.",
+      "resposta": "Posso ajudar com dúvidas sobre o onboarding e as informações da Orvalia.",
+      "origem": "revisao"
+    }
+  ]
+}

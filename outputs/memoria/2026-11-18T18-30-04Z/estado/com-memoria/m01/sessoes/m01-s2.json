@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m01-s2",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:10.292Z",
+  "atualizadaEm": "2026-11-18T18:30:12.623Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:12.623Z",
+      "pergunta": "Qual foi mesmo o código de erro do problema que relatei no sistema de ponto?",
+      "resposta": "Ana, o código de erro foi 403.",
+      "origem": "rascunho"
+    }
+  ]
+}

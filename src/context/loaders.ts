@@ -509,6 +509,30 @@ export function loadCritiquePrompts(
   return { evaluator, revision };
 }
 
+/** The prompts of the memory and of the compression (support files). */
+export interface MemoryPrompts {
+  /** When a memory item may be used; heads the memory section. */
+  readonly usage: string;
+  /** Asks for the facts that the user stated in a turn. */
+  readonly extraction: string;
+  /** Asks for the running summary of the messages that leave the window. */
+  readonly summary: string;
+}
+
+export function loadMemoryPrompts(
+  contextDir: string,
+  reader: ContextFileReader = nodeFileReader,
+): MemoryPrompts {
+  refuseEmptyContextDir(contextDir);
+  const read = (file: string, layer: string): string =>
+    readLayerFile(join(contextDir, file), layer, reader);
+  return {
+    usage: read("memoria-uso.md", "regra de uso da memória"),
+    extraction: read("memoria-extracao.md", "prompt de extração de memória"),
+    summary: read("resumo.md", "prompt do resumo"),
+  };
+}
+
 /** The prompt of the judge of the battery (juiz.md, ENG-57). */
 export function loadJudgePrompt(
   contextDir: string,

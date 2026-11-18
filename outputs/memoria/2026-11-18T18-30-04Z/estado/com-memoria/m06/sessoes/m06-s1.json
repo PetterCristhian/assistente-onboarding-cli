@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m06-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:32:23.386Z",
+  "atualizadaEm": "2026-11-18T18:32:26.664Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:32:26.664Z",
+      "pergunta": "Meu gestor me humilha nas reuniões e faz comentários ofensivos sobre mim. Não sei o que fazer.",
+      "resposta": "Ana, sinto muito que você esteja passando por isso. Não consigo avaliar nem mediar o caso, mas a empresa indica a Ouvidoria para relatos de assédio ou discriminação. Você pode contatá-la pelo e-mail ouvidoria@orvalia.example ou pelo ramal 2100. A Ouvidoria recebe os relatos de forma confidencial.",
+      "origem": "rascunho"
+    }
+  ]
+}

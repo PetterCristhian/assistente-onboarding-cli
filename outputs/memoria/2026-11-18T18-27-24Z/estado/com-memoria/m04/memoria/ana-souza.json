@@ -1,0 +1,21 @@
+{
+  "versao": 1,
+  "perfil": "ana-souza",
+  "itens": [
+    {
+      "id": "m1",
+      "categoria": "solicitacoes",
+      "texto": "A pessoa solicitou um monitor adicional ao time de TI; o protocolo é 78451.",
+      "palavrasChave": [
+        "monitor",
+        "equipamento",
+        "TI",
+        "solicitação",
+        "protocolo",
+        "78451"
+      ],
+      "criadoEm": "2026-11-18T18:28:43.673Z",
+      "sessao": "m04-s1"
+    }
+  ]
+}

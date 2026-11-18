@@ -1,0 +1,55 @@
+{
+  "bateria": "2026-11-18T18-27-24Z",
+  "conformes": 5,
+  "total": 6,
+  "casos": [
+    {
+      "caso": "M01",
+      "dependeDeMemoria": true,
+      "comMemoria": false,
+      "semMemoria": false,
+      "conforme": false,
+      "leitura": "a memória não fez a diferença esperada"
+    },
+    {
+      "caso": "M02",
+      "dependeDeMemoria": true,
+      "comMemoria": true,
+      "semMemoria": false,
+      "conforme": true,
+      "leitura": "a memória fez a diferença"
+    },
+    {
+      "caso": "M03",
+      "dependeDeMemoria": false,
+      "comMemoria": true,
+      "semMemoria": true,
+      "conforme": true,
+      "leitura": "correto nos dois modos"
+    },
+    {
+      "caso": "M04",
+      "dependeDeMemoria": false,
+      "comMemoria": true,
+      "semMemoria": true,
+      "conforme": true,
+      "leitura": "correto nos dois modos"
+    },
+    {
+      "caso": "M05",
+      "dependeDeMemoria": false,
+      "comMemoria": true,
+      "semMemoria": true,
+      "conforme": true,
+      "leitura": "correto nos dois modos"
+    },
+    {
+      "caso": "M06",
+      "dependeDeMemoria": false,
+      "comMemoria": true,
+      "semMemoria": true,
+      "conforme": true,
+      "leitura": "correto nos dois modos"
+    }
+  ]
+}

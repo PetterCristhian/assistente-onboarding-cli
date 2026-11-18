@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m01-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:27:37.897Z",
+  "atualizadaEm": "2026-11-18T18:27:41.916Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:27:41.916Z",
+      "pergunta": "Ontem meu acesso ao sistema de ponto foi negado, apareceu o erro 403 na tela.",
+      "resposta": "Ana, como o erro ocorreu ao acessar o sistema de ponto, entre em contato com o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800. O ponto é registrado no Portal de Pessoas; se o problema persistir, o Atendimento de RH pode ajudar pelo rh@orvalia.example ou ramal 2000.",
+      "origem": "rascunho"
+    }
+  ]
+}

@@ -32,7 +32,15 @@ function spawnNode(
 ) {
   return spawnSync(
     process.execPath,
-    ["--import", "tsx", "--import", PRELOAD, ...args],
+    [
+      "--import",
+      "tsx",
+      "--import",
+      PRELOAD,
+      ...args.flatMap((arg) =>
+        arg === "src/cli/main.ts" ? [arg, "--efemera"] : [arg],
+      ),
+    ],
     {
       cwd: PROJECT_ROOT,
       encoding: "utf8",

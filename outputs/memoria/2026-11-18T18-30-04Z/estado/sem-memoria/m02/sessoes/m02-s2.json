@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m02-s2",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:42.011Z",
+  "atualizadaEm": "2026-11-18T18:30:46.551Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:46.551Z",
+      "pergunta": "Como solicito o reembolso de uma despesa?",
+      "resposta": "Ana, para solicitar o reembolso:\n\n1. Confirme que a despesa de trabalho foi autorizada previamente pela sua gestora direta, Carla Mendes.\n2. Separe um comprovante fiscal legível, em seu nome ou no da empresa.\n3. Envie o pedido pelo Sistema de Reembolso em até 30 dias corridos após a despesa.\n4. Aguarde a aprovação da gestora no sistema. Depois, o Financeiro confere o comprovante; o pagamento é feito na mesma conta do salário em até 10 dias úteis após a aprovação.\n\nSe ainda não tiver acesso ao Sistema de Reembolso, solicite-o pela Central de Chamados. Carla precisa aprovar o chamado antes de o Suporte de TI liberar o acesso.",
+      "origem": "rascunho"
+    }
+  ]
+}

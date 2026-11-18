@@ -13,12 +13,20 @@ import {
   loadContext,
   loadCritiquePrompts,
   loadFallbackMessage,
+  loadMemoryPrompts,
   type ContextSources,
 } from "../context/loaders.js";
 import { ContextError } from "../context/types.js";
 import { createOpenAiLlmClient } from "../llm/client.js";
 import { defaultSleep } from "../llm/retry.js";
 import { createSessionLog } from "../logging/session-log.js";
+import {
+  activeHistoryOf,
+  createStatefulSession,
+  newSessionFile,
+} from "../memory/stateful-session.js";
+import { slugify } from "../memory/types.js";
+import { createStateStore, StateError } from "../storage/state-store.js";
 import { createRedactor, type Redactor } from "../security/redact.js";
 import { createSafeWriter } from "../security/safe-writer.js";
 import { createStreamRedactor } from "../security/stream-redact.js";
@@ -33,6 +41,8 @@ import {
 } from "./renderer.js";
 
 const USAGE_HINT = "Use --help para ver as opções.";
+/** Sessions and memories of the chat: ignored by Git (the repo is public). */
+const STATE_DIR = "data";
 
 /** The four sources of the context, one line each. */
 function describeSources(sources: ContextSources): string[] {
@@ -102,6 +112,57 @@ async function main(): Promise<number> {
       fallbackMessage: loadFallbackMessage(contextDir),
     };
 
+    // The state on the disk (sessions and memories), also before the
+    // configuration: listing and a wrong identifier need no key.
+    const startedAt = new Date();
+    const profileSlug = slugify(layers.userProfile.nome);
+    const readOnlyStore = createStateStore({
+      writer: createSafeWriter({ redact: redactText }),
+      baseDir: STATE_DIR,
+    });
+    if (options.listSessions) {
+      const sessions = readOnlyStore.listSessions();
+      const lines =
+        sessions.length === 0
+          ? ["Nenhuma sessão gravada."]
+          : sessions.map(
+              (item) =>
+                `${item.id}  perfil=${item.perfil}  turnos=${item.turnos}  atualizada=${item.atualizadaEm}`,
+            );
+      process.stdout.write(`${sanitizeForTerminal(lines.join("\n"))}\n`);
+      return outputs.exitCode() ?? 0;
+    }
+    const stamp = startedAt
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[-:]/g, "")
+      .replace("T", "-");
+    let sessionFile = newSessionFile(
+      `${profileSlug}-${stamp}`,
+      profileSlug,
+      startedAt.toISOString(),
+    );
+    if (options.sessionId !== undefined) {
+      const found = readOnlyStore.loadSession(options.sessionId);
+      if (found === undefined) {
+        printError(
+          `sessão não encontrada: ${options.sessionId}. Use --sessoes para ver as sessões gravadas.`,
+        );
+        return 1;
+      }
+      if (found.perfil !== profileSlug) {
+        printError(
+          `a sessão ${found.id} pertence ao perfil ${found.perfil}; inicie com --perfil ${found.perfil}.`,
+        );
+        return 1;
+      }
+      sessionFile = found;
+    }
+    // An ephemeral chat keeps nothing, so it needs none of these files.
+    const memoryPrompts = options.ephemeral
+      ? undefined
+      : loadMemoryPrompts(contextDir);
+
     const config = loadConfig();
     redactText = createRedactor([config.openaiApiKey]);
 
@@ -127,17 +188,44 @@ async function main(): Promise<number> {
       },
     });
 
-    const session = createChatSession({
-      llm: createOpenAiLlmClient(config),
+    const llm = createOpenAiLlmClient(config);
+    const output = createTerminalOutput(process.stdout, process.stderr);
+    const inner = createChatSession({
+      llm,
       instructions: context.text,
       critique,
-      output: createTerminalOutput(process.stdout, process.stderr),
+      output,
+      initialHistory: activeHistoryOf(sessionFile),
       redact: redactText,
       redactStream: () => createStreamRedactor([config.openaiApiKey]),
       now: () => new Date(),
       onTurn: (record) => sessionLog.append(record),
       rateLimit: { limiter, mode: "refuse" },
     });
+    const stateful =
+      memoryPrompts === undefined
+        ? undefined
+        : createStatefulSession({
+            session: inner,
+            llm,
+            store: createStateStore({
+              writer: createSafeWriter({ redact: redactText }),
+              baseDir: STATE_DIR,
+            }),
+            sessionFile,
+            memoryEnabled: !options.noMemory,
+            prompts: memoryPrompts,
+            limits: {
+              maxTokens: config.compressMaxTokens,
+              maxMessages: config.compressMaxMessages,
+              keepMessages: config.compressKeepMessages,
+              memoryMaxItems: config.memoryMaxItems,
+            },
+            output,
+            redact: redactText,
+            now: () => new Date(),
+          });
+    const session = stateful ?? inner;
 
     // First Ctrl+C: stop in an orderly way (this also ends a wait for a new
     // try). Second: leave now, with the exit code that a write error set.
@@ -152,6 +240,7 @@ async function main(): Promise<number> {
         stdout: process.stdout,
         stderr: process.stderr,
         session,
+        ...(stateful === undefined ? {} : { stateful }),
         contextText: context.text,
         profileName: layers.userProfile.nome,
         shutdown: shutdown.signal,
@@ -164,6 +253,10 @@ async function main(): Promise<number> {
   } catch (error) {
     if (error instanceof ConfigError) {
       printError(error.message);
+      return 1;
+    }
+    if (error instanceof StateError) {
+      printError(`estado: ${error.message}`);
       return 1;
     }
     if (error instanceof ContextError) {

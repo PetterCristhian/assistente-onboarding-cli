@@ -33,7 +33,8 @@ export interface SafeWriterOptions {
   extraFiles?: readonly string[];
 }
 
-const ALLOWED_TOP_LEVEL_DIRECTORIES = ["outputs", "logs"];
+// data/ holds the sessions and the memories of the chat (ignored by Git).
+const ALLOWED_TOP_LEVEL_DIRECTORIES = ["outputs", "logs", "data"];
 const EXTRA_FILES_PREFIX = "docs/";
 
 const NOT_SERIALIZABLE_MESSAGE =

@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m04-s2",
+  "perfil": "bruno-lima",
+  "criadaEm": "2026-11-18T18:28:43.674Z",
+  "atualizadaEm": "2026-11-18T18:28:46.490Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:28:46.490Z",
+      "pergunta": "Qual é o número do protocolo da minha solicitação de monitor?",
+      "resposta": "Bruno, não tenho acesso aos protocolos de solicitações. Você pode consultar a Central de Chamados ou falar com o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800.",
+      "origem": "rascunho"
+    }
+  ]
+}

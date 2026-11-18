@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m01-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:14.251Z",
+  "atualizadaEm": "2026-11-18T18:30:19.279Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:19.279Z",
+      "pergunta": "Ontem meu acesso ao sistema de ponto foi negado, apareceu o erro 403 na tela.",
+      "resposta": "Ana, para tratar do acesso negado ao sistema de ponto, abra um chamado na Central de Chamados para o Suporte de TI, informando o erro 403 e o sistema afetado. Você também pode contatar o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800.",
+      "origem": "rascunho"
+    }
+  ]
+}

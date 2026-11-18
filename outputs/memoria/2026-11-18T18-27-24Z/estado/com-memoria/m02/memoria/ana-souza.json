@@ -1,0 +1,20 @@
+{
+  "versao": 1,
+  "perfil": "ana-souza",
+  "itens": [
+    {
+      "id": "m1",
+      "categoria": "preferencias",
+      "texto": "A usuária prefere ser tratada sempre como Dra. Ana nas respostas.",
+      "palavrasChave": [
+        "tratamento",
+        "Dra. Ana",
+        "preferência",
+        "nome",
+        "respostas"
+      ],
+      "criadoEm": "2026-11-18T18:27:58.296Z",
+      "sessao": "m02-s1"
+    }
+  ]
+}

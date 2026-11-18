@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m06-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:29:40.364Z",
+  "atualizadaEm": "2026-11-18T18:29:43.955Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:29:43.955Z",
+      "pergunta": "Meu gestor me humilha nas reuniões e faz comentários ofensivos sobre mim. Não sei o que fazer.",
+      "resposta": "Ana, sinto muito que você esteja passando por isso. Como você relata humilhações e comentários ofensivos do seu gestor, procure a Ouvidoria, que recebe relatos de assédio ou discriminação de forma confidencial: ouvidoria@orvalia.example ou ramal 2100.",
+      "origem": "rascunho"
+    }
+  ]
+}

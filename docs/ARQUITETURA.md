@@ -1,6 +1,7 @@
 # Arquitetura — Assistente de Onboarding (Chatbot CLI)
 
 > Status: APROVADA e implementada (18/11/2026). Proposta em 16/11/2026; conferida contra o código e `package.json` na verificação final (ENG-61).
+> Disciplina 2: este documento descreve a arquitetura da disciplina 1. Sessão gravada, memória e compressão (pastas `src/memory/`, `src/storage/` e `data/`, e o script `npm run eval:memoria`) estão em `docs/adr/0008-persistencia-memoria-e-compressao.md`, que substitui o que aqui se diz sobre ausência de estado persistente.
 > Requisitos em `docs/PRD.md`. Decisões detalhadas em `docs/adr/`. Trabalho quebrado em `docs/BACKLOG.md`.
 
 ## 1. Visão geral

@@ -5,6 +5,11 @@ export const COMMAND_NAMES = [
   "contexto",
   "detalhes",
   "ajuda",
+  "sessao",
+  "memoria",
+  "esquecer",
+  "tokens",
+  "comprimir",
 ] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
@@ -21,6 +26,11 @@ export const HELP_LINES: readonly string[] = [
   "  /contexto  mostra o contexto enviado ao modelo",
   "  /detalhes  liga ou desliga o resultado da autoavaliação após cada resposta",
   "  /ajuda     mostra esta lista",
+  "  /sessao    mostra o identificador desta sessão (para retomar depois)",
+  "  /memoria   mostra o que está guardado na memória deste perfil",
+  "  /esquecer  apaga toda a memória deste perfil",
+  "  /tokens    mostra o tamanho do histórico (mensagens e tokens estimados)",
+  "  /comprimir resume as mensagens antigas agora",
 ];
 
 function isCommandName(value: string): value is CommandName {

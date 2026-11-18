@@ -28,3 +28,6 @@ desktop.ini
 
 # Configuração local do Claude Code
 .claude/settings.local.json
+
+# Sessões e memórias do chat (dados de uso; o repositório é PÚBLICO)
+data/

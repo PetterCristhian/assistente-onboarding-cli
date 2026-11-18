@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m03-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:46.553Z",
+  "atualizadaEm": "2026-11-18T18:30:51.062Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:51.062Z",
+      "pergunta": "Ontem meu acesso ao sistema de ponto foi negado, apareceu o erro 403 na tela.",
+      "resposta": "Ana, como o acesso ao ponto foi negado, abra um chamado na Central de Chamados para o Suporte de TI: suporte-ti@orvalia.example, ramal 2800. O Portal de Pessoas é o sistema usado para registrar o ponto e deve estar acessível pelo computador ou pelo aplicativo no celular; não precisa de VPN.",
+      "origem": "rascunho"
+    }
+  ]
+}

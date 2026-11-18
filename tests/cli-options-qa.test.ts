@@ -35,7 +35,7 @@ afterAll(() => {
 function run(args: string[]) {
   return spawnSync(
     process.execPath,
-    ["--import", pathToImportUrl(TSX_LOADER), MAIN, ...args],
+    ["--import", pathToImportUrl(TSX_LOADER), MAIN, "--efemera", ...args],
     {
       cwd: workDir,
       encoding: "utf8",

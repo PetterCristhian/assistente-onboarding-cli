@@ -1,0 +1,19 @@
+{
+  "versao": 1,
+  "perfil": "ana-souza",
+  "itens": [
+    {
+      "id": "m1",
+      "categoria": "relacionamento",
+      "texto": "Houve encaminhamento da pessoa à Ouvidoria para relatar a situação.",
+      "palavrasChave": [
+        "encaminhamento",
+        "Ouvidoria",
+        "canal humano",
+        "relato"
+      ],
+      "criadoEm": "2026-11-18T18:29:40.362Z",
+      "sessao": "m06-s1"
+    }
+  ]
+}

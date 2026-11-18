@@ -1,0 +1,20 @@
+{
+  "versao": 1,
+  "perfil": "ana-souza",
+  "itens": [
+    {
+      "id": "m1",
+      "categoria": "problemas",
+      "texto": "Ontem, o acesso da pessoa usuária ao sistema de ponto foi negado e apareceu o erro 403 na tela.",
+      "palavrasChave": [
+        "ponto",
+        "acesso negado",
+        "erro 403",
+        "sistema",
+        "ontem"
+      ],
+      "criadoEm": "2026-11-18T18:30:52.659Z",
+      "sessao": "m03-s1"
+    }
+  ]
+}

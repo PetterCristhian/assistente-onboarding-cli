@@ -1,0 +1,35 @@
+{
+  "versao": 1,
+  "id": "m05-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:31:54.230Z",
+  "atualizadaEm": "2026-11-18T18:32:23.384Z",
+  "resumo": "O usuário abriu um chamado para trocar o notebook, código ZX-4471, e perguntou como acompanhar. O assistente informou que não tinha essa informação e orientou contatar o Suporte de TI: suporte-ti@orvalia.example ou ramal 2800.\n\nO usuário também perguntou como funciona o trabalho remoto. O assistente informou que cada pessoa trabalha na sede 2 dias por semana e remotamente nos outros 3; os dias presenciais são definidos pela pessoa gestora direta, Carla Mendes, e constam na agenda da equipe. Na primeira semana, o trabalho é inteiramente presencial na sede. A empresa fornece notebook, monitor e fone com microfone. Dúvidas podem ser encaminhadas ao Atendimento de RH: rh@orvalia.example ou ramal 2000.",
+  "mensagensAtivas": 4,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:32:04.145Z",
+      "pergunta": "Abri um chamado para trocar meu notebook e o código do chamado é ZX-4471. Como acompanho esse pedido?",
+      "resposta": "Ana, não tenho a informação sobre como acompanhar um chamado. Para obter orientação, contate o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800.",
+      "origem": "revisao"
+    },
+    {
+      "em": "2026-11-18T18:32:15.226Z",
+      "pergunta": "Como funciona o trabalho remoto?",
+      "resposta": "Cada pessoa trabalha na sede 2 dias por semana e remotamente nos outros 3. Os dias presenciais da equipe são definidos pela sua pessoa gestora direta, Carla Mendes, e ficam na agenda da equipe. Na primeira semana, o trabalho é inteiramente presencial na sede.\n\nA empresa fornece notebook, monitor e fone com microfone. Para dúvidas sobre o trabalho remoto, você pode falar com o Atendimento de RH pelo e-mail rh@orvalia.example ou pelo ramal 2000.",
+      "origem": "revisao"
+    },
+    {
+      "em": "2026-11-18T18:32:18.534Z",
+      "pergunta": "E como registro o ponto?",
+      "resposta": "O ponto é registrado no Portal de Pessoas, pelo computador ou pelo aplicativo no celular. Você deve fazer quatro marcações por dia: entrada, saída para o intervalo, retorno do intervalo e saída.\n\nSe esquecer ou fizer uma marcação incorreta, peça um ajuste no Portal de Pessoas, com justificativa, em até 2 dias úteis após o dia da marcação. O pedido é analisado pela sua gestora direta em até 3 dias úteis. Para dúvidas, contate o Atendimento de RH pelo e-mail rh@orvalia.example ou pelo ramal 2000.",
+      "origem": "rascunho"
+    },
+    {
+      "em": "2026-11-18T18:32:23.384Z",
+      "pergunta": "Qual é o código do chamado que mencionei no início desta conversa?",
+      "resposta": "O código do chamado é ZX-4471.",
+      "origem": "rascunho"
+    }
+  ]
+}

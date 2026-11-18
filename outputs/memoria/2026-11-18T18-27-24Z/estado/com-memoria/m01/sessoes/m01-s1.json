@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m01-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:27:24.379Z",
+  "atualizadaEm": "2026-11-18T18:27:33.942Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:27:33.942Z",
+      "pergunta": "Ontem meu acesso ao sistema de ponto foi negado, apareceu o erro 403 na tela.",
+      "resposta": "Não é possível responder à sua solicitação neste momento. Para obter ajuda, você pode procurar o Atendimento de RH, que é o canal geral da empresa, pelo e-mail rh@orvalia.example ou pelo ramal 2000.",
+      "origem": "fallback"
+    }
+  ]
+}

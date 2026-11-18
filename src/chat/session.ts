@@ -97,6 +97,20 @@ export interface ChatSessionDeps {
   readonly onTurn?: (record: TurnRecord) => void | Promise<void>;
   /** The clock of `TurnRecord.at`. Without it, the epoch (tests). */
   readonly now?: () => Date;
+  /**
+   * The messages of a session that is resumed: approved texts read back from
+   * the disk, never anything else (architecture rule 5).
+   */
+  readonly initialHistory?: readonly LlmMessage[];
+}
+
+export interface AskOptions {
+  readonly signal?: AbortSignal;
+  /**
+   * Text added after the context for this question only: the memory layer
+   * and the summary of the conversation. The evaluator reads it too.
+   */
+  readonly extraContext?: string;
 }
 
 export type TurnResult =
@@ -119,11 +133,10 @@ export type TurnResult =
 
 export interface ChatSession {
   readonly history: readonly LlmMessage[];
-  ask(
-    question: string,
-    options?: { signal?: AbortSignal },
-  ): Promise<TurnResult>;
+  ask(question: string, options?: AskOptions): Promise<TurnResult>;
   clear(): void;
+  /** Drops the oldest messages: the sliding window of the compression. */
+  dropOldest(count: number): void;
 }
 
 const BUSY_MESSAGE = "turno em andamento";
@@ -155,7 +168,7 @@ function addUsage(
 }
 
 export function createChatSession(deps: ChatSessionDeps): ChatSession {
-  const history: LlmMessage[] = [];
+  const history: LlmMessage[] = [...(deps.initialHistory ?? [])];
   let busy = false;
   // Whether a line of the answer is open on the output: some text was
   // streamed and the line was not closed yet.
@@ -251,8 +264,17 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
   async function runTurn(
     question: string,
     signal: AbortSignal | undefined,
+    extraContext: string | undefined,
   ): Promise<TurnResult> {
     open = false;
+    const extra =
+      extraContext === undefined || extraContext === ""
+        ? ""
+        : `
+
+${extraContext}`;
+    const instructions = `${deps.instructions}${extra}`;
+    const evaluatorContext = `${deps.critique.evaluatorContext}${extra}`;
     // Not narrowed to "draft": the closures below move it.
     let phase = "draft" as Phase;
     const counters: RetryCounters = {
@@ -317,7 +339,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       try {
         const request = buildEvaluationRequest({
           evaluatorPrompt: deps.critique.evaluatorPrompt,
-          evaluatorContext: deps.critique.evaluatorContext,
+          evaluatorContext,
           history: past,
           question,
           draft: text,
@@ -368,7 +390,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       // 1. DRAFT
       llmCalls += 1;
       const drafted: LlmTextResult = await deps.llm.streamText({
-        instructions: deps.instructions,
+        instructions,
         input: [...past, { role: "user", content: question }],
         ...(signal === undefined ? {} : { signal }),
         onChunk: (piece) => {
@@ -458,7 +480,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       try {
         revised = await deps.llm.streamText({
           ...buildRevisionRequest({
-            instructions: deps.instructions,
+            instructions,
             revisionPrompt: deps.critique.revisionPrompt,
             history: past,
             question,
@@ -570,14 +592,18 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
 
   async function ask(
     question: string,
-    options: { signal?: AbortSignal } = {},
+    options: AskOptions = {},
   ): Promise<TurnResult> {
     if (busy) {
       throw new Error(BUSY_MESSAGE);
     }
     busy = true;
     try {
-      const result = await runTurn(question, options.signal);
+      const result = await runTurn(
+        question,
+        options.signal,
+        options.extraContext,
+      );
       const record = toRecord(question, result);
       if (record !== undefined && deps.onTurn !== undefined) {
         try {
@@ -606,6 +632,12 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
         throw new Error(BUSY_MESSAGE);
       }
       history.length = 0;
+    },
+    dropOldest(count: number): void {
+      if (busy) {
+        throw new Error(BUSY_MESSAGE);
+      }
+      history.splice(0, Math.max(0, Math.min(count, history.length)));
     },
   };
 }
