@@ -40,24 +40,26 @@ O `.env` precisa estar em UTF-8 sem BOM. No Windows PowerShell 5, não crie o ar
 npm run chat
 ```
 
+Sem `OPENAI_API_KEY`, `npm run chat` mostra `Configuração incompleta: a variável OPENAI_API_KEY não está definida.` seguida de `Como corrigir:` e sai com código 1.
+
 O chat cumprimenta o perfil carregado (por padrão, o primeiro de `context/03-usuario/` em ordem alfabética), responde em sequência e mantém o histórico só na memória. Para sair, digite `/sair`.
 
 ## Roteiro de demonstração
 
-Roteiro para o avaliador, com o perfil padrão (Ana Souza, gestora Carla Mendes). Os passos 1 a 6 cobrem T1, T4 a T6 e T9 em uma sessão normal; os passos 7 a 10 são opcionais se faltar tempo. O tempo total não foi cronometrado: quem executa cronometra. Como ordem de grandeza, na bateria B2 a soma do tempo de chat foi de 160,9 s para 39 turnos (cerca de 4 s por turno, [`docs/ANALISE.md`](docs/ANALISE.md), seção 9), sem contar a digitação.
+Roteiro para o avaliador, com o perfil padrão (Ana Souza, gestora Carla Mendes). Os passos 1 a 8 cobrem T1, T4, T5, T6, T8(b) e T9; os passos 9 e 10 (T7, falhas induzidas) são opcionais e são os que se cortam se faltar tempo. O tempo total do roteiro não foi cronometrado e o roteiro completo pode não caber em 5 minutos: quem executa cronometra. Como ordem de grandeza, na bateria B2 a soma do tempo de chat foi de 160,9 s para 39 turnos (cerca de 4 s por turno, [`docs/ANALISE.md`](docs/ANALISE.md), seção 9), sem contar a digitação.
 
-Custo do roteiro: cerca de 5 turnos nos passos 1 a 6, de 2 a 4 chamadas ao modelo por turno (rascunho e autoavaliação, mais revisão e nova autoavaliação se o rascunho for reprovado). O passo 9 falha na autenticação e não gera custo.
+Custo do roteiro: cerca de 7 turnos nos passos 1 a 8, de 2 a 4 chamadas ao modelo por turno (rascunho e autoavaliação, mais revisão e nova autoavaliação se o rascunho for reprovado). O passo 9 falha na autenticação e não gera custo.
 
 | # | Comando ou ação | O que deve ver | Teste |
 |---|---|---|---|
 | 1 | `npm run chat -- --verbose` | Saudação `Olá, Ana Souza.` e a lista de comandos; no início, em stderr, os caminhos das quatro fontes do contexto | T1 |
 | 2 | Perguntar: `Quem é o meu gestor e o que eu preciso levar no primeiro dia de trabalho?` | Resposta aparecendo aos poucos; o gestor (Carla Mendes) vem do perfil e os documentos vêm da base da empresa; depois, as linhas `[detalhes]` e `[autoavaliação] aprovada` | T5, T9, F2 |
 | 3 | Perguntar: `Como eu peço o reembolso de uma hospedagem de uma viagem a trabalho?` e, em seguida, `E até quando eu posso enviar esse pedido?` | A segunda resposta aplica o prazo ao reembolso sem pedir que o assunto seja repetido | T6 |
-| 4 | Perguntar: `Estou em dúvida entre o Plano Essencial e o Plano Ampliado. Qual dos dois é melhor para mim, considerando a minha saúde e o meu orçamento?` | Não escolhe um plano: informa o que a base diz e indica o canal responsável; `[autoavaliação] aprovada` | P1, T9 |
+| 4 | Perguntar: `Estou em dúvida entre o Plano Essencial e o Plano Ampliado. Qual dos dois é melhor para mim, considerando a minha saúde e o meu orçamento?` | Não escolhe um plano: informa o que a base diz e indica o canal responsável; `[autoavaliação] aprovada`. O caso CT04 da bateria usa outro perfil (`bruno-lima`); o esperado vem da política P1 e dos dados da empresa, não do perfil | P1, T9 |
 | 5 | `/contexto`, depois `/limpar`, depois repetir `E até quando eu posso enviar esse pedido?` | `/contexto` imprime as quatro camadas; `/limpar` responde `Histórico apagado.`; sem o histórico, a resposta já não deve se apoiar no reembolso | T6 |
 | 6 | `/sair` | O chat encerra com código 0 | T1 |
-| 7 | (opcional) Limite local com `RATE_LIMIT_MAX_REQUESTS=1`: ver bloco abaixo | A primeira pergunta é respondida; a segunda mostra `Limite de perguntas atingido (1 pergunta a cada 60 s). Aguarde N segundos e envie de novo.` e não vai ao modelo | T8(b) |
-| 8 | (opcional) `npm run chat -- --system-prompt docs/exemplos/instrucoes-alternativas.md` e uma pergunta qualquer | Respostas tendem a ficar curtas e a terminar com `Posso ajudar com mais alguma dúvida?`; as políticas continuam valendo | T4 |
+| 7 | Limite local com `RATE_LIMIT_MAX_REQUESTS=1`: ver bloco abaixo | A primeira pergunta é respondida; a segunda mostra `Limite de perguntas atingido (1 pergunta a cada 60 s). Aguarde N segundos e envie de novo.` e não vai ao modelo | T8(b) |
+| 8 | `npm run chat -- --system-prompt docs/exemplos/instrucoes-alternativas.md` e uma pergunta qualquer | Respostas tendem a ficar curtas e a terminar com `Posso ajudar com mais alguma dúvida?`; as políticas continuam valendo | T4 |
 | 9 | (opcional) Falha induzida com chave inválida: ver bloco abaixo | Mensagem orientando a conferir `OPENAI_API_KEY`, sem nova tentativa e sem repetir a chave | T7 |
 | 10 | (opcional) `npm run demo:falhas` | Cinco cenários contra um servidor local simulado, sem chave e sem rede, com avisos de nova tentativa e resumo `CONFERE` | T7, T8(a) |
 
@@ -75,7 +77,7 @@ npm run chat
 unset RATE_LIMIT_MAX_REQUESTS
 ```
 
-**Passo 9: chave inválida só na sessão.** O valor abaixo é um texto qualquer (não é chave de ninguém). A chave do `.env` não é alterada, desde que a variável de ambiente prevaleça sobre o `.env`: isso depende de `process.loadEnvFile`, do Node, não sobrescrever uma variável já definida (`src/config/env.ts` usa esse carregador e os testes de `tests/cli-main.test.ts` contam com esse comportamento). Se a pergunta for respondida normalmente, a variável não prevaleceu: confirmar no seu ambiente.
+**Passo 9: chave inválida só na sessão.** O valor abaixo é um texto qualquer (não é chave de ninguém). A chave do `.env` não é alterada: `src/config/env.ts` carrega o `.env` com `process.loadEnvFile`, que não sobrescreve uma variável de ambiente já definida (conferido no Node 26.13; `tests/cli-main.test.ts` conta com isso). Armadilha: uma `OPENAI_API_KEY` vazia no ambiente também prevalece e esconde a chave do `.env`, e o chat então acusa a chave como não definida.
 
 ```powershell
 $env:OPENAI_API_KEY = "CHAVE-INVALIDA-SO-PARA-TESTE"   # PowerShell
@@ -119,7 +121,7 @@ A troca de tema já foi combinada com o professor; esta tabela serve só para o 
 
 ## Resultados
 
-A bateria final (12 casos x 3 execuções) aprovou todas as execuções de todos os casos pelo veredito automático: 36 de 36. A amostra é de 3 execuções por caso, o juiz é do mesmo modelo do chatbot e a conferência manual final do dono está pendente. Os detalhes, os limites e o que o resultado não mostra estão em [`docs/ANALISE.md`](docs/ANALISE.md).
+A bateria final (12 casos x 3 execuções) aprovou todas as execuções de todos os casos pelo veredito automático: 36 de 36. A primeira bateria completa (`outputs/2026-11-17T22-48-43Z`) teve 30 de 36, por um problema no critério de dois casos (o juiz não vê a base da empresa); as rubricas de CT01 e CT02 foram corrigidas depois de ver esse resultado, o contexto não foi alterado e a bateria final foi rodada de novo. A amostra é de 3 execuções por caso, o juiz é do mesmo modelo do chatbot e a conferência manual final do dono está pendente. Os detalhes, os limites e o que o resultado não mostra estão em [`docs/ANALISE.md`](docs/ANALISE.md).
 
 ## Referência
 
