@@ -135,7 +135,18 @@ describe("docs/ANALISE.md, Appendix C", () => {
       `${read("B2", "autoavaliacao.rascunhosReprovados")} de ${read("B2", "autoavaliacao.turnosRespondidos")}`,
     ];
     expect(phrases).toEqual(["30 de 36", "36 de 36", "3 de 39", "1 de 39"]);
-    for (const phrase of phrases) expect(section0).toContain(phrase);
+    const origins = [
+      "B1 totais.passou",
+      "B2 totais.passou",
+      "B1 autoavaliacao.rascunhosReprovados/turnosRespondidos",
+      "B2 autoavaliacao.rascunhosReprovados/turnosRespondidos",
+    ];
+    phrases.forEach((phrase, i) =>
+      expect(
+        section0.includes(phrase),
+        `seção 0 deve conter a frase exata "${phrase}" (valor de ${origins[i]} no resumo.json)`,
+      ).toBe(true),
+    );
   });
 
   it("matches every cited value with resumo.json", () => {
