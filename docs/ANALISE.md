@@ -139,4 +139,4 @@ Trabalho futuro e limitações (sem alterar os casos desta bateria; as ressalvas
 - No contexto: deixar claro quando recusar e quando declarar falta de informação, e exigir a elegibilidade de 12 meses ao tratar de férias.
 - Reforçar as rubricas de CT04, CT10 e CT12 só se oscilarem.
 
-Decisão pendente do dono: ajustar ou não o contexto (CT06 e CT10). Se decidir ajustar, isso muda o hashContexto e exige bateria nova (3ª de no máximo 4). Conferência final do dono sobre a revisão manual também pendente (ver seção de revisão).
+Decisão do dono (2026-11-18): a bateria `outputs/2026-11-18T11-46-47Z` foi aceita como bateria final, sem nova iteração. As 8 ressalvas da revisão manual não são reprovações e ficam registradas como limitações e trabalho futuro; o contexto não foi alterado. A conferência final do dono sobre as discordâncias e a amostra dos casos críticos (CT05, CT08, CT09 e CT11) continua pendente (ver seção de revisão).
