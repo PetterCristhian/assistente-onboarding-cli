@@ -1,7 +1,8 @@
 # ADR 0001 — Stack e ferramentas
 
-- Status: proposta (16/11/2026)
+- Status: aceita (18/11/2026)
 - Relacionado: PRD D2, D3; F4, F15
+- Aceita na verificação final (ENG-61), depois de conferida com `package.json`, `.github/workflows/ci.yml` e o código: duas dependências de runtime, Node >= 22 em `engines`, `tsx` sem build, Vitest, ESLint e Prettier, e o CI de job único com `npm ci` e `npm run check`, sem secret. Registro em `docs/VERIFICACAO.md`.
 
 ## Contexto
 
@@ -34,7 +35,7 @@ Revisão de 16/11/2026: o dono aprovou incluir um workflow pequeno de CI, apesar
 
 - Instalação do avaliador: Node + `npm install` + `.env`.
 - O CI confere o portão a cada PR, mas não substitui rodar `npm run check` antes de cada commit (regra em `CLAUDE.md`).
-- O CI depende de `package.json` e `package-lock.json` versionados e do script `check`. Enquanto a issue 1 não os cria, o workflow passa sem executar verificações.
+- O CI depende de `package.json` e `package-lock.json` versionados e do script `check`. Esses arquivos existem desde a issue 1 (ENG-43), e o workflow executa as verificações de fato. O passo que pula tudo quando os arquivos não existem é um resquício do arranque, sem efeito hoje.
 - O CI roda sem `OPENAI_API_KEY`. Por isso, lint, typecheck, testes unitários e varredura de segredos precisam continuar funcionando sem a chave e sem rede.
 - Testes unitários cobrem só lógica determinística (montagem de contexto, retry, rate limit, redação, veredito). Eles não substituem a bateria F12, que roda contra o modelo real, como o PRD exige.
-- Na data desta ADR, o Node não foi encontrado no PATH da máquina de desenvolvimento: a issue 1 começa pela instalação.
+- Na data desta ADR, o Node não foi encontrado no PATH da máquina de desenvolvimento, e a issue 1 começou pela instalação. A pendência foi resolvida na ENG-43.

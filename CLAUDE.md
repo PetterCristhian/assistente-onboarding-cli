@@ -32,14 +32,22 @@ Chatbot de terminal em TypeScript, com a OpenAI, que responde dúvidas de onboar
 ## Estrutura
 ```
 context/    as 4 camadas (conteúdo, sem código): 01-instrucoes-globais.md,
-            02-politicas.md, 03-usuario/*.json, 04-empresa/*.md, fallback.md
+            02-politicas.md, 03-usuario/*.json, 04-empresa/*.md; mais os
+            arquivos de apoio (não são camadas): avaliador.md, revisao.md,
+            juiz.md, fallback.md
 src/        cli/ config/ context/ llm/ chat/ security/ logging/
-evals/      casos.json, runner.ts, verdict.ts, report.ts
-scripts/    demo-falhas.ts, show-context.ts, check-secrets.ts
-tests/      testes unitários (Vitest)
+evals/      casos.json, schema.ts, normalize.ts, runner.ts, verdict.ts,
+            record.ts, aggregate.ts, report.ts, judge.ts, cli.ts, args.ts,
+            contexts.ts, collector.ts, retry-count.ts, battery-id.ts,
+            context-hash.ts, markdown.ts, redact-lines.ts, cases-doc.ts,
+            cases-doc-cli.ts
+scripts/    eval.ts, casos-doc.ts, smoke-llm.ts, demo-falhas.ts (e
+            demo-falhas/), show-context.ts, check-secrets.ts
+tests/      testes unitários (Vitest); fixtures/ e helpers/
 outputs/    resultados das baterias e evidências (VERSIONADO, entregável)
 logs/       logs de sessão (IGNORADO pelo git)
-docs/       PRD, ARQUITETURA, BACKLOG, adr/, CASOS-DE-TESTE, REUSO, ANALISE
+docs/       PRD, ARQUITETURA, BACKLOG, adr/, CASOS-DE-TESTE, REUSO, ANALISE,
+            VERIFICACAO, exemplos/
 ```
 
 ## Convenções
@@ -84,4 +92,4 @@ docs/       PRD, ARQUITETURA, BACKLOG, adr/, CASOS-DE-TESTE, REUSO, ANALISE
 Se uma chave vazar: avisar o dono na hora para revogá-la no painel da OpenAI. Reescrever o histórico do Git não resolve.
 
 ## Projeto no Linear
-- Time/Projeto: a definir pelo orquestrador ao criar as issues de `docs/BACKLOG.md`
+- Time Engenharia, projeto Chatbot de Onboarding (CLI), issues ENG-43 a ENG-61 (`docs/BACKLOG.md`)

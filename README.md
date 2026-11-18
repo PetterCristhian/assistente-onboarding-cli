@@ -4,9 +4,20 @@ Chatbot de terminal, em TypeScript e com a OpenAI, que responde dúvidas de onbo
 O enunciado original usa uma fintech; o domínio foi trocado para onboarding, com o professor, e as regras do enunciado têm equivalentes neste projeto (tabela abaixo).
 Trabalho de pós-graduação (Engenharia de Contexto em IA): o repositório traz as políticas, os casos de teste, os outputs da bateria e a análise.
 
+## Dados fictícios
+
+A empresa Orvalia, as pessoas (Ana Souza, Bruno Lima, Carla Mendes, Diego Ferraz), os e-mails (domínio `.example`), ramais e contatos são inventados para este trabalho; qualquer semelhança com pessoas ou empresas reais é coincidência.
+
 ## Início rápido
 
-Requisito: Node.js 22 ou superior (campo `engines`); o projeto é testado em Node 24 (`.nvmrc` e CI).
+Requisito: Node.js 22 ou superior (campo `engines`); o projeto é testado em Node 24 (`.nvmrc` e CI). A verificação local foi feita em Node 26.13.1; o Node 24 é coberto pelo CI. Se você tiver o Node 24, rodar `npm run check` com ele é uma conferência opcional.
+
+**Obter o código.** Clone o repositório e entre na pasta (a URL do repositório público é preenchida pelo autor ao publicar; veja [`docs/VERIFICACAO.md`](docs/VERIFICACAO.md)):
+
+```bash
+git clone <URL-DESTE-REPOSITORIO>
+cd <PASTA-CLONADA>
+```
 
 **Sem chave e sem custo.** Não chama a OpenAI nem usa a rede:
 
@@ -223,7 +234,7 @@ Para conferir, rode `npm run contexto`: a primeira seção deve mostrar `Instru�
 - Se uma chave vazar, revogue-a no painel da OpenAI. Reescrever o histórico do Git não resolve.
 - As perguntas e o contexto montado são enviados à OpenAI. Com `--system-prompt`, o conteúdo do arquivo também: não aponte para um arquivo com segredos.
 - `logs/` é ignorado pelo Git. `outputs/` é versionado: confira o conteúdo de uma pasta nova antes do commit, porque o texto vem do modelo.
-- O repositório será público (publicação na ENG-61). Detalhes em [`docs/adr/0007-protecao-da-credencial.md`](docs/adr/0007-protecao-da-credencial.md).
+- O repositório será público (publicação na ENG-61, a cargo do autor; as decisões e a conferência do histórico estão em [`docs/VERIFICACAO.md`](docs/VERIFICACAO.md)). Detalhes em [`docs/adr/0007-protecao-da-credencial.md`](docs/adr/0007-protecao-da-credencial.md).
 
 ## CI e documentação
 
@@ -236,4 +247,11 @@ A cada pull request e a cada push na `main`, o GitHub Actions ([`.github/workflo
 - [`docs/REUSO.md`](docs/REUSO.md): reuso da estrutura em outro domínio
 - [`docs/CASOS-DE-TESTE.md`](docs/CASOS-DE-TESTE.md): os 12 casos de teste
 - [`docs/BACKLOG.md`](docs/BACKLOG.md): plano de trabalho
+- [`docs/VERIFICACAO.md`](docs/VERIFICACAO.md): verificação final de entrega (clone limpo, varredura do histórico, E1 a E5, T1 a T9, pendências)
 - [`CHANGELOG.md`](CHANGELOG.md): histórico de mudanças
+
+O histórico de revisão (os pull requests, com a revisão e o QA de cada issue) está no repositório de arquivo, privado, do autor. O repositório público contém a `main` e os branches, sem as referências dos pull requests.
+
+## Licença
+
+Sem licença: todos os direitos reservados. O código e os textos estão disponíveis para consulta e avaliação do trabalho; copiar, reutilizar ou redistribuir depende de autorização do autor.

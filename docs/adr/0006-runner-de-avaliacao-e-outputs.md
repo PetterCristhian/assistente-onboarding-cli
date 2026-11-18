@@ -1,7 +1,8 @@
 # ADR 0006 — Runner dos casos de teste e formato dos outputs
 
-- Status: proposta (16/11/2026)
+- Status: aceita (18/11/2026)
 - Relacionado: F11, F12, F13, F14; entregáveis E3, E4, E5
+- Aceita na verificação final (ENG-61), depois de conferida com `evals/` e com as três pastas de bateria versionadas. Os desvios do formato original estão nas notas de implementação (ENG-56 e ENG-57) abaixo; o texto do exemplo de linha acima é a referência inicial, e `evals/record.ts` é a definição exata. O veredito tem, na prática, três camadas (checagens, juiz e revisão manual), como diz a seção "Veredito".
 
 ## Contexto
 

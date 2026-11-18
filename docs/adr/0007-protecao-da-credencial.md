@@ -1,7 +1,8 @@
 # ADR 0007 — Proteção da credencial em repositório público
 
-- Status: proposta (16/11/2026)
+- Status: aceita (18/11/2026)
 - Relacionado: F12, F15; risco "Vazamento de credencial" do PRD
+- Aceita na verificação final (ENG-61), depois de conferida com `src/config/env.ts`, `src/security/`, `scripts/check-secrets.ts`, `.gitignore` e a varredura do histórico (decisão 7, resultado abaixo).
 
 ## Contexto
 
@@ -26,6 +27,10 @@ O arquivo indicado em `--system-prompt` vira a camada 1 e, como todo o contexto,
 
 - `OPENAI_CUSTOM_HEADERS` é recusada em `loadConfig` (erro de configuração, sem repetir o valor): o SDK a lê por conta própria e a aplica depois dos cabeçalhos de autenticação (ADR 0002, decisão 9). A mitigação por cabeçalhos próprios em `src/llm/client.ts` continua como segunda barreira.
 - As mensagens mostradas ao usuário sobre falhas do provedor são textos fixos mais o status e um código curto (identificador de até 40 caracteres). **Nunca o `error.message` do SDK**: o de um 401 cita a chave mascarada. Cabeçalhos de resposta são lidos só para o `retry-after` e nunca saem do módulo de classificação (`src/llm/errors.ts`). O texto final ainda passa por `redact()` na sessão, e um erro que não é do SDK mantém a própria mensagem, já redigida.
+
+## Resultado da varredura do histórico (decisão 7, ENG-61)
+
+Feita em 18/11/2026 no repositório local, com `git log -p --all`: o padrão `sk-` seguido de 20 ou mais caracteres aparece em 22 linhas do histórico, todas sem valor de credencial (palavras de texto e de testes, e uma chave fictícia de teste, adicionada e removida na ENG-57). `.env` nunca foi adicionado (só `.env.example`), nenhum PDF entrou. A busca pelo valor da chave real do dono no histórico só ele pode fazer, e está PENDENTE. A tabela, os comandos e as categorias estão em [`docs/VERIFICACAO.md`](../VERIFICACAO.md). Decisão sobre a publicação: um repositório novo e público, só com a `main` e os branches (sem as referências de pull request, que ficam no repositório atual, mantido como arquivo privado); o histórico não foi reescrito.
 
 ## Alternativas descartadas
 
