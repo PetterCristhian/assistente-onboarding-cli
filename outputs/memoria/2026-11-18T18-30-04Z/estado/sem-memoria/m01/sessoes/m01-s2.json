@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m01-s2",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:19.280Z",
+  "atualizadaEm": "2026-11-18T18:30:22.619Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:22.619Z",
+      "pergunta": "Qual foi mesmo o código de erro do problema que relatei no sistema de ponto?",
+      "resposta": "Não tenho essa informação registrada nesta conversa. Se o problema envolver um erro de pagamento ou de folha, entre em contato com a Folha de Pagamento pelo e-mail folha@orvalia.example ou pelo ramal 2300. Para outros problemas no sistema de ponto, procure o Atendimento de RH: rh@orvalia.example ou ramal 2000.",
+      "origem": "rascunho"
+    }
+  ]
+}

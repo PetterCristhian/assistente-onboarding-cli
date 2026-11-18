@@ -28,6 +28,9 @@ const NON_LAYER_FILES = [
   "avaliador.md",
   "revisao.md",
   "juiz.md",
+  "memoria-uso.md",
+  "memoria-extracao.md",
+  "resumo.md",
 ];
 
 // Layers that hold no company data (docs/adr/0003-contexto-em-quatro-camadas.md).
@@ -37,6 +40,9 @@ const FILES_WITHOUT_COMPANY_DATA = [
   "avaliador.md",
   "revisao.md",
   "juiz.md",
+  "memoria-uso.md",
+  "memoria-extracao.md",
+  "resumo.md",
 ];
 
 // Written as code points: an invisible character in the source is easy to lose.
@@ -123,7 +129,14 @@ describe("context files", () => {
     // The prompts are sent in calls of their own, not in the context.
     const total = readContextFiles(
       FILES.filter(
-        (path) => !["avaliador.md", "revisao.md", "juiz.md"].includes(path),
+        (path) =>
+          ![
+            "avaliador.md",
+            "revisao.md",
+            "juiz.md",
+            "memoria-extracao.md",
+            "resumo.md",
+          ].includes(path),
       ),
     ).reduce((sum, file) => sum + file.content.length, 0);
 

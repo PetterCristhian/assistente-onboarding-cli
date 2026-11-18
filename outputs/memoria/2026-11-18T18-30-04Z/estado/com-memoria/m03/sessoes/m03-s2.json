@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m03-s2",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:30:52.660Z",
+  "atualizadaEm": "2026-11-18T18:30:56.781Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:30:56.781Z",
+      "pergunta": "Quais benefícios a empresa oferece?",
+      "resposta": "Ana, a Orvalia oferece:\n\n- Vale-refeição de R$ 38,00 por dia útil trabalhado, sem desconto em folha.\n- Vale-transporte para os deslocamentos à sede, com desconto em folha de 6% do salário-base, limitado ao valor recebido.\n- Auxílio para trabalho remoto de R$ 120,00 por mês, pago na folha a partir do mês seguinte ao de início.\n- Plano de saúde em duas opções: Essencial, sem custo para você, ou Ampliado, por R$ 180,00 mensais.\n- Plano odontológico opcional, por R$ 18,00 mensais por pessoa.\n- Adiantamento salarial de 40% do salário-base, pago no dia 15 ou no dia útil anterior e descontado do pagamento do fim do mês.",
+      "origem": "rascunho"
+    }
+  ]
+}

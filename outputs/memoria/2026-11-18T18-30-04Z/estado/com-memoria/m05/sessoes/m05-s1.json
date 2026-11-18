@@ -1,0 +1,35 @@
+{
+  "versao": 1,
+  "id": "m05-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:31:24.362Z",
+  "atualizadaEm": "2026-11-18T18:31:52.888Z",
+  "resumo": "Usuário abriu chamado para trocar o notebook, código ZX-4471. Para acompanhar, foi orientado a contatar o Suporte de TI em suporte-ti@orvalia.example ou ramal 2800.\n\nUsuário perguntou como funciona o trabalho remoto. Foi informado que o modelo é híbrido: 2 dias presenciais na sede e 3 remotos; Carla Mendes define os dias presenciais, registrados na agenda da equipe. Na primeira semana, o trabalho é totalmente presencial. A empresa fornece notebook, monitor e fone com microfone. Dúvidas sobre trabalho remoto podem ser encaminhadas ao Atendimento de RH em rh@orvalia.example ou ramal 2000.",
+  "mensagensAtivas": 4,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:31:32.167Z",
+      "pergunta": "Abri um chamado para trocar meu notebook e o código do chamado é ZX-4471. Como acompanho esse pedido?",
+      "resposta": "Não tenho essa informação sobre como acompanhar o andamento do pedido. Para obter ajuda com o chamado ZX-4471, contate o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800.",
+      "origem": "revisao"
+    },
+    {
+      "em": "2026-11-18T18:31:39.471Z",
+      "pergunta": "Como funciona o trabalho remoto?",
+      "resposta": "Ana, o modelo é híbrido: você trabalha presencialmente na sede 2 dias por semana e remotamente nos outros 3. Os dias presenciais da equipe são definidos pela sua gestora direta, Carla Mendes, e ficam na agenda da equipe.\n\nNa primeira semana, o trabalho é inteiramente presencial. A empresa fornece notebook, monitor e fone com microfone. Para dúvidas sobre trabalho remoto, contate o Atendimento de RH pelo e-mail rh@orvalia.example ou pelo ramal 2000.",
+      "origem": "rascunho"
+    },
+    {
+      "em": "2026-11-18T18:31:46.038Z",
+      "pergunta": "E como registro o ponto?",
+      "resposta": "O ponto é registrado no Portal de Pessoas, pelo computador ou pelo aplicativo no celular. Você faz quatro marcações por dia: entrada, saída para o intervalo, retorno do intervalo e saída.\n\nSe esquecer ou fizer uma marcação errada, solicite um ajuste no Portal de Pessoas, com justificativa, em até 2 dias úteis após o dia da marcação. Sua gestora aprova ou recusa o pedido em até 3 dias úteis. O ponto fecha no dia 25 de cada mês; ajustes solicitados depois do fechamento entram no mês seguinte.",
+      "origem": "rascunho"
+    },
+    {
+      "em": "2026-11-18T18:31:52.888Z",
+      "pergunta": "Qual é o código do chamado que mencionei no início desta conversa?",
+      "resposta": "O código do chamado para a troca do seu notebook é ZX-4471.",
+      "origem": "rascunho"
+    }
+  ]
+}

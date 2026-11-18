@@ -27,6 +27,10 @@ const INTEGER_VARIABLES = [
   "RETRY_BASE_DELAY_MS",
   "RATE_LIMIT_MAX_REQUESTS",
   "RATE_LIMIT_WINDOW_SECONDS",
+  "COMPRESS_MAX_TOKENS",
+  "COMPRESS_MAX_MESSAGES",
+  "COMPRESS_KEEP_MESSAGES",
+  "MEMORY_MAX_ITEMS",
 ];
 
 function configErrorMessage(source: EnvSource): string {
@@ -59,10 +63,14 @@ describe("parseConfig: defaults", () => {
       retryBaseDelayMs: 1000,
       rateLimitMaxRequests: 20,
       rateLimitWindowSeconds: 60,
+      compressMaxTokens: 3000,
+      compressMaxMessages: 20,
+      compressKeepMessages: 6,
+      memoryMaxItems: 5,
     });
   });
 
-  it("exposes the nine variable names in the documented order", () => {
+  it("exposes the thirteen variable names in the documented order", () => {
     expect(ENV_VARIABLE_NAMES).toEqual([
       "OPENAI_API_KEY",
       "OPENAI_MODEL",
@@ -118,7 +126,7 @@ describe("parseConfig: defaults", () => {
   it("ignores unknown variables and returns a frozen object", () => {
     const config = parseConfig({ OPENAI_API_KEY: KEY, PATH: "/usr/bin" });
 
-    expect(Object.keys(config)).toHaveLength(9);
+    expect(Object.keys(config)).toHaveLength(13);
     expect(Object.isFrozen(config)).toBe(true);
   });
 });

@@ -55,6 +55,7 @@ O caminho é lido a partir da pasta atual. Os arquivos de camada têm no máximo
 - **Prompts de apoio presos ao onboarding.** `avaliador.md`, `revisao.md` e `juiz.md` mencionam onboarding e P1 a P5 e precisam ser reescritos.
 - **A bateria não aceita outro domínio por opção.** `scripts/eval.ts` fixa `context/` e `evals/casos.json`, e `evals/args.ts` só tem `--runs`, `--case` e `--help`. Para rodar a bateria em outro domínio, é preciso substituir `context/` e `evals/casos.json` em uma cópia do repositório. Nessa cópia, `casos.json` continua limitado pelas categorias e regras de `evals/schema.ts` e pelos perfis que existirem em `03-usuario/`, e vários testes presos ao domínio atual falharão (por exemplo `tests/context-content.test.ts`, `tests/company-data.test.ts`, `tests/policies-document.test.ts`).
 - **`--context-dir` vale para o chat e para `--show-context`**, não para `npm run contexto` nem para `npm run eval`.
+- **Arquivos de memória (disciplina 2).** O chat também lê `memoria-uso.md`, `memoria-extracao.md` e `resumo.md` na inicialização e encerra com erro se faltarem. Um domínio novo precisa escrever os três, ou usar `--efemera`, que não grava sessão nem usa memória. A pasta de exemplo não os tem.
 - **O `--show-context` não valida os arquivos de apoio.** Ele não lê `fallback.md`, `avaliador.md` nem `revisao.md`; o chat lê os três na inicialização e encerra com erro se faltarem (ou se `revisao.md` não tiver `{{violacoes}}`).
 
 Melhoria pós-MVP, fora do escopo atual: opções `--context-dir` e `--casos` no `npm run eval`.

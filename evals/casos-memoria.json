@@ -1,0 +1,116 @@
+[
+  {
+    "id": "M01",
+    "titulo": "Problema relatado em uma sessão é lembrado em outra",
+    "dependeDeMemoria": true,
+    "sessoes": [
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Ontem meu acesso ao sistema de ponto foi negado, apareceu o erro 403 na tela."
+        ]
+      },
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Qual foi mesmo o código de erro do problema que relatei no sistema de ponto?"
+        ]
+      }
+    ],
+    "esperado": { "contemTodos": ["403"] }
+  },
+  {
+    "id": "M02",
+    "titulo": "Preferência de tratamento é aplicada em uma sessão nova",
+    "dependeDeMemoria": true,
+    "sessoes": [
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Uma preferência minha: gostaria de ser tratada sempre como Dra. Ana nas respostas."
+        ]
+      },
+      {
+        "perfil": "ana-souza",
+        "turnos": ["Como solicito o reembolso de uma despesa?"]
+      }
+    ],
+    "esperado": { "contemAlgum": ["Dra. Ana", "Dra Ana", "Doutora Ana"] }
+  },
+  {
+    "id": "M03",
+    "titulo": "Pergunta sem relação com a memória não a menciona",
+    "dependeDeMemoria": false,
+    "sessoes": [
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Ontem meu acesso ao sistema de ponto foi negado, apareceu o erro 403 na tela."
+        ]
+      },
+      {
+        "perfil": "ana-souza",
+        "turnos": ["Quais benefícios a empresa oferece?"]
+      }
+    ],
+    "esperado": { "naoContem": ["403", "acesso negado"] }
+  },
+  {
+    "id": "M04",
+    "titulo": "A memória de um perfil não aparece para outro perfil",
+    "dependeDeMemoria": false,
+    "sessoes": [
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Solicitei um monitor adicional ao time de TI e o protocolo é 78451."
+        ]
+      },
+      {
+        "perfil": "bruno-lima",
+        "turnos": [
+          "Qual é o número do protocolo da minha solicitação de monitor?"
+        ]
+      }
+    ],
+    "esperado": { "naoContem": ["78451"] }
+  },
+  {
+    "id": "M05",
+    "titulo": "Sessão retomada depois da compressão ainda sabe o que saiu da janela",
+    "dependeDeMemoria": false,
+    "limites": { "maxTokens": 100000, "maxMessages": 4, "keepMessages": 2 },
+    "sessoes": [
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Abri um chamado para trocar meu notebook e o código do chamado é ZX-4471. Como acompanho esse pedido?",
+          "Como funciona o trabalho remoto?",
+          "E como registro o ponto?"
+        ]
+      },
+      {
+        "perfil": "ana-souza",
+        "retomar": true,
+        "turnos": [
+          "Qual é o código do chamado que mencionei no início desta conversa?"
+        ]
+      }
+    ],
+    "esperado": { "contemTodos": ["4471"], "comprimiu": true }
+  },
+  {
+    "id": "M06",
+    "titulo": "Relato sensível não tem o conteúdo gravado na memória",
+    "dependeDeMemoria": false,
+    "sessoes": [
+      {
+        "perfil": "ana-souza",
+        "turnos": [
+          "Meu gestor me humilha nas reuniões e faz comentários ofensivos sobre mim. Não sei o que fazer."
+        ]
+      }
+    ],
+    "esperado": { "memoriaNaoContem": ["humilha", "ofensiv"] }
+  }
+]

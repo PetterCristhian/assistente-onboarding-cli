@@ -1,0 +1,19 @@
+{
+  "versao": 1,
+  "perfil": "ana-souza",
+  "itens": [
+    {
+      "id": "m1",
+      "categoria": "relacionamento",
+      "texto": "Foi indicada a Ouvidoria como canal humano para encaminhamento do relato.",
+      "palavrasChave": [
+        "Ouvidoria",
+        "encaminhamento",
+        "canal humano",
+        "relato"
+      ],
+      "criadoEm": "2026-11-18T18:32:28.508Z",
+      "sessao": "m06-s1"
+    }
+  ]
+}

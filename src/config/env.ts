@@ -32,6 +32,14 @@ export interface AppConfig {
   readonly retryBaseDelayMs: number;
   readonly rateLimitMaxRequests: number;
   readonly rateLimitWindowSeconds: number;
+  /** Estimated tokens of the history above which it is compressed. */
+  readonly compressMaxTokens: number;
+  /** Messages of the history above which it is compressed. */
+  readonly compressMaxMessages: number;
+  /** Messages kept whole after a compression (the sliding window). */
+  readonly compressKeepMessages: number;
+  /** Most memory items that go into the context of one question. */
+  readonly memoryMaxItems: number;
 }
 
 export type EnvSource = Record<string, string | undefined>;
@@ -55,6 +63,10 @@ const INTEGER_RULES = {
   RETRY_BASE_DELAY_MS: { min: 1, fallback: 1000 },
   RATE_LIMIT_MAX_REQUESTS: { min: 1, fallback: 20 },
   RATE_LIMIT_WINDOW_SECONDS: { min: 1, fallback: 60 },
+  COMPRESS_MAX_TOKENS: { min: 1, fallback: 3000 },
+  COMPRESS_MAX_MESSAGES: { min: 2, fallback: 20 },
+  COMPRESS_KEEP_MESSAGES: { min: 2, fallback: 6 },
+  MEMORY_MAX_ITEMS: { min: 1, fallback: 5 },
 } as const satisfies Record<string, IntegerRule>;
 
 const API_KEY_VARIABLE = "OPENAI_API_KEY";
@@ -115,6 +127,10 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_SECONDS: integerVariable(
     INTEGER_RULES.RATE_LIMIT_WINDOW_SECONDS,
   ),
+  COMPRESS_MAX_TOKENS: integerVariable(INTEGER_RULES.COMPRESS_MAX_TOKENS),
+  COMPRESS_MAX_MESSAGES: integerVariable(INTEGER_RULES.COMPRESS_MAX_MESSAGES),
+  COMPRESS_KEEP_MESSAGES: integerVariable(INTEGER_RULES.COMPRESS_KEEP_MESSAGES),
+  MEMORY_MAX_ITEMS: integerVariable(INTEGER_RULES.MEMORY_MAX_ITEMS),
 });
 
 export const ENV_VARIABLE_NAMES: readonly string[] = Object.freeze(
@@ -280,6 +296,10 @@ export function parseConfig(source: EnvSource): AppConfig {
     retryBaseDelayMs: values.RETRY_BASE_DELAY_MS,
     rateLimitMaxRequests: values.RATE_LIMIT_MAX_REQUESTS,
     rateLimitWindowSeconds: values.RATE_LIMIT_WINDOW_SECONDS,
+    compressMaxTokens: values.COMPRESS_MAX_TOKENS,
+    compressMaxMessages: values.COMPRESS_MAX_MESSAGES,
+    compressKeepMessages: values.COMPRESS_KEEP_MESSAGES,
+    memoryMaxItems: values.MEMORY_MAX_ITEMS,
   });
 }
 

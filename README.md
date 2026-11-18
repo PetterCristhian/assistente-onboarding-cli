@@ -106,6 +106,31 @@ unset OPENAI_API_KEY
 
 **Aviso de custo: `npm run eval` consome crédito da chave de quem executa.** A bateria completa faz cerca de 116 chamadas (na B2: 80 do chat e 36 do juiz). Não rode em laço nem sem necessidade. Valores, em [`docs/ANALISE.md`](docs/ANALISE.md), seção 9, são conferidos no painel da OpenAI.
 
+## Disciplina 2: persistência, memória e compressão
+
+A partir da disciplina 2 o chat guarda estado entre execuções. Requisitos em [`docs/PRD-DISCIPLINA-02.md`](docs/PRD-DISCIPLINA-02.md), decisões em [`docs/adr/0008-persistencia-memoria-e-compressao.md`](docs/adr/0008-persistencia-memoria-e-compressao.md). A entrega da disciplina 1 está na tag `disciplina-01`.
+
+- **Sessão gravada:** cada chat mostra um identificador no início e grava os turnos em `data/sessoes/<id>.json`. Com `--sessao <id>` a conversa continua de onde parou.
+- **Memória do funcionário:** fatos que o usuário declara (solicitações, preferências, problemas, relacionamento) ficam em `data/memoria/<perfil>.json` e entram no contexto só quando têm relação com a pergunta.
+- **Compressão:** acima do limite de mensagens ou de tokens, as mensagens antigas são resumidas e só as últimas seguem inteiras.
+
+A pasta `data/` é ignorada pelo Git.
+
+Roteiro de demonstração (cada passo é uma linha digitada no chat, salvo indicação):
+
+| # | Ação | O que observar |
+|---|---|---|
+| 1 | `npm run chat -- --verbose` | A linha `Sessão: <id>` logo após a saudação |
+| 2 | `Ontem meu acesso ao sistema de ponto foi negado, com o erro 403.` | Aviso `Memória atualizada: 1 item novo (problemas)` |
+| 3 | `/memoria` | O item gravado, com categoria, data e sessão |
+| 4 | `Quais benefícios a empresa oferece?` | Em stderr, `[memória] nenhum item usado nesta pergunta` |
+| 5 | `/comprimir` e depois `/tokens` | Aviso `Histórico comprimido` e o tamanho do histórico e do resumo |
+| 6 | `/sair`, depois `npm run chat -- --verbose --sessao <id>` | `Sessão retomada`, e uma pergunta sobre a conversa anterior é respondida |
+| 7 | `/sair`, depois `npm run chat -- --verbose` (sessão nova) e `Qual foi o erro do problema que relatei no ponto?` | A resposta cita o erro 403, e stderr mostra o item de memória usado |
+| 8 | O mesmo do passo 7 com `--sem-memoria` | A resposta diz que não tem esse registro |
+
+A comparação com e sem memória contra o modelo real é `npm run eval:memoria` (seção "Scripts npm"); o resultado fica em `outputs/memoria/`.
+
 ## Entregáveis do enunciado
 
 | # | Entregável | Onde |
@@ -150,7 +175,11 @@ Tudo o que vem depois do `--` é repassado ao programa.
 | `--perfil <nome\|arquivo>` | Perfil: nome de um arquivo de `context/03-usuario/` (sem extensão) ou caminho de um `.json`. Sem `/`, `\`, `:` nem `.json`, é nome; caso contrário, é caminho |
 | `--context-dir <pasta>` | Lê as quatro camadas de outra pasta, no lugar de `context/` ([`docs/REUSO.md`](docs/REUSO.md)) |
 | `--show-context` | Imprime o contexto montado e sai, sem chamar o modelo nem exigir a chave |
-| `--verbose` | Detalhes técnicos e resultado da autoavaliação por turno, em stderr |
+| `--verbose` | Detalhes técnicos e resultado da autoavaliação por turno, em stderr; mostra também quais itens de memória entraram no contexto |
+| `--sessao <id>` | Retoma a sessão gravada com esse identificador (mostrado no início de cada chat). A sessão precisa ser do mesmo perfil |
+| `--sessoes` | Lista as sessões gravadas e sai, sem chamar o modelo nem exigir a chave |
+| `--sem-memoria` | Não lê nem grava a memória do perfil; a sessão continua sendo gravada. Serve para a comparação com e sem memória |
+| `--efemera` | Não grava a sessão nem usa memória: nada fica em disco (o comportamento da disciplina 1) |
 | `-h`, `--help` | Mostra a ajuda |
 
 Opção repetida, argumento solto ou opção desconhecida são erro de uso (código 1). Arquivo de camada ou de perfil ausente, que não seja um arquivo comum ou com mais de 64 KiB encerra com código 1 e cita o caminho. Um arquivo cujo nome começa com `.env` é recusado como `--system-prompt` e como perfil.
@@ -164,6 +193,11 @@ Opção repetida, argumento solto ou opção desconhecida são erro de uso (cód
 | `/contexto` | Imprime o contexto montado que o modelo recebe |
 | `/detalhes` | Liga ou desliga as linhas `[detalhes]` e `[autoavaliação]` em stderr (começa desligado, ou ligado com `--verbose`) |
 | `/ajuda` | Lista os comandos |
+| `/sessao` | Mostra o identificador da sessão, para retomar depois com `--sessao` |
+| `/memoria` | Mostra o que está guardado na memória do perfil |
+| `/esquecer` | Apaga toda a memória do perfil |
+| `/tokens` | Mostra o tamanho do histórico enviado (mensagens e tokens estimados) e do resumo |
+| `/comprimir` | Resume as mensagens antigas agora, sem esperar o limite |
 
 Linha vazia é ignorada e um comando desconhecido só avisa. Se uma pergunta falhar, ela não entra no histórico e o chat continua aberto. Cada turno enviado ao modelo é registrado em `logs/sessao-<data>.jsonl`.
 
@@ -182,6 +216,10 @@ Só `OPENAI_API_KEY` é obrigatória. Podem vir do `.env` ou do ambiente; uma va
 | `RETRY_BASE_DELAY_MS` | `1000` | Base da espera exponencial (inteiro de pelo menos 1) |
 | `RATE_LIMIT_MAX_REQUESTS` | `20` | Perguntas aceitas por janela, limite local (inteiro de pelo menos 1) |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Tamanho da janela do limite local, em segundos (inteiro de pelo menos 1) |
+| `COMPRESS_MAX_TOKENS` | `3000` | Tokens estimados do histórico acima dos quais ele é comprimido (inteiro de pelo menos 1) |
+| `COMPRESS_MAX_MESSAGES` | `20` | Mensagens do histórico acima das quais ele é comprimido (inteiro de pelo menos 2) |
+| `COMPRESS_KEEP_MESSAGES` | `6` | Mensagens mantidas inteiras depois da compressão, a janela deslizante (inteiro de pelo menos 2) |
+| `MEMORY_MAX_ITEMS` | `5` | Máximo de itens de memória no contexto de uma pergunta (inteiro de pelo menos 1) |
 | `OPENAI_CUSTOM_HEADERS` | | Recusada: se existir no ambiente ou no `.env`, o programa encerra com erro de configuração. Não a defina |
 
 ### Scripts npm
@@ -200,6 +238,7 @@ Só `OPENAI_API_KEY` é obrigatória. Podem vir do `.env` ou do ambiente; uma va
 | `npm run demo:falhas` | Demonstração de retry e rate limit com servidor local simulado | Não |
 | `npm run smoke:llm` | Teste de fumaça do cliente: duas chamadas curtas à API real | Sim, e consome crédito |
 | `npm run eval` | Bateria contra o modelo real, com juiz | Sim, e consome crédito |
+| `npm run eval:memoria` | Comparação com e sem memória contra o modelo real (casos de `evals/casos-memoria.json`) | Sim, e consome crédito |
 
 **`npm run eval`.** Executa os casos de `evals/casos.json` pelo mesmo pipeline do chat e grava uma pasta nova em `outputs/<data-hora>/`, com `execucoes.jsonl`, `resumo.json` e `RELATORIO.md`. **Consome crédito da chave de quem executa: rode à mão, só quando for usar o resultado, e nunca em laço.** Não faz parte do `npm run check` nem do CI.
 

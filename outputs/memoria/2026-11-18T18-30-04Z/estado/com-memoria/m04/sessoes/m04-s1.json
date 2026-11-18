@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m04-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:31:07.035Z",
+  "atualizadaEm": "2026-11-18T18:31:09.868Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:31:09.868Z",
+      "pergunta": "Solicitei um monitor adicional ao time de TI e o protocolo é 78451.",
+      "resposta": "Entendi. Se você precisa de ajuda com a solicitação ou com o equipamento, entre em contato com o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800.",
+      "origem": "rascunho"
+    }
+  ]
+}

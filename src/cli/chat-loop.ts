@@ -4,6 +4,7 @@ import { createInterface } from "node:readline/promises";
 import type { Readable } from "node:stream";
 import type { EvaluationOutcome, TurnCritique } from "../chat/critique.js";
 import type { ChatSession, TurnResult } from "../chat/session.js";
+import type { StatefulSession } from "../memory/stateful-session.js";
 import { HELP_LINES, parseInput } from "./commands.js";
 import {
   sanitizeForTerminal,
@@ -21,6 +22,11 @@ export interface ChatLoopDeps {
   readonly stdout: TextSink;
   readonly stderr: TextSink;
   readonly session: ChatSession;
+  /**
+   * The same session, with its state on the disk: turns on the commands of
+   * the session, of the memory and of the compression.
+   */
+  readonly stateful?: StatefulSession;
   /** The assembled context, as printed by /contexto. */
   readonly contextText: string;
   readonly profileName: string;
@@ -89,9 +95,52 @@ function critiqueDetails(critique: TurnCritique): string {
   return `${sanitizeUntrusted(line)}\n`;
 }
 
+const NO_STATE_MESSAGE = "Comando indisponível: esta sessão não é gravada.";
+
+function sessionLine(stateful: StatefulSession): string {
+  return `Sessão: ${stateful.id} (para retomar: npm run chat -- --sessao ${stateful.id})`;
+}
+
+function tokensLine(stateful: StatefulSession): string {
+  const stats = stateful.stats();
+  return `Histórico enviado: ${stats.history.messages} mensagens, ~${stats.history.tokens} tokens; resumo: ~${stats.summaryTokens} tokens; turnos gravados: ${stats.totalTurns}.`;
+}
+
+/** The text of the items comes from the model: neutralized as a whole. */
+function memoryLines(stateful: StatefulSession): string {
+  if (!stateful.memoryEnabled) {
+    return "Memória desligada nesta execução (--sem-memoria).\n";
+  }
+  const items = stateful.memoryItems();
+  if (items.length === 0) {
+    return "Memória vazia.\n";
+  }
+  // One line at a time: a line break inside the text of an item is
+  // neutralized, the ones between the items are not.
+  return [
+    `Memória (${items.length} ${items.length === 1 ? "item" : "itens"}):`,
+    ...items.map((item) =>
+      sanitizeUntrusted(
+        `  [${item.categoria}] ${item.texto} (${item.criadoEm.slice(0, 10)}, sessão ${item.sessao})`,
+      ),
+    ),
+    "",
+  ].join("\n");
+}
+
+/** Which memory items went into the context of the question. */
+function selectionDetails(stateful: StatefulSession): string {
+  const selected = stateful.lastSelection();
+  const line =
+    selected.length === 0
+      ? "[memória] nenhum item usado nesta pergunta"
+      : `[memória] itens no contexto: ${selected.map((item) => `${item.id} (${item.categoria})`).join(", ")}`;
+  return `${sanitizeUntrusted(`${line}; ${tokensLine(stateful)}`)}\n`;
+}
+
 /** Runs until /sair, end of input or Ctrl+C. Returns the exit code. */
 export async function runChat(deps: ChatLoopDeps): Promise<number> {
-  const { stdout, stderr, session } = deps;
+  const { stdout, stderr, session, stateful } = deps;
   const now = deps.now ?? (() => performance.now());
   const rl = createInterface({ input: deps.input, terminal: false });
   let turn: AbortController | undefined;
@@ -117,6 +166,15 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
       return 0;
     }
     stdout.write(`Olá, ${deps.profileName}.\n`);
+    if (stateful !== undefined) {
+      stdout.write(`${sessionLine(stateful)}\n`);
+      const turns = stateful.stats().totalTurns;
+      if (turns > 0) {
+        stdout.write(
+          `Sessão retomada: ${turns} ${turns === 1 ? "turno anterior" : "turnos anteriores"}.\n`,
+        );
+      }
+    }
     stdout.write(`${HELP_LINES.join("\n")}\n`);
     stdout.write(PROMPT);
 
@@ -137,8 +195,57 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
         case "command":
           switch (parsed.name) {
             case "limpar":
-              session.clear();
-              stdout.write(`${CLEARED_MESSAGE}\n`);
+              if (stateful === undefined) {
+                session.clear();
+                stdout.write(`${CLEARED_MESSAGE}\n`);
+              } else {
+                await stateful.clear();
+                stdout.write(
+                  `${CLEARED_MESSAGE} A memória do perfil foi mantida (use /esquecer para apagá-la).\n`,
+                );
+              }
+              break;
+            case "sessao":
+              stdout.write(
+                `${stateful === undefined ? NO_STATE_MESSAGE : sessionLine(stateful)}\n`,
+              );
+              break;
+            case "memoria":
+              stdout.write(
+                stateful === undefined
+                  ? `${NO_STATE_MESSAGE}\n`
+                  : memoryLines(stateful),
+              );
+              break;
+            case "esquecer":
+              if (stateful === undefined) {
+                stdout.write(`${NO_STATE_MESSAGE}\n`);
+              } else {
+                const forgotten = await stateful.forgetMemory();
+                stdout.write(
+                  `Memória apagada (${forgotten} ${forgotten === 1 ? "item" : "itens"}).\n`,
+                );
+              }
+              break;
+            case "tokens":
+              stdout.write(
+                `${stateful === undefined ? NO_STATE_MESSAGE : tokensLine(stateful)}\n`,
+              );
+              break;
+            case "comprimir":
+              if (stateful === undefined) {
+                stdout.write(`${NO_STATE_MESSAGE}\n`);
+              } else {
+                turn = new AbortController();
+                try {
+                  const report = await stateful.compressNow(turn.signal);
+                  if (report === undefined) {
+                    stdout.write("Nada a comprimir.\n");
+                  }
+                } finally {
+                  turn = undefined;
+                }
+              }
               break;
             case "contexto":
               stdout.write(`${sanitizeForTerminal(deps.contextText)}\n`);
@@ -168,6 +275,9 @@ export async function runChat(deps: ChatLoopDeps): Promise<number> {
             if (detailed && result.status === "answered") {
               stderr.write(turnDetails(result, now() - startedAt));
               stderr.write(critiqueDetails(result.critique));
+              if (stateful !== undefined) {
+                stderr.write(selectionDetails(stateful));
+              }
             }
           } finally {
             turn = undefined;

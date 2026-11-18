@@ -1,0 +1,20 @@
+{
+  "versao": 1,
+  "perfil": "ana-souza",
+  "itens": [
+    {
+      "id": "m1",
+      "categoria": "solicitacoes",
+      "texto": "A pessoa abriu um chamado para trocar seu notebook, código ZX-4471.",
+      "palavrasChave": [
+        "chamado",
+        "notebook",
+        "troca",
+        "pedido",
+        "ZX-4471"
+      ],
+      "criadoEm": "2026-11-18T18:29:03.076Z",
+      "sessao": "m05-s1"
+    }
+  ]
+}

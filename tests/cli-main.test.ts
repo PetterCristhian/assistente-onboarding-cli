@@ -36,7 +36,7 @@ function runMain(
 ) {
   return spawnSync(
     process.execPath,
-    ["--import", "tsx", "src/cli/main.ts", ...extraArgs],
+    ["--import", "tsx", "src/cli/main.ts", "--efemera", ...extraArgs],
     {
       cwd: PROJECT_ROOT,
       encoding: "utf8",

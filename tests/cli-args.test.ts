@@ -10,7 +10,13 @@ import { fakeOpenAiKey } from "./helpers/fake-key.js";
 
 const KEY = fakeOpenAiKey();
 
-const DEFAULTS: CliOptions = { showContext: false, verbose: false };
+const DEFAULTS: CliOptions = {
+  showContext: false,
+  verbose: false,
+  listSessions: false,
+  noMemory: false,
+  ephemeral: false,
+};
 
 function run(argv: string[]): CliOptions {
   const result = parseCliArgs(argv);
@@ -58,6 +64,22 @@ describe("parseCliArgs", () => {
       contextDir: "d",
       showContext: true,
       verbose: true,
+      listSessions: false,
+      noMemory: false,
+      ephemeral: false,
+    });
+  });
+
+  it("reads the options of the session and of the memory", () => {
+    expect(
+      run(["--sessao", "abc-1", "--sessoes", "--sem-memoria", "--efemera"]),
+    ).toEqual({
+      showContext: false,
+      verbose: false,
+      sessionId: "abc-1",
+      listSessions: true,
+      noMemory: true,
+      ephemeral: true,
     });
   });
 

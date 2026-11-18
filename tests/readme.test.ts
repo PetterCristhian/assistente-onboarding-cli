@@ -108,6 +108,7 @@ function npmRunNames(text: string): string[] {
 const PATH_ALLOWLIST = new Set([
   ".env",
   "logs/",
+  "data/",
   "resumo.json",
   "execucoes.jsonl",
   "RELATORIO.md",

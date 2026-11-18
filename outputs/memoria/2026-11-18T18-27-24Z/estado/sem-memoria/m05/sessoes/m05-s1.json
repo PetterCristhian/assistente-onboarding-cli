@@ -1,0 +1,35 @@
+{
+  "versao": 1,
+  "id": "m05-s1",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:29:17.024Z",
+  "atualizadaEm": "2026-11-18T18:29:35.649Z",
+  "resumo": "O usuário abriu um chamado para trocar o notebook, código ZX-4471, e perguntou como acompanhar. O assistente informou que não sabe como consultar o status e indicou o Suporte de TI: suporte-ti@orvalia.example ou ramal 2800. Depois, o usuário perguntou sobre trabalho remoto. O assistente explicou que o modelo é híbrido, com 2 dias por semana na sede e 3 remotamente; os dias presenciais são definidos pela gestora Carla Mendes e constam na agenda da equipe. Na primeira semana, o trabalho é todo presencial. A empresa fornece notebook, monitor e fone com microfone. O auxílio remoto é de R$ 120,00 por mês, pago na folha a partir do mês seguinte ao início, sem proporcionalidade no mês de início.",
+  "mensagensAtivas": 4,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:29:25.371Z",
+      "pergunta": "Abri um chamado para trocar meu notebook e o código do chamado é ZX-4471. Como acompanho esse pedido?",
+      "resposta": "Ana, não tenho a informação sobre como acompanhar o status de um chamado. Para obter ajuda com o pedido de troca do notebook, entre em contato com o Suporte de TI pelo e-mail suporte-ti@orvalia.example ou pelo ramal 2800.",
+      "origem": "revisao"
+    },
+    {
+      "em": "2026-11-18T18:29:28.772Z",
+      "pergunta": "Como funciona o trabalho remoto?",
+      "resposta": "O modelo é híbrido: você trabalha 2 dias por semana na sede e 3 dias remotamente. Os dias presenciais da equipe são definidos pela sua gestora, Carla Mendes, e ficam na agenda da equipe.\n\nNa sua primeira semana, o trabalho é inteiramente presencial. A empresa fornece notebook, monitor e fone com microfone. O auxílio para trabalho remoto é de R$ 120,00 por mês, pago na folha a partir do mês seguinte ao de início, sem valor proporcional no mês de início.",
+      "origem": "rascunho"
+    },
+    {
+      "em": "2026-11-18T18:29:31.664Z",
+      "pergunta": "E como registro o ponto?",
+      "resposta": "O ponto é registrado no Portal de Pessoas, pelo computador ou pelo aplicativo no celular. Você deve fazer quatro marcações por dia: entrada, saída para o intervalo, retorno do intervalo e saída.\n\nSe esquecer ou fizer uma marcação incorreta, solicite o ajuste no Portal de Pessoas em até 2 dias úteis, com uma justificativa. Sua gestora aprova ou recusa o pedido em até 3 dias úteis. O mês fecha no dia 25; ajustes solicitados depois entram no mês seguinte.",
+      "origem": "rascunho"
+    },
+    {
+      "em": "2026-11-18T18:29:35.649Z",
+      "pergunta": "Qual é o código do chamado que mencionei no início desta conversa?",
+      "resposta": "O código do chamado que você mencionou é ZX-4471.",
+      "origem": "rascunho"
+    }
+  ]
+}

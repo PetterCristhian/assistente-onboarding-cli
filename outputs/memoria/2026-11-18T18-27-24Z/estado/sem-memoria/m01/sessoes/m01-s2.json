@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m01-s2",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:27:41.916Z",
+  "atualizadaEm": "2026-11-18T18:27:44.728Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:27:44.728Z",
+      "pergunta": "Qual foi mesmo o código de erro do problema que relatei no sistema de ponto?",
+      "resposta": "Não tenho essa informação nesta conversa. Para problemas relacionados ao registro de ponto, você pode falar com o Atendimento de RH pelo e-mail rh@orvalia.example ou pelo ramal 2000.",
+      "origem": "rascunho"
+    }
+  ]
+}

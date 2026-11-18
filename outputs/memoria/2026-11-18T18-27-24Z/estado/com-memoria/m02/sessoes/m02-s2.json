@@ -1,0 +1,17 @@
+{
+  "versao": 1,
+  "id": "m02-s2",
+  "perfil": "ana-souza",
+  "criadaEm": "2026-11-18T18:27:58.297Z",
+  "atualizadaEm": "2026-11-18T18:28:02.348Z",
+  "resumo": "",
+  "mensagensAtivas": 2,
+  "turnos": [
+    {
+      "em": "2026-11-18T18:28:02.348Z",
+      "pergunta": "Como solicito o reembolso de uma despesa?",
+      "resposta": "Dra. Ana, para solicitar o reembolso:\n\n1. Confirme que a despesa de trabalho foi autorizada previamente pela sua gestora, Carla Mendes.\n2. Reúna o comprovante fiscal legível, em seu nome ou no da empresa.\n3. Envie o pedido pelo Sistema de Reembolso em até 30 dias corridos após a despesa.\n4. Aguarde a aprovação da gestora no sistema. Depois, o Financeiro confere o comprovante.\n5. Após a aprovação, o pagamento é feito na mesma conta do salário em até 10 dias úteis.\n\nSão reembolsáveis despesas autorizadas com transporte para visita a cliente, hospedagem, alimentação em viagem e inscrição em curso ou evento. Para dúvidas, fale com o Financeiro pelo e-mail financeiro@orvalia.example ou ramal 2700.",
+      "origem": "rascunho"
+    }
+  ]
+}
