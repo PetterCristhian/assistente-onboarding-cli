@@ -1,7 +1,8 @@
 # ADR 0003 — Contexto em quatro camadas fisicamente separadas
 
-- Status: proposta (16/11/2026)
+- Status: aceita (18/11/2026)
 - Relacionado: F1, F2, F3, F5; critério C4 do enunciado
+- Aceita na verificação final (ENG-61), depois de conferida com `src/context/loaders.ts`, `src/context/builder.ts`, `context/` e os testes de contexto. Observação de escopo: `--context-dir` está implementado para o chat e `--show-context`, não para `npm run contexto` nem para `npm run eval`, e o segundo domínio continua não executado (limites em `docs/REUSO.md`, seção 4).
 
 ## Contexto
 

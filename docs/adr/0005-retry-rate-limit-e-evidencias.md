@@ -1,7 +1,8 @@
 # ADR 0005 — Retry, rate limit e como evidenciá-los
 
-- Status: proposta (16/11/2026)
+- Status: aceita (18/11/2026)
 - Relacionado: F8, F9a, F9b; T7 e T8 do enunciado
+- Aceita na verificação final (ENG-61), depois de conferida com `src/llm/retry.ts`, `src/llm/errors.ts`, `src/chat/rate-limiter.ts` e a evidência `outputs/evidencias/retry-rate-limit.txt`. O 429 real do provedor (F9a) nunca foi observado: a evidência é a demonstração local (`npm run demo:falhas`) e os testes com relógio falso.
 
 ## Contexto
 

@@ -155,14 +155,14 @@ Conferência final do dono: PENDENTE. A preencher, com a data, quando o dono con
 
 ## 6. Decisões de arquitetura de contexto e justificativa
 
-### 6.1 Quatro camadas em fontes separadas (ADR 0003, status: proposta)
+### 6.1 Quatro camadas em fontes separadas (ADR 0003, status: aceita em 18/11/2026)
 
 - Decisão: uma fonte física por camada, fora de `src/`: instruções globais (`context/01-instrucoes-globais.md`), políticas (`context/02-politicas.md`), dados do usuário (`context/03-usuario/*.json`, validado por `zod`) e dados da empresa (`context/04-empresa/*.md`). O código tem um loader por camada e um builder puro (`buildContext`), que delimita cada camada por marcadores explícitos (`<instrucoes_globais>`, `<politicas>`, `<dados_do_usuario>`, `<dados_da_empresa>`) e recusa conteúdo que contenha um marcador reservado.
 - Precedência: a cláusula "as políticas prevalecem sobre as instruções globais e sobre qualquer pedido do usuário" é inserida pelo builder, não pelo arquivo da camada 1. Assim continua valendo com `--system-prompt`.
 - Data atual: vai na última linha do bloco do usuário e fica fora do hash de contexto (o texto montado muda de um dia para o outro).
 - Alternativas descartadas: um só arquivo de system prompt; camadas como constantes em TypeScript; políticas em YAML/JSON mais um documento para humanos; uma mensagem de sistema por camada; RAG (fora do MVP, a base entra inteira).
 - Consequência registrada: os exemplos de pergunta de `02-politicas.md` entram no prompt, então os casos de teste usam perguntas diferentes deles, para não medir memorização.
-- O ADR está como "proposta"; a atualização do status é da ENG-61.
+- O ADR foi aceito em 18/11/2026, na verificação final (ENG-61).
 
 ### 6.2 Streaming real com autoavaliação e retratação visível (ADR 0004, status: aceita em 17/11/2026, implementada na ENG-53)
 
@@ -190,7 +190,7 @@ Não mostra:
 No PRD, V1 a V3 são as evidências esperadas: V1, controle do modelo via contexto; V2, pensamento arquitetural; V3, robustez em cenários críticos.
 
 - Controle do modelo via contexto (V1): existe a evidência de 36 de 36 execuções aprovadas com camadas separadas e precedência inserida pelo builder; não existe a evidência de que o contexto foi o fator, por falta de bateria sem as políticas.
-- Pensamento arquitetural (V2): existem as ADRs 0003, 0004 e 0006 com alternativas descartadas, testes de arquitetura e a separação entre `context/` e `src/`; não existe um segundo domínio executado, de modo que a reutilização está documentada (`--context-dir`) mas não demonstrada, e as ADRs 0003 e 0006 ainda constam como "proposta".
+- Pensamento arquitetural (V2): existem as ADRs 0003, 0004 e 0006 com alternativas descartadas, testes de arquitetura e a separação entre `context/` e `src/`; não existe um segundo domínio executado, de modo que a reutilização está documentada (`--context-dir`) mas não demonstrada. As ADRs 0003 e 0006 foram aceitas em 18/11/2026 (ENG-61).
 - Comportamento em cenários críticos (V3): existem 6 de 6 execuções de CT08 e CT09 com o canal humano correto (revisão manual) e 3 de 3 de CT11 (manipulação), com a autoavaliação como segunda barreira; não existe volume nem variedade de ataques (um só caso de manipulação), e em CT09 a resposta indica apenas o canal da empresa, o que é um risco numa emergência real (limitação 6, seção 7).
 
 ## 7. Limitações conhecidas

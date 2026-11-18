@@ -1,19 +1,22 @@
 # Arquitetura — Assistente de Onboarding (Chatbot CLI)
 
-> Status: PROPOSTA (16/11/2026), aguardando aprovação do dono.
+> Status: APROVADA e implementada (18/11/2026). Proposta em 16/11/2026; conferida contra o código e `package.json` na verificação final (ENG-61).
 > Requisitos em `docs/PRD.md`. Decisões detalhadas em `docs/adr/`. Trabalho quebrado em `docs/BACKLOG.md`.
 
 ## 1. Visão geral
 
 Aplicação de terminal, local, de processo único e sem estado persistente. Não há servidor, banco de dados, fila nem hospedagem: o PRD descreve uso individual na máquina do usuário, com histórico descartado ao sair.
 
-O projeto tem três executáveis, todos sobre o mesmo núcleo:
+O projeto tem seis executáveis. Os três primeiros são as bordas principais, sobre o mesmo núcleo; os três últimos são auxiliares:
 
 | Executável | Comando | Para quê |
 |---|---|---|
 | Chat | `npm run chat` | Sessão interativa (F4–F10) |
 | Bateria de avaliação | `npm run eval` | 12 casos x 3 execuções contra o modelo real (F11–F13) |
 | Demonstração de falhas | `npm run demo:falhas` | Evidência reproduzível de retry e rate limit do provedor (F8, F9a) |
+| Contexto montado | `npm run contexto` | Imprime as quatro camadas do perfil padrão, sem chave e sem rede (F2) |
+| Catálogo dos casos | `npm run casos:doc` | Gera `docs/CASOS-DE-TESTE.md` a partir de `evals/casos.json`, sem chave e sem rede (F11) |
+| Teste de fumaça | `npm run smoke:llm` | Duas chamadas curtas à API real para conferir as premissas da ADR 0002 (usa a chave e gasta crédito) |
 
 ## 2. Stack
 
@@ -25,7 +28,7 @@ O projeto tem três executáveis, todos sobre o mesmo núcleo:
 | Gerenciador de pacotes | npm (com `package-lock.json` versionado) | Já vem com o Node; o avaliador só precisa de `npm install` | pnpm/yarn (instalação extra para o avaliador) |
 | Provedor de LLM | SDK oficial `openai`, Responses API | Fixo pelo enunciado (T3); a Responses API é a interface principal da documentação atual e suporta streaming e saída estruturada | Chat Completions (ainda funciona, mas é a interface legada e tem restrições com modelos de raciocínio); chamadas HTTP manuais (reimplementar SSE e erros tipados) |
 | Modelo | `gpt-6-luna` (configurável por `OPENAI_MODEL`) | Modelo corrente mais barato sem data de desligamento (US$ 0,10 / 0,50 por 1M tokens), com streaming e structured outputs. Ver ADR 0002 | `gpt-5-nano` (mais barato, mas desliga em 11/12/2026); `gpt-4o-mini` (desliga em 14/01/2027); `gpt-5.6-luna` (2x o preço); `gpt-6.1-terra` (10x o preço) |
-| Interface de terminal | `node:readline/promises` + `node:util.parseArgs` | Zero dependência para um laço de perguntas e 5 opções de linha de comando | `inquirer`/`commander`/`ink` (dependências para algo que a biblioteca padrão resolve) |
+| Interface de terminal | `node:readline/promises` + `node:util.parseArgs` | Zero dependência para um laço de perguntas e 6 opções de linha de comando (`--system-prompt`, `--perfil`, `--context-dir`, `--verbose`, `--show-context` e `--help`) | `inquirer`/`commander`/`ink` (dependências para algo que a biblioteca padrão resolve) |
 | Variáveis de ambiente | `process.loadEnvFile()` nativo + validação com `zod` | Sem dependência; falha cedo com mensagem clara | `dotenv` (dependência desnecessária em Node >= 22) |
 | Validação de dados | `zod` | Valida `.env`, perfis, casos de teste e a saída estruturada da autoavaliação (integra com `openai/helpers/zod`) | Validação manual (frágil); JSON Schema + ajv (mais verboso) |
 | Testes unitários | Vitest | Roda TS sem configuração e tem fake timers maduros (essenciais para testar backoff e janela de rate limit) | `node:test` (mock de timers menos ergonômico); Jest (configuração ESM/TS trabalhosa) |
@@ -49,7 +52,7 @@ flowchart TD
         FB["fallback.md"]
     end
 
-    CLI["cli/ (readline, comandos, renderização)"]
+    CLI["cli/ (argumentos, readline, comandos, renderização, interrupt, output-guard)"]
     EVAL["evals/ (runner, veredito, relatório)"]
     DEMO["scripts/demo-falhas/ (stub HTTP local + cenários)"]
 
@@ -146,6 +149,7 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 ├── .gitignore                    # .env, node_modules/, logs/, PDF do enunciado
 ├── .gitattributes                # finais de linha em LF
 ├── .editorconfig                 # UTF-8, LF, 2 espaços
+├── .prettierignore               # o que o Prettier não confere (lockfile, outputs/, logs/, coverage/, Markdown)
 ├── .nvmrc                        # versão do Node (usada também pelo CI)
 ├── .github/workflows/ci.yml      # CI: npm ci + npm run check, sem a chave
 ├── CHANGELOG.md                  # histórico de mudanças (Keep a Changelog)
@@ -171,9 +175,12 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │
 ├── src/
 │   ├── cli/
-│   │   ├── main.ts               # entrada do chat: argumentos, laço readline
+│   │   ├── main.ts               # entrada do chat: liga as peças, trata Ctrl+C e define o código de saída (único que lê process.argv)
+│   │   ├── args.ts               # opções de linha de comando (único que usa parseArgs; sem opção de chave)
 │   │   ├── chat-loop.ts          # laço readline: lê linhas, executa comandos, encerra com Ctrl+C
 │   │   ├── commands.ts           # /sair /limpar /contexto /detalhes /ajuda
+│   │   ├── interrupt.ts          # Ctrl+C: o primeiro cancela o turno, o segundo encerra na hora
+│   │   ├── output-guard.ts       # erro de escrita em stdout/stderr (EPIPE) vira fim limpo do chat
 │   │   └── renderer.ts           # escrita no terminal (stream, avisos, modo detalhado)
 │   ├── config/
 │   │   └── env.ts                # leitura e validação das variáveis de ambiente
@@ -238,6 +245,8 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
 │   └── check-secrets.ts          # varredura de credenciais nos arquivos do repositório
 │
 ├── tests/                        # testes unitários (Vitest), sem rede
+│   ├── fixtures/                 # contexto mínimo de outro domínio (minimal-context/, usado por docs/REUSO.md) e um perfil externo
+│   └── helpers/                  # clientes e `fetch` falsos, sondas e pré-carregamentos de teste
 │
 ├── outputs/                      # VERSIONADO: entregável E4
 │   ├── <AAAA-MM-DDTHH-mm-ssZ>/   # uma pasta por execução da bateria
@@ -256,6 +265,9 @@ Invariante do sistema: **só entra no histórico e só é rotulado como resposta
     ├── CASOS-DE-TESTE.md         # gerado a partir de evals/casos.json
     ├── REUSO.md                  # como reaproveitar a estrutura em outro domínio
     ├── ANALISE.md                # análise de comportamento (F14)
+    ├── VERIFICACAO.md            # registro da verificação final de entrega (ENG-61)
+    ├── exemplos/
+    │   └── instrucoes-alternativas.md   # exemplo de --system-prompt usado no roteiro do README
     └── adr/
 ```
 
@@ -281,7 +293,7 @@ Comandos dentro do chat: `/sair`, `/limpar`, `/contexto`, `/detalhes`, `/ajuda`.
 
 ## 8. Custo estimado
 
-Contexto fixo estimado em 4 a 6 mil tokens. Cada execução da bateria faz geração + autoavaliação + juiz: cerca de 12 mil tokens de entrada e 1,5 mil de saída, perto de US$ 0,002. A bateria completa (36 execuções) fica em torno de US$ 0,10; com dez iterações de ajuste, abaixo de US$ 1,50. O cache de prompt do provedor reduz ainda mais, porque o contexto é idêntico entre chamadas.
+Estimativa feita no planejamento, não conferida com a cobrança real. Contexto fixo estimado em 4 a 6 mil tokens. Cada execução da bateria faz geração + autoavaliação + juiz: cerca de 12 mil tokens de entrada e 1,5 mil de saída, perto de US$ 0,002. A bateria completa (36 execuções) ficaria em torno de US$ 0,10; com dez iterações de ajuste, abaixo de US$ 1,50. O cache de prompt do provedor reduziria ainda mais, porque o contexto é idêntico entre chamadas. O custo real das baterias B0, B1 e B2 está por preencher pelo dono, a partir do painel da OpenAI, em `docs/ANALISE.md`, seção 9.
 
 ## 9. Limitações assumidas
 
