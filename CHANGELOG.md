@@ -100,3 +100,4 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - `npm run chat` passa a exigir `OPENAI_API_KEY`: sem a chave, encerra com código diferente de zero e uma orientação em português, sem stack trace (ENG-44).
 - `npm run check` passa a incluir `npm run check:secrets`, e `npm run lint` passa a falhar também com avisos do ESLint (ENG-44).
 - ADR 0001, `docs/ARQUITETURA.md` e issue 1 de `docs/BACKLOG.md`: o projeto passa a ter um workflow pequeno de CI, por decisão do dono (o PRD deixava CI fora do MVP).
+- Conferência final do dono registrada em `docs/ANALISE.md`, `docs/VERIFICACAO.md` e `docs/BACKLOG.md` (ENG-58): em 2026-11-18 o dono leu e concordou com as 12 respostas dos casos críticos (CT05, CT08, CT09, CT11) da bateria final, sem discordância; as outras 24 seguem revisadas só pela leitura do agente. O custo das baterias continua pendente do dono.

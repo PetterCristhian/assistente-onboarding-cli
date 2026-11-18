@@ -124,7 +124,7 @@ Também atualizados: o status de `docs/ARQUITETURA.md` ("APROVADA e implementada
 
 | Campo | Onde | Situação |
 |---|---|---|
-| Conferência manual final das respostas (ENG-58) | `docs/ANALISE.md`, seções 5 e Apêndice B | PENDENTE: data e confirmação do dono |
+| Conferência manual final das respostas (ENG-58) | `docs/ANALISE.md`, seções 5 e Apêndice B | FEITA em 2026-11-18: o dono leu as 12 respostas dos casos críticos (CT05, CT08, CT09, CT11) e concordou com o veredito de todas, sem discordância. As outras 24 respostas seguem como revisadas pela leitura independente de agente (28 aprovadas, 8 com ressalva), sem releitura individual do dono. Não bloqueia mais |
 | Custo real das baterias B0, B1 e B2 | `docs/ANALISE.md`, seção 9 | PENDENTE: a preencher pelo dono, a partir do painel da OpenAI |
 | Roteiro do README executado por pessoa externa, com a chave | seção 3 deste arquivo | PENDENTE |
 | Busca do valor da chave real no histórico (S8) | seção 1 deste arquivo | PENDENTE |
