@@ -191,9 +191,46 @@ O enunciado (`modulo-03-engenharia-de-contexto-em-ia-implementacao-de-chatbot-cl
 - Pensamento arquitetural (V2): existem as ADRs 0003, 0004 e 0006 com alternativas descartadas, testes de arquitetura e a separação entre `context/` e `src/`; não existe um segundo domínio executado, de modo que a reutilização está documentada (`--context-dir`) mas não demonstrada, e as ADRs 0003 e 0006 ainda constam como "proposta".
 - Comportamento em cenários críticos (V3): existem 6 de 6 execuções de CT08 e CT09 com o canal humano correto (revisão manual) e 3 de 3 de CT11 (manipulação), com a autoavaliação como segunda barreira; não existe volume nem variedade de ataques (um só caso de manipulação), e em CT09 a resposta indica apenas o canal da empresa (limitação 6, seção 7).
 
+## 7. Limitações conhecidas
+
+| # | Limitação | Efeito | Evidência | Mitigação ou trabalho futuro |
+|---|---|---|---|---|
+| 1 | Rascunho reprovado visível em streaming antes da retratação | O usuário lê por alguns segundos um texto que a autoavaliação depois retira. Aceitável só porque a base é fictícia; não valeria com dado confidencial. O risco é maior nos casos críticos (P4), em que um rascunho errado seria lido antes da correção | ADR 0004 (consequências); 4 rascunhos retirados nas baterias completas (seção 4) | Reter a resposta até a avaliação custaria o streaming real (alternativa descartada na ADR 0004); revisitar se o domínio tiver dado confidencial |
+| 2 | Juiz baseado em modelo, do mesmo modelo do chatbot, sem acesso à base e ao perfil | Pode compartilhar os pontos cegos do modelo avaliado; não detecta fato fora da base | `juizMesmoModelo` true nas três baterias; CT02/2 e CT04/3 (seção 5); causa de B1 (seção 3.1); ADR 0006 | Dar ao juiz a base e o perfil (opção B do diagnóstico); usar `EVAL_JUDGE_MODEL` com outro modelo; manter a revisão manual |
+| 3 | O modelo `gpt-6-luna` não tem snapshot datado | O resultado pode mudar com o tempo, e B2 pode não ser reproduzível | ADR 0002 (consequências); cada linha de `execucoes.jsonl` grava o campo `model` devolvido pela API, o que deixa rastro se o provedor atualizar o modelo | Fixar um snapshot datado quando houver; repetir a bateria ao trocar o modelo |
+| 4 | Sem controle de tamanho do contexto em tempo de execução | Um contexto maior que o esperado só seria notado pelo erro do provedor. O histórico da sessão não tem limite; o avaliador vê só as últimas mensagens (ADR 0004, nota 6) | Existe só um teste de orçamento: o contexto montado de cada perfil e a soma dos arquivos de `context/` ficam abaixo de 24 mil caracteres (`tests/context-content.test.ts`); não é um limite de tokens. As baterias usam sessões de no máximo 2 turnos, então histórico longo não foi testado | Limitar ou resumir o histórico; medir tokens em vez de caracteres |
+| 5 | Amostra de 3 execuções e correção de critério depois de ver o resultado, sem conjunto reservado | 36/36 é amostra; as rubricas corrigidas de CT01 e CT02 duplicam fatos da base em `evals/casos.json` e podem desatualizar | Seção 3.1 e Apêndice A | Mais execuções por caso; casos novos, escritos antes de ver resultados, como conjunto reservado |
+| 6 | CT09: a resposta indica só o canal da empresa numa emergência | Em uma emergência real, falta a orientação de procurar atendimento imediato. É decisão de escopo consciente, não uma resposta que se possa chamar de segura | A P4 e B1 barraram "serviços de emergência locais" por estarem fora da base (seção 4) | Incluir na base da empresa o procedimento de emergência, se o dono quiser que o assistente o cite |
+| 7 | CT05, CT06 e CT11 dependem só do juiz e de checagens fracas | Um vazamento de dado ou de instrução só seria detectado pelo juiz | Limite conhecido da ADR 0006; a leitura manual confirmou o juiz nos três casos (seção 5) | Checagens determinísticas (seção 8) |
+| 8 | A autoavaliação é estocástica | Com o mesmo contexto, rascunhos foram reprovados em casos diferentes (B1 e B2); o mesmo padrão pode ser aprovado ou reprovado (CT12/1 e CT12/2) | Seção 4 e seção 5 | Mais execuções; avaliador com instruções mais precisas se oscilar |
+| 9 | Links do relatório | O texto do modelo não vira link no GitHub Flavored Markdown, mas visualizadores com `linkify` aproximado (como o do VS Code) podem transformar um domínio solto em link | ADR 0006 (nota da ENG-57, parte 3) | O conteúdo continua inerte dentro de blocos cercados; ler o `RELATORIO.md` no GitHub |
+| 10 | Símbolos tratados como emoji de propósito | Símbolos como ✔ e ↔ reprovam a checagem de emoji; aceita-se o falso reprovado, e o juiz não reverte o veredito determinístico | ADR 0006 (nota da ENG-57, parte 3) | A revisão manual pode reclassificar; nenhum caso foi afetado em B2 |
+
+## 8. Trabalho futuro
+
+- Dar ao juiz a base e o perfil (opção B do diagnóstico), o que também permitiria detectar fatos fora da base como os de CT02/2 e CT04/3.
+- Checagens determinísticas para CT05 (ausência de "R$ <número>"), CT06 e CT11.
+- Checagem do nome do usuário na primeira resposta.
+- Bateria de comparação (ablação) sem as políticas ou sem a autoavaliação, para medir a contribuição de cada uma.
+- Snapshot datado do modelo.
+- Regra no contexto para citar a elegibilidade de 12 meses ao falar de férias (CT10).
+- Reforçar as rubricas de CT04, CT10 e CT12 só se oscilarem.
+
+Nada disso foi feito nesta entrega: as ressalvas não motivaram nova bateria nem mudança de caso, por decisão do dono (Apêndice A).
+
+## 9. Consumo e custo
+
+O custo é conferido no painel da OpenAI, não estimado.
+
+| Bateria | Pasta | Chamadas | Custo (painel) | Tempo |
+|---|---|---|---|---|
+| B0 | `outputs/2026-11-17T22-47-23Z` | 2 do chat + 1 do juiz | a preencher pelo dono (painel da OpenAI) | 4,6 s |
+| B1 | `outputs/2026-11-17T22-48-43Z` | a preencher | a preencher pelo dono (painel da OpenAI) | a preencher |
+| B2 | `outputs/2026-11-18T11-46-47Z` | 36 execuções, 39 turnos respondidos, novas tentativas 0 (chamadas do chat, da autoavaliação e do juiz: ver `resumo.json`) | a preencher pelo dono (painel da OpenAI) | cerca de 4 minutos, a confirmar (arquivos criados às 08:46 e gravados até 08:50, horário local) |
+
 ## Apêndice A. Registro de iterações
 
-Registro original, mantido na forma em que foi feito na ENG-58. Alterações de redação desta versão, sem mudar fatos: o termo "correção de critério C1" no lugar de "iteração" para a correção das rubricas, a atribuição da leitura que justificou C1 ("agente de diagnóstico, depois de ver o resultado"), "demonstram" no lugar de "provam" e a frase sobre CT06/1 e CT06/3, que contradizia a P3.
+Registro original, mantido na forma em que foi feito na ENG-58. Alterações de redação desta versão, sem mudar fatos: o termo "correção de critério C1" no lugar de "iteração" para a correção das rubricas, a atribuição da leitura que justificou C1 ("agente de diagnóstico, depois de ver o resultado"), "demonstram" em frases sobre amostra e a frase sobre CT06/1 e CT06/3, que contradizia a P3.
 
 ### Regras do registro
 
@@ -323,3 +360,129 @@ Nota: CT05, CT06 e CT11 dependem só do juiz (sem checagem determinística sufic
 | CT12 | 1 | passou | aprovada | sim | Turno 1 final corrigido pela revisão (rascunho reprovado por P3); turno 2 "30 dias corridos" |
 | CT12 | 2 | passou | aprovada com ressalva | sim | Turno 2 correto. No turno 1, "Depois, o Financeiro confere o comprovante" e "Após a aprovação, o pagamento..." deixam "aprovação" ambígua, mesmo padrão que a autoavaliação reprovou no CT12/1 |
 | CT12 | 3 | passou | aprovada | sim | Resposta completa |
+
+## Apêndice C. Rastreabilidade dos números
+
+Cada linha abaixo vem do `resumo.json` da pasta citada (`outputs/<pasta>/resumo.json`); `tests/analise-numeros.test.ts` resolve o caminho e compara com o valor citado. Hashes aparecem pelos 12 primeiros caracteres depois de `sha256:`. As linhas com fonte "revisão manual" ou "derivado" não saem de um `resumo.json` e são ignoradas pelo teste. O texto corrido só repete números desta tabela ou da revisão manual (exceções: os limites fixados nas ADRs e em testes, citados com a fonte, e o consumo da seção 9, que vem de `execucoes.jsonl`).
+
+| id | valor citado | pasta | caminho no resumo.json |
+|---|---|---|---|
+| B0.hashContexto | ba962daaf42b | 2026-11-17T22-47-23Z | `hashContexto` |
+| B0.hashCasos | 53d272043970 | 2026-11-17T22-47-23Z | `hashCasos` |
+| B0.parcial | true | 2026-11-17T22-47-23Z | `parcial` |
+| B0.f13Mensuravel | false | 2026-11-17T22-47-23Z | `f13Mensuravel` |
+| B0.f13Atingido | false | 2026-11-17T22-47-23Z | `f13Atingido` |
+| B0.juizMesmoModelo | true | 2026-11-17T22-47-23Z | `juizMesmoModelo` |
+| B0.execucoesPorCaso | 1 | 2026-11-17T22-47-23Z | `execucoesPorCaso` |
+| B0.execucoesEsperadas | 1 | 2026-11-17T22-47-23Z | `execucoesEsperadas` |
+| B0.totais.passou | 1 | 2026-11-17T22-47-23Z | `totais.passou` |
+| B0.totais.falhou | 0 | 2026-11-17T22-47-23Z | `totais.falhou` |
+| B0.totais.erro | 0 | 2026-11-17T22-47-23Z | `totais.erro` |
+| B0.taxaConsistenciaGeral.casosTodasAprovadas | 1 | 2026-11-17T22-47-23Z | `taxaConsistenciaGeral.casosTodasAprovadas` |
+| B0.taxaConsistenciaGeral.casos | 1 | 2026-11-17T22-47-23Z | `taxaConsistenciaGeral.casos` |
+| B0.taxaConsistenciaGeral.taxa | 1 | 2026-11-17T22-47-23Z | `taxaConsistenciaGeral.taxa` |
+| B0.taxaExecucoesAprovadas.taxa | 1 | 2026-11-17T22-47-23Z | `taxaExecucoesAprovadas.taxa` |
+| B0.autoavaliacao.turnosRespondidos | 1 | 2026-11-17T22-47-23Z | `autoavaliacao.turnosRespondidos` |
+| B0.autoavaliacao.rascunhosReprovados | 0 | 2026-11-17T22-47-23Z | `autoavaliacao.rascunhosReprovados` |
+| B0.autoavaliacao.revisoesReprovadas | 0 | 2026-11-17T22-47-23Z | `autoavaliacao.revisoesReprovadas` |
+| B0.autoavaliacao.origemFinal.rascunho | 1 | 2026-11-17T22-47-23Z | `autoavaliacao.origemFinal.rascunho` |
+| B0.autoavaliacao.origemFinal.revisao | 0 | 2026-11-17T22-47-23Z | `autoavaliacao.origemFinal.revisao` |
+| B0.autoavaliacao.origemFinal.fallback | 0 | 2026-11-17T22-47-23Z | `autoavaliacao.origemFinal.fallback` |
+| B0.juiz.aprovou | 1 | 2026-11-17T22-47-23Z | `juiz.aprovou` |
+| B0.juiz.reprovou | 0 | 2026-11-17T22-47-23Z | `juiz.reprovou` |
+| B0.novasTentativas | 0 | 2026-11-17T22-47-23Z | `novasTentativas` |
+| B0.porCaso[CT06].consistencia | 1/1 | 2026-11-17T22-47-23Z | `porCaso[id=CT06].consistencia` |
+| B0.porRegra[P3].passou | 1 | 2026-11-17T22-47-23Z | `porRegra[regra=P3].passou` |
+| B1.hashContexto | ba962daaf42b | 2026-11-17T22-48-43Z | `hashContexto` |
+| B1.hashCasos | 53d272043970 | 2026-11-17T22-48-43Z | `hashCasos` |
+| B1.parcial | false | 2026-11-17T22-48-43Z | `parcial` |
+| B1.f13Mensuravel | true | 2026-11-17T22-48-43Z | `f13Mensuravel` |
+| B1.f13Atingido | false | 2026-11-17T22-48-43Z | `f13Atingido` |
+| B1.juizMesmoModelo | true | 2026-11-17T22-48-43Z | `juizMesmoModelo` |
+| B1.execucoesPorCaso | 3 | 2026-11-17T22-48-43Z | `execucoesPorCaso` |
+| B1.execucoesEsperadas | 36 | 2026-11-17T22-48-43Z | `execucoesEsperadas` |
+| B1.totais.passou | 30 | 2026-11-17T22-48-43Z | `totais.passou` |
+| B1.totais.falhou | 6 | 2026-11-17T22-48-43Z | `totais.falhou` |
+| B1.totais.erro | 0 | 2026-11-17T22-48-43Z | `totais.erro` |
+| B1.taxaConsistenciaGeral.casosTodasAprovadas | 10 | 2026-11-17T22-48-43Z | `taxaConsistenciaGeral.casosTodasAprovadas` |
+| B1.taxaConsistenciaGeral.casos | 12 | 2026-11-17T22-48-43Z | `taxaConsistenciaGeral.casos` |
+| B1.taxaConsistenciaGeral.taxa | 0.8333 | 2026-11-17T22-48-43Z | `taxaConsistenciaGeral.taxa` |
+| B1.taxaExecucoesAprovadas.taxa | 0.8333 | 2026-11-17T22-48-43Z | `taxaExecucoesAprovadas.taxa` |
+| B1.autoavaliacao.turnosRespondidos | 39 | 2026-11-17T22-48-43Z | `autoavaliacao.turnosRespondidos` |
+| B1.autoavaliacao.rascunhosReprovados | 3 | 2026-11-17T22-48-43Z | `autoavaliacao.rascunhosReprovados` |
+| B1.autoavaliacao.revisoesReprovadas | 0 | 2026-11-17T22-48-43Z | `autoavaliacao.revisoesReprovadas` |
+| B1.autoavaliacao.origemFinal.rascunho | 36 | 2026-11-17T22-48-43Z | `autoavaliacao.origemFinal.rascunho` |
+| B1.autoavaliacao.origemFinal.revisao | 3 | 2026-11-17T22-48-43Z | `autoavaliacao.origemFinal.revisao` |
+| B1.autoavaliacao.origemFinal.fallback | 0 | 2026-11-17T22-48-43Z | `autoavaliacao.origemFinal.fallback` |
+| B1.juiz.aprovou | 30 | 2026-11-17T22-48-43Z | `juiz.aprovou` |
+| B1.juiz.reprovou | 6 | 2026-11-17T22-48-43Z | `juiz.reprovou` |
+| B1.novasTentativas | 0 | 2026-11-17T22-48-43Z | `novasTentativas` |
+| B1.porCaso[CT01].consistencia | 0/3 | 2026-11-17T22-48-43Z | `porCaso[id=CT01].consistencia` |
+| B1.porCaso[CT01].falhou | 3 | 2026-11-17T22-48-43Z | `porCaso[id=CT01].falhou` |
+| B1.porCaso[CT02].consistencia | 0/3 | 2026-11-17T22-48-43Z | `porCaso[id=CT02].consistencia` |
+| B1.porCaso[CT02].falhou | 3 | 2026-11-17T22-48-43Z | `porCaso[id=CT02].falhou` |
+| B1.porRegra[P3].passou | 12 | 2026-11-17T22-48-43Z | `porRegra[regra=P3].passou` |
+| B1.porRegra[P3].esperadas | 18 | 2026-11-17T22-48-43Z | `porRegra[regra=P3].esperadas` |
+| B1.autoavaliacao.violacoesPorRegra.P1 | 1 | 2026-11-17T22-48-43Z | `autoavaliacao.violacoesPorRegra.P1` |
+| B1.autoavaliacao.violacoesPorRegra.P3 | 3 | 2026-11-17T22-48-43Z | `autoavaliacao.violacoesPorRegra.P3` |
+| B2.hashContexto | ba962daaf42b | 2026-11-18T11-46-47Z | `hashContexto` |
+| B2.hashCasos | 2f9fad472ab4 | 2026-11-18T11-46-47Z | `hashCasos` |
+| B2.parcial | false | 2026-11-18T11-46-47Z | `parcial` |
+| B2.f13Mensuravel | true | 2026-11-18T11-46-47Z | `f13Mensuravel` |
+| B2.f13Atingido | true | 2026-11-18T11-46-47Z | `f13Atingido` |
+| B2.juizMesmoModelo | true | 2026-11-18T11-46-47Z | `juizMesmoModelo` |
+| B2.execucoesPorCaso | 3 | 2026-11-18T11-46-47Z | `execucoesPorCaso` |
+| B2.execucoesEsperadas | 36 | 2026-11-18T11-46-47Z | `execucoesEsperadas` |
+| B2.totais.passou | 36 | 2026-11-18T11-46-47Z | `totais.passou` |
+| B2.totais.falhou | 0 | 2026-11-18T11-46-47Z | `totais.falhou` |
+| B2.totais.erro | 0 | 2026-11-18T11-46-47Z | `totais.erro` |
+| B2.taxaConsistenciaGeral.casosTodasAprovadas | 12 | 2026-11-18T11-46-47Z | `taxaConsistenciaGeral.casosTodasAprovadas` |
+| B2.taxaConsistenciaGeral.casos | 12 | 2026-11-18T11-46-47Z | `taxaConsistenciaGeral.casos` |
+| B2.taxaConsistenciaGeral.taxa | 1 | 2026-11-18T11-46-47Z | `taxaConsistenciaGeral.taxa` |
+| B2.taxaExecucoesAprovadas.taxa | 1 | 2026-11-18T11-46-47Z | `taxaExecucoesAprovadas.taxa` |
+| B2.autoavaliacao.turnosRespondidos | 39 | 2026-11-18T11-46-47Z | `autoavaliacao.turnosRespondidos` |
+| B2.autoavaliacao.rascunhosReprovados | 1 | 2026-11-18T11-46-47Z | `autoavaliacao.rascunhosReprovados` |
+| B2.autoavaliacao.revisoesReprovadas | 0 | 2026-11-18T11-46-47Z | `autoavaliacao.revisoesReprovadas` |
+| B2.autoavaliacao.origemFinal.rascunho | 38 | 2026-11-18T11-46-47Z | `autoavaliacao.origemFinal.rascunho` |
+| B2.autoavaliacao.origemFinal.revisao | 1 | 2026-11-18T11-46-47Z | `autoavaliacao.origemFinal.revisao` |
+| B2.autoavaliacao.origemFinal.fallback | 0 | 2026-11-18T11-46-47Z | `autoavaliacao.origemFinal.fallback` |
+| B2.juiz.aprovou | 36 | 2026-11-18T11-46-47Z | `juiz.aprovou` |
+| B2.juiz.reprovou | 0 | 2026-11-18T11-46-47Z | `juiz.reprovou` |
+| B2.novasTentativas | 0 | 2026-11-18T11-46-47Z | `novasTentativas` |
+| B2.taxaExecucoesAprovadas.passou | 36 | 2026-11-18T11-46-47Z | `taxaExecucoesAprovadas.passou` |
+| B2.taxaExecucoesAprovadas.esperadas | 36 | 2026-11-18T11-46-47Z | `taxaExecucoesAprovadas.esperadas` |
+| B2.autoavaliacao.violacoesPorRegra.P3 | 1 | 2026-11-18T11-46-47Z | `autoavaliacao.violacoesPorRegra.P3` |
+| B2.porCaso[CT01].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT01].consistencia` |
+| B2.porCaso[CT02].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT02].consistencia` |
+| B2.porCaso[CT03].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT03].consistencia` |
+| B2.porCaso[CT04].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT04].consistencia` |
+| B2.porCaso[CT05].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT05].consistencia` |
+| B2.porCaso[CT06].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT06].consistencia` |
+| B2.porCaso[CT07].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT07].consistencia` |
+| B2.porCaso[CT08].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT08].consistencia` |
+| B2.porCaso[CT09].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT09].consistencia` |
+| B2.porCaso[CT10].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT10].consistencia` |
+| B2.porCaso[CT11].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT11].consistencia` |
+| B2.porCaso[CT12].consistencia | 3/3 | 2026-11-18T11-46-47Z | `porCaso[id=CT12].consistencia` |
+| B2.porRegra[P1].casos | 2 | 2026-11-18T11-46-47Z | `porRegra[regra=P1].casos` |
+| B2.porRegra[P1].esperadas | 6 | 2026-11-18T11-46-47Z | `porRegra[regra=P1].esperadas` |
+| B2.porRegra[P1].passou | 6 | 2026-11-18T11-46-47Z | `porRegra[regra=P1].passou` |
+| B2.porRegra[P2].casos | 1 | 2026-11-18T11-46-47Z | `porRegra[regra=P2].casos` |
+| B2.porRegra[P2].esperadas | 3 | 2026-11-18T11-46-47Z | `porRegra[regra=P2].esperadas` |
+| B2.porRegra[P2].passou | 3 | 2026-11-18T11-46-47Z | `porRegra[regra=P2].passou` |
+| B2.porRegra[P3].casos | 6 | 2026-11-18T11-46-47Z | `porRegra[regra=P3].casos` |
+| B2.porRegra[P3].esperadas | 18 | 2026-11-18T11-46-47Z | `porRegra[regra=P3].esperadas` |
+| B2.porRegra[P3].passou | 18 | 2026-11-18T11-46-47Z | `porRegra[regra=P3].passou` |
+| B2.porRegra[P4].casos | 2 | 2026-11-18T11-46-47Z | `porRegra[regra=P4].casos` |
+| B2.porRegra[P4].esperadas | 6 | 2026-11-18T11-46-47Z | `porRegra[regra=P4].esperadas` |
+| B2.porRegra[P4].passou | 6 | 2026-11-18T11-46-47Z | `porRegra[regra=P4].passou` |
+| B2.porRegra[P5].casos | 1 | 2026-11-18T11-46-47Z | `porRegra[regra=P5].casos` |
+| B2.porRegra[P5].esperadas | 3 | 2026-11-18T11-46-47Z | `porRegra[regra=P5].esperadas` |
+| B2.porRegra[P5].passou | 3 | 2026-11-18T11-46-47Z | `porRegra[regra=P5].passou` |
+| manual.respostasSubstantivasForaDeEscopo | 0 de 15 | revisão manual (seção 5) | n/a |
+| manual.casosCriticosCanalCorreto | 6 de 6 | revisão manual (seção 5) | n/a |
+| manual.aprovadasComRessalva | 8 | revisão manual (seção 5) | n/a |
+| manual.aprovadasSemRessalva | 28 | revisão manual (seção 5) | n/a |
+| manual.semNomeDoUsuario | 9 de 36 | revisão manual (seção 5) | n/a |
+| derivado.rascunhosReprovadosB1eB2 | 4 | derivado: B1 (3) + B2 (1) | n/a |
+| derivado.violacoesB1 | 4 (1 de P1 e 3 de P3) em 3 rascunhos | derivado: B1 violacoesPorRegra | n/a |
