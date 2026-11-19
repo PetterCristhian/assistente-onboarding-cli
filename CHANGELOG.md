@@ -3,11 +3,30 @@
 Todas as mudanças relevantes deste projeto são registradas aqui.
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+As versões são as tags de entrega de cada disciplina.
+
 ## [Não lançado]
+
+## [disciplina-02] - 2026-11-18
+
+Entrega da disciplina 2: persistência de sessão, memória do funcionário e compressão do histórico.
 
 ### Adicionado
 
 - Disciplina 2 (ADR 0008, `docs/PRD-DISCIPLINA-02.md`): sessão gravada em `data/sessoes/` e retomável com `--sessao <id>` (`--sessoes` lista); memória por funcionário em `data/memoria/`, em quatro categorias, extraída do que o usuário declara e levada ao contexto só quando tem relação com a pergunta; compressão do histórico (condicional, janela deslizante, limite por tokens e resumo acumulado); opções `--sem-memoria` e `--efemera`; comandos `/sessao`, `/memoria`, `/esquecer`, `/tokens` e `/comprimir`; variáveis `COMPRESS_MAX_TOKENS`, `COMPRESS_MAX_MESSAGES`, `COMPRESS_KEEP_MESSAGES` e `MEMORY_MAX_ITEMS`; e `npm run eval:memoria`, que compara as respostas com e sem memória contra o modelo real. O escritor único passa a aceitar `data/`, ignorada pelo Git.
+- Evidência da comparação com e sem memória em `outputs/memoria/`: `2026-11-18T18-27-24Z` (5 de 6 casos conformes) e `2026-11-18T18-30-04Z` (6 de 6).
+
+### Corrigido
+
+- A memória passa a ser extraída também quando o turno termina na mensagem segura, porque o fato vem do que o usuário declarou e não da resposta. Na primeira comparação, a regra oposta fez o caso M01 perder o fato; o caso não foi alterado (ADR 0008, decisão 4).
+- O teste de caminhos do README aceita `data/`, que é ignorada pelo Git e não existe no CI.
+
+## [disciplina-01] - 2026-11-18
+
+Entrega da disciplina 1: chatbot de terminal com camada de políticas (P1 a P5), contexto em quatro camadas e bateria de 12 casos.
+
+### Adicionado
+
 - Documentação inicial: PRD, arquitetura, ADRs 0001–0007 e backlog do MVP.
 - Entorno do repositório: `.gitignore`, `.gitattributes` (finais de linha em LF), `.editorconfig`, `.nvmrc` (Node 24) e `.env.example` com todas as variáveis, sem valores reais.
 - Workflow de CI no GitHub Actions (`.github/workflows/ci.yml`): `npm ci` + `npm run check` a cada PR e a cada push na `main`, sem usar a chave da OpenAI.
